@@ -1,44 +1,57 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator } from 'react-native';
-import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import { View, Text, StyleSheet, Alert, ScrollView, Pressable } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../../src/lib/supabase';
 import { useAuth } from '../../../src/context/AuthContext';
-import { COLORS, SPACING, FONTS } from '../../../src/theme';
+import { COLORS, SPACING, RADII } from '../../../src/theme';
+import { Tag, CalendarDays, PackagePlus, PencilLine } from 'lucide-react-native';
+import { NavHeader, Field, PillButton } from '../../../src/components/ui';
 
 const CATEGORIES = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen', 'Beverages', 'Snacks', 'Condiments', 'Other'];
 const UNITS = ['pcs', 'kg', 'g', 'lb', 'oz', 'L', 'ml', 'cups', 'pack', 'bottle', 'can', 'box'];
 
 export default function AddItemScreen() {
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<Record<string, string>>();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
+
+  const prefillCategory = (params.category || '').charAt(0).toUpperCase() + (params.category || '').slice(1);
+
   const [form, setForm] = useState({
-    product_name: '',
-    brand: '',
-    category: 'Other',
-    quantity: '1',
-    unit: 'pcs',
-    expiration_date: '',
+    product_name: params.product_name || '',
+    brand: params.brand || '',
+    category: CATEGORIES.includes(prefillCategory) ? prefillCategory : 'Other',
+    quantity: params.quantity || '1',
+    unit: UNITS.includes(params.unit || '') ? (params.unit as string) : 'pcs',
+    expiration_date: params.expiration_date || '',
     purchase_date: new Date().toISOString().split('T')[0],
-    price: '',
-    notes: '',
-    barcode: '',
+    price: params.price || '',
+    notes: params.notes || '',
+    barcode: params.barcode || '',
     image_url: '',
   });
 
+  const editing = !!params.product_name || !!params.barcode;
+
+  const setExpiry = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    setForm({ ...form, expiration_date: d.toISOString().split('T')[0] });
+  };
+
   const handleSave = async () => {
     if (!profile) return;
-    
     if (!form.product_name.trim()) {
-      Alert.alert('Error', 'Please enter a product name');
+      Alert.alert('Missing name', 'Please enter a product name.');
       return;
     }
-    
     setLoading(true);
     try {
       const { error } = await supabase.from('inventory_items').insert({
         user_id: profile.id,
-        product_name: form.product_name,
+        product_name: form.product_name.trim(),
         brand: form.brand || null,
         category: form.category.toLowerCase(),
         quantity: parseFloat(form.quantity) || 1,
@@ -50,185 +63,156 @@ export default function AddItemScreen() {
         notes: form.notes || null,
         image_url: form.image_url || null,
       });
-      
       if (error) {
         Alert.alert('Error', error.message);
       } else {
-        Alert.alert('Success', 'Item added successfully!', [
-          { text: 'OK', onPress: () => router.back() },
+        Alert.alert('Saved', 'Item added to your inventory.', [
+          { text: 'OK', onPress: () => (router.canGoBack() ? router.back() : router.replace('/inventory')) },
         ]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Unable to save item');
+      Alert.alert('Error', 'Unable to save item.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Add Item</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      <NavHeader title={editing ? 'Review & Save' : 'Add Item'} subtitle={editing ? 'Details from your scan' : 'Manual entry'} />
+      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: insets.bottom + 120 }} keyboardShouldPersistTaps="handled">
+        <Field
+          label="Food Name *"
+          icon={Tag}
+          value={form.product_name}
+          onChangeText={(t) => setForm({ ...form, product_name: t })}
+          placeholder="e.g. Fresh Milk"
+          autoFocus={!editing}
+        />
 
-      <View style={styles.form}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Food Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={form.product_name}
-            onChangeText={(text) => setForm({ ...form, product_name: text })}
-            placeholder="Enter food name"
-          />
+        <Text style={styles.label}>Category</Text>
+        <View style={styles.chipWrap}>
+          {CATEGORIES.map((cat) => (
+            <Pressable
+              key={cat}
+              style={[styles.chip, form.category === cat && styles.chipActive]}
+              onPress={() => setForm({ ...form, category: cat })}
+            >
+              <Text style={[styles.chipText, form.category === cat && styles.chipTextActive]}>{cat}</Text>
+            </Pressable>
+          ))}
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Category</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {CATEGORIES.map(cat => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.categoryChip, form.category === cat && styles.categoryChipActive]}
-                onPress={() => setForm({ ...form, category: cat })}
-              >
-                <Text style={[styles.categoryText, form.category === cat && styles.categoryTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        <Field
+          label="Brand"
+          value={form.brand}
+          onChangeText={(t) => setForm({ ...form, brand: t })}
+          placeholder="Optional"
+        />
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Brand</Text>
-          <TextInput
-            style={styles.input}
-            value={form.brand}
-            onChangeText={(text) => setForm({ ...form, brand: text })}
-            placeholder="Enter brand (optional)"
-          />
-        </View>
-
-        <View style={styles.row}>
-          <View style={[styles.inputContainer, { flex: 1, marginRight: SPACING.sm }]}>
-            <Text style={styles.label}>Quantity</Text>
-            <TextInput
-              style={styles.input}
-              value={form.quantity}
-              onChangeText={(text) => setForm({ ...form, quantity: text })}
-              keyboardType="numeric"
-              placeholder="1"
-            />
-          </View>
-          <View style={[styles.inputContainer, { flex: 1, marginLeft: SPACING.sm }]}>
-            <Text style={styles.label}>Unit</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {UNITS.map(unit => (
-                <TouchableOpacity
-                  key={unit}
-                  style={[styles.unitChip, form.unit === unit && styles.unitChipActive]}
-                  onPress={() => setForm({ ...form, unit })}
-                >
-                  <Text style={[styles.unitText, form.unit === unit && styles.unitTextActive]}>
-                    {unit}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Expiration Date</Text>
-          <TextInput
-            style={styles.input}
-            value={form.expiration_date}
-            onChangeText={(text) => setForm({ ...form, expiration_date: text })}
-            placeholder="YYYY-MM-DD"
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Purchase Date</Text>
-          <TextInput
-            style={styles.input}
-            value={form.purchase_date}
-            onChangeText={(text) => setForm({ ...form, purchase_date: text })}
-            placeholder="YYYY-MM-DD"
-          />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Price (₱)</Text>
-          <TextInput
-            style={styles.input}
-            value={form.price}
-            onChangeText={(text) => setForm({ ...form, price: text })}
+        <View style={styles.splitRow}>
+          <Field
+            label="Quantity"
+            containerStyle={{ flex: 1 }}
+            value={form.quantity}
+            onChangeText={(t) => setForm({ ...form, quantity: t })}
             keyboardType="numeric"
-            placeholder="0.00"
+          />
+          <Field
+            label="Unit"
+            containerStyle={{ flex: 1 }}
+            value={form.unit}
+            onChangeText={(t) => setForm({ ...form, unit: t })}
           />
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Barcode</Text>
-          <TextInput
-            style={styles.input}
-            value={form.barcode}
-            onChangeText={(text) => setForm({ ...form, barcode: text })}
-            placeholder="Enter barcode (optional)"
-          />
+        <View style={styles.unitWrap}>
+          {UNITS.map((u) => (
+            <Pressable key={u} style={[styles.unitChip, form.unit === u && styles.chipActive]} onPress={() => setForm({ ...form, unit: u })}>
+              <Text style={[styles.unitChipText, form.unit === u && styles.chipTextActive]}>{u}</Text>
+            </Pressable>
+          ))}
         </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Notes</Text>
-          <TextInput
-            style={[styles.input, { height: 80 }]}
-            value={form.notes}
-            onChangeText={(text) => setForm({ ...form, notes: text })}
-            placeholder="Add notes (optional)"
-            multiline
-          />
+        <Text style={styles.label}>Expiration Date</Text>
+        <View style={styles.dateBox}>
+          <CalendarDays size={18} color={COLORS.secondaryText} strokeWidth={2} />
+          <Text style={form.expiration_date ? styles.dateText : styles.datePlaceholder}>
+            {form.expiration_date
+              ? new Date(form.expiration_date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+              : 'No expiration date set'}
+          </Text>
+        </View>
+        <View style={styles.dateChips}>
+          {[{ label: 'Today', d: 0 }, { label: '+3 days', d: 3 }, { label: '+1 week', d: 7 }, { label: '+2 weeks', d: 14 }, { label: 'Clear', d: -9999 }].map((o) => (
+            <Pressable
+              key={o.label}
+              style={[styles.chip, o.d === -9999 ? styles.chipGhost : styles.chip]}
+              onPress={() => setExpiry(o.d)}
+            >
+              <Text style={[styles.chipText, o.d === -9999 && { color: COLORS.danger }]}>{o.label}</Text>
+            </Pressable>
+          ))}
         </View>
 
-        <TouchableOpacity
-          style={[styles.saveButton, loading && styles.buttonDisabled]}
+        <Field
+          label="Price (₱)"
+          value={form.price}
+          onChangeText={(t) => setForm({ ...form, price: t })}
+          placeholder="0.00"
+          keyboardType="decimal-pad"
+        />
+        <Field
+          label="Notes"
+          value={form.notes}
+          onChangeText={(t) => setForm({ ...form, notes: t })}
+          placeholder="Storage tip, reminders, etc."
+          multiline
+        />
+      </ScrollView>
+
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.md }]}>
+        <PillButton
+          title={editing ? 'Save to Inventory' : 'Add to Inventory'}
+          icon={editing ? PencilLine : PackagePlus}
           onPress={handleSave}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Item</Text>
-          )}
-        </TouchableOpacity>
+          loading={loading}
+        />
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.lg },
-  title: { fontSize: 24, fontWeight: 'bold', color: COLORS.text },
-  cancelText: { color: COLORS.primary, fontSize: 16 },
-  form: { paddingHorizontal: SPACING.lg },
-  inputContainer: { marginBottom: SPACING.lg },
-  label: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginBottom: SPACING.xs },
-  input: { backgroundColor: COLORS.white, borderRadius: 8, borderWidth: 1, borderColor: COLORS.divider, paddingHorizontal: SPACING.md, paddingVertical: SPACING.md, fontSize: 16 },
-  row: { flexDirection: 'row' },
-  categoryScroll: { marginTop: SPACING.xs },
-  categoryChip: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs, borderRadius: 20, backgroundColor: COLORS.white, marginRight: SPACING.sm, borderWidth: 1, borderColor: COLORS.divider },
-  categoryChipActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  categoryText: { fontSize: 13, color: COLORS.secondaryText },
-  categoryTextActive: { color: COLORS.primary, fontWeight: '600' },
-  unitChip: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs, borderRadius: 20, backgroundColor: COLORS.white, marginRight: SPACING.sm, borderWidth: 1, borderColor: COLORS.divider },
-  unitChipActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  unitText: { fontSize: 13, color: COLORS.secondaryText },
-  unitTextActive: { color: COLORS.primary, fontWeight: '600' },
-  saveButton: { backgroundColor: COLORS.primary, paddingVertical: SPACING.md, borderRadius: 8, alignItems: 'center', marginTop: SPACING.md, marginBottom: SPACING.xl },
-  saveButtonText: { color: COLORS.white, fontSize: 16, fontWeight: '600' },
-  buttonDisabled: { opacity: 0.7 },
+  label: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6, marginTop: SPACING.xs },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.md },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill,
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+  },
+  chipGhost: { backgroundColor: 'transparent' },
+  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  chipTextActive: { color: COLORS.white },
+  splitRow: { flexDirection: 'row', gap: SPACING.md },
+  unitWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.md },
+  unitChip: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADII.pill,
+    backgroundColor: COLORS.mutedBg, borderWidth: 1, borderColor: 'transparent',
+  },
+  unitChipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  dateBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    borderRadius: RADII.input, paddingHorizontal: 14, minHeight: 50, marginBottom: SPACING.sm,
+  },
+  dateText: { fontSize: 15, color: COLORS.text, fontWeight: '500' },
+  datePlaceholder: { fontSize: 15, color: COLORS.secondaryText },
+  dateChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.lg },
+  bottomBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+  },
 });

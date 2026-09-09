@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import {
+  View, Text, StyleSheet, Alert, ScrollView, Pressable,
+  KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, FONTS, SPACING } from '../../src/theme';
+import { COLORS, SPACING } from '../../src/theme';
+import { UserRound, Mail, Lock, Camera, Check } from 'lucide-react-native';
+import { Field, PillButton, AvatarCircle } from '../../src/components/ui';
 
 export default function SignupScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -13,229 +21,137 @@ export default function SignupScreen() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
-  const router = useRouter();
 
   const pickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please grant photo library permission');
+      Alert.alert('Permission needed', 'Please grant photo library access to add a photo.');
       return;
     }
-    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
     });
-    
-    if (!result.canceled) {
-      setAvatar(result.assets[0].uri);
-    }
+    if (!result.canceled) setAvatar(result.assets[0].uri);
   };
 
   const handleSignUp = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
+      Alert.alert('Missing details', 'Please fill in all fields.');
       return;
     }
-    
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert('Passwords differ', 'Make sure both passwords match.');
       return;
     }
-    
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert('Password too short', 'Password must be at least 6 characters.');
       return;
     }
-    
     setLoading(true);
-    const { error } = await signUp(email, password, fullName);
+    const { error } = await signUp(email.trim(), password, fullName.trim());
     setLoading(false);
-    
     if (error) {
-      Alert.alert('Sign Up Failed', error.message);
+      Alert.alert('Sign up failed', error.message);
     } else {
-      router.replace('/(tabs)/index');
+      Alert.alert('Welcome to KeepFresh AI!', 'Your account is ready.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)/index') },
+      ]);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>KeepFresh AI</Text>
-        <Text style={styles.subtitle}>Create your account</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + SPACING.lg }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <Text style={styles.logo}>Create account</Text>
+          <Text style={styles.subtitle}>Join KeepFresh AI and start wasting less.</Text>
+        </View>
 
-      <View style={styles.form}>
-        <TouchableOpacity style={styles.avatarContainer} onPress={pickAvatar}>
-          {avatar ? (
-            <Image source={{ uri: avatar }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>+</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.form}>
+          <View style={styles.avatarWrap}>
+            <Pressable onPress={pickAvatar}>
+              <AvatarCircle uri={avatar} initials={fullName || 'U'} size={88} />
+              <View style={styles.camBadge}>
+                {avatar ? <Check size={13} color={COLORS.white} strokeWidth={3} /> : <Camera size={13} color={COLORS.white} strokeWidth={2.5} />}
+              </View>
+            </Pressable>
+            <Text style={styles.avatarHint}>Tap to add a photo</Text>
+          </View>
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Full Name *</Text>
-          <TextInput
-            style={styles.input}
+          <Field
+            label="Full Name *"
+            icon={UserRound}
             value={fullName}
             onChangeText={setFullName}
             placeholder="Enter your full name"
+            autoCapitalize="words"
           />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Email *</Text>
-          <TextInput
-            style={styles.input}
+          <Field
+            label="Email *"
+            icon={Mail}
             value={email}
             onChangeText={setEmail}
-            placeholder="Enter your email"
+            placeholder="you@example.com"
             keyboardType="email-address"
             autoCapitalize="none"
+            autoComplete="email"
           />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Password *</Text>
-          <TextInput
-            style={styles.input}
+          <Field
+            label="Password *"
+            icon={Lock}
+            secure
             value={password}
             onChangeText={setPassword}
-            placeholder="Create a password"
-            secureTextEntry
+            placeholder="Create a password (min 6 characters)"
           />
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Confirm Password *</Text>
-          <TextInput
-            style={styles.input}
+          <Field
+            label="Confirm Password *"
+            icon={Lock}
+            secure
             value={confirmPassword}
             onChangeText={setConfirmPassword}
-            placeholder="Confirm your password"
-            secureTextEntry
+            placeholder="Re-enter your password"
           />
-        </View>
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleSignUp}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.buttonText}>Sign Up</Text>
-          )}
-        </TouchableOpacity>
+          <PillButton title="Create Account" onPress={handleSignUp} loading={loading} style={{ marginTop: SPACING.sm }} />
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
-            <Text style={styles.signUpText}>Login</Text>
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Already have an account?</Text>
+            <Pressable onPress={() => router.push('/login')} hitSlop={8}>
+              <Text style={styles.footerLink}>Login</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingHorizontal: SPACING.lg,
+  flex: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: SPACING.lg },
+  header: { marginTop: SPACING.xl, marginBottom: SPACING.lg },
+  logo: { fontSize: 28, fontWeight: '800', color: COLORS.text },
+  subtitle: { fontSize: 14, color: COLORS.secondaryText, marginTop: SPACING.xs },
+  form: { width: '100%' },
+  avatarWrap: { alignItems: 'center', marginBottom: SPACING.lg, position: 'relative' },
+  camBadge: {
+    position: 'absolute', right: -2, bottom: 2,
+    width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.background,
   },
-  header: {
-    alignItems: 'center',
-    marginTop: SPACING.xxl * 2,
-    marginBottom: SPACING.xl,
-  },
-  logo: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginBottom: SPACING.md,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.secondaryText,
-  },
-  form: {
-    width: '100%',
-  },
-  avatarContainer: {
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: COLORS.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 32,
-    color: COLORS.primary,
-  },
-  inputContainer: {
-    marginBottom: SPACING.lg,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    fontSize: 16,
-    backgroundColor: COLORS.white,
-  },
-  button: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-    marginTop: SPACING.md,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: SPACING.xl,
-  },
-  footerText: {
-    color: COLORS.secondaryText,
-    fontSize: 14,
-  },
-  signUpText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
-  },
+  avatarHint: { fontSize: 12, color: COLORS.secondaryText, marginTop: SPACING.xs },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
+  footerText: { color: COLORS.secondaryText, fontSize: 14 },
+  footerLink: { color: COLORS.primary, fontWeight: '700', marginLeft: SPACING.xs, fontSize: 14 },
 });

@@ -1,276 +1,155 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { Link, router } from 'expo-router';
+import {
+  View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView,
+  KeyboardAvoidingView, Platform, Pressable,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, FONTS, SPACING } from '../../src/theme';
+import { COLORS, SPACING, RADII } from '../../src/theme';
+import { Leaf, Mail, Lock, ArrowRight } from 'lucide-react-native';
+import { Field, PillButton } from '../../src/components/ui';
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signIn, signInWithGoogle, signInWithFacebook } = useAuth();
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter email and password');
+    if (!email.trim() || !password) {
+      Alert.alert('Missing details', 'Please enter your email and password.');
       return;
     }
-    
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email.trim(), password);
     setLoading(false);
-    
-    if (error) {
-      Alert.alert('Login Failed', error.message);
-    }
+    if (error) Alert.alert('Login failed', error.message);
   };
 
-  const handleGoogleLogin = async () => {
+  const run = async (fn: () => Promise<{ error: Error | null }>, failTitle: string) => {
     setLoading(true);
-    const { error } = await signInWithGoogle();
+    const { error } = await fn();
     setLoading(false);
-    
-    if (error) {
-      Alert.alert('Google Login Failed', error.message);
-    }
-  };
-
-  const handleFacebookLogin = async () => {
-    setLoading(true);
-    const { error } = await signInWithFacebook();
-    setLoading(false);
-    
-    if (error) {
-      Alert.alert('Facebook Login Failed', error.message);
-    }
+    if (error) Alert.alert(failTitle, error.message);
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>KeepFresh AI</Text>
-        <Text style={styles.subtitle}>
-          Smarter Food Management,
-          Less Waste, More Savings.
-        </Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingBottom: insets.bottom + SPACING.lg }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <View style={styles.logoWrap}>
+            <Leaf size={30} color={COLORS.white} strokeWidth={2.2} />
+          </View>
+          <Text style={styles.logo}>KeepFresh AI</Text>
+          <Text style={styles.subtitle}>
+            Track your food, reduce waste,{'\n'}and save more — in one place.
+          </Text>
+        </View>
 
-      <View style={styles.form}>
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
+        <View style={styles.form}>
+          <Field
+            label="Email"
+            icon={Mail}
             value={email}
             onChangeText={setEmail}
-            placeholder="Enter your email"
+            placeholder="you@example.com"
             keyboardType="email-address"
             autoCapitalize="none"
+            autoComplete="email"
           />
-        </View>
+          <Field
+            label="Password"
+            icon={Lock}
+            secure
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Enter your password"
+            autoCapitalize="none"
+          />
 
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowPassword(!showPassword)}
+          <Pressable style={styles.forgot} onPress={() => router.push('/forgot-password')}>
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </Pressable>
+
+          <PillButton title="Login" onPress={handleLogin} loading={loading} icon={ArrowRight} />
+
+          <View style={styles.dividerRow}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <View style={styles.socialRow}>
+            <Pressable
+              style={styles.socialBtn}
+              disabled={loading}
+              onPress={() => run(signInWithGoogle, 'Google sign-in failed')}
             >
-              <Text style={styles.eyeText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-            </TouchableOpacity>
+              <View style={styles.gBadge}><Text style={styles.gText}>G</Text></View>
+              <Text style={styles.socialText}>Google</Text>
+            </Pressable>
+            <Pressable
+              style={styles.socialBtn}
+              disabled={loading}
+              onPress={() => run(signInWithFacebook, 'Facebook sign-in failed')}
+            >
+              <View style={styles.fBadge}><Text style={styles.fText}>f</Text></View>
+              <Text style={styles.socialText}>Facebook</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account?</Text>
+            <Pressable onPress={() => router.push('/signup')} hitSlop={8}>
+              <Text style={styles.footerLink}>Sign up</Text>
+            </Pressable>
           </View>
         </View>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.white} />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.forgotPassword}
-          onPress={() => router.push('/forgot-password')}
-        >
-          <Text style={styles.forgotPasswordText}>Forgot password</Text>
-        </TouchableOpacity>
-
-        <View style={styles.dividerContainer}>
-          <View style={styles.divider} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.divider} />
-        </View>
-
-        <TouchableOpacity
-          style={styles.socialButton}
-          onPress={handleGoogleLogin}
-        >
-          <Text style={styles.socialButtonText}>Continue with Google</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.socialButton, styles.facebookButton]}
-          onPress={handleFacebookLogin}
-        >
-          <Text style={styles.socialButtonText}>Continue with Facebook</Text>
-        </TouchableOpacity>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account?</Text>
-          <TouchableOpacity onPress={() => router.push('/signup') }>
-            <Text style={styles.signUpText}>Sign up</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingHorizontal: SPACING.lg,
-  },
-  header: {
-    alignItems: 'center',
-    marginTop: SPACING.xxl * 2,
-    marginBottom: SPACING.xl,
-  },
-  logo: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: COLORS.primary,
+  flex: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: SPACING.lg },
+  header: { alignItems: 'center', marginBottom: SPACING.xl },
+  logoWrap: {
+    width: 64, height: 64, borderRadius: 20,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
     marginBottom: SPACING.md,
+    transform: [{ rotate: '-8deg' }],
   },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.secondaryText,
-    textAlign: 'center',
-    lineHeight: 24,
+  logo: { fontSize: 30, fontWeight: '800', color: COLORS.primaryDark, letterSpacing: -0.4 },
+  subtitle: { fontSize: 14, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 21, marginTop: SPACING.sm },
+  form: { width: '100%' },
+  forgot: { alignSelf: 'flex-end', marginBottom: SPACING.lg },
+  forgotText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: SPACING.lg },
+  divider: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: COLORS.divider },
+  dividerText: { color: COLORS.secondaryText, fontSize: 12, marginHorizontal: SPACING.md },
+  socialRow: { flexDirection: 'row', gap: SPACING.md },
+  socialBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    borderRadius: RADII.input, height: 50,
   },
-  form: {
-    width: '100%',
-  },
-  inputContainer: {
-    marginBottom: SPACING.lg,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    fontSize: 16,
-    backgroundColor: COLORS.white,
-  },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    backgroundColor: COLORS.white,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    fontSize: 16,
-  },
-  eyeButton: {
-    paddingHorizontal: SPACING.md,
-  },
-  eyeText: {
-    fontSize: 20,
-  },
-  button: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-    marginTop: SPACING.md,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  forgotPassword: {
-    alignItems: 'center',
-    marginTop: SPACING.md,
-  },
-  forgotPasswordText: {
-    color: COLORS.primary,
-    fontSize: 14,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: SPACING.xl,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.divider,
-  },
-  dividerText: {
-    color: COLORS.secondaryText,
-    marginHorizontal: SPACING.md,
-  },
-  socialButton: {
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: 8,
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  facebookButton: {
-    backgroundColor: '#4267B2',
-    borderColor: '#4267B2',
-  },
-  socialButtonText: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: SPACING.xl,
-  },
-  footerText: {
-    color: COLORS.secondaryText,
-    fontSize: 14,
-  },
-  signUpText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
-  },
+  gBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#4285F4', alignItems: 'center', justifyContent: 'center' },
+  gText: { color: COLORS.white, fontSize: 12, fontWeight: '800' },
+  fBadge: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center' },
+  fText: { color: COLORS.white, fontSize: 12, fontWeight: '800' },
+  socialText: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
+  footerText: { color: COLORS.secondaryText, fontSize: 14 },
+  footerLink: { color: COLORS.primary, fontWeight: '700', marginLeft: SPACING.xs, fontSize: 14 },
 });

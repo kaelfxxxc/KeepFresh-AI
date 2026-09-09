@@ -8,6 +8,7 @@ import { supabase } from '../../src/lib/supabase';
 import { COLORS, SPACING, RADII } from '../../src/theme';
 import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
+  Home, Store,
 } from 'lucide-react-native';
 import { AvatarCircle, ListRow, PillButton } from '../../src/components/ui';
 
@@ -81,6 +82,16 @@ export default function ProfileScreen() {
         </Pressable>
         <Text style={styles.name}>{profile?.full_name || 'Your Name'}</Text>
         <Text style={styles.email}>{profile?.email || ''}</Text>
+        <View style={styles.accountBadge}>
+          {profile?.account_type === 'establishment' ? (
+            <Store size={14} color={COLORS.primary} strokeWidth={2.2} />
+          ) : (
+            <Home size={14} color={COLORS.primary} strokeWidth={2.2} />
+          )}
+          <Text style={styles.accountBadgeText}>
+            {profile?.account_type === 'establishment' ? 'Food Establishment' : 'Household'}
+          </Text>
+        </View>
       </View>
 
       {/* Menu */}
@@ -119,6 +130,14 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm },
   email: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  accountBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: RADII.icon,
+    paddingVertical: 5, paddingHorizontal: 12,
+  },
+  accountBadgeText: { color: COLORS.primaryDark, fontSize: 13, fontWeight: '800' },
   block: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.lg },
   blockLabel: {
     fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,

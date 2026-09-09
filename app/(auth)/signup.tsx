@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, Alert, ScrollView, Pressable,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
@@ -14,7 +14,9 @@ import { Field, PillButton, AvatarCircle } from '../../src/components/ui';
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [accountType, setAccountType] = useState<'household' | 'establishment'>('household');
+  // Account type is chosen on the account-type screen (before the form).
+  const { type } = useLocalSearchParams<{ type?: string }>();
+  const accountType: 'household' | 'establishment' = type === 'establishment' ? 'establishment' : 'household';
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -81,32 +83,20 @@ export default function SignupScreen() {
           <Text style={styles.subtitle}>Join KeepFresh AI and start wasting less.</Text>
         </View>
 
-        {/* Account type - chosen here, shown read-only on Profile */}
-        <Text style={styles.typeLabel}>What best describes you?</Text>
-        <View style={styles.typeRow}>
-          {([
-            { value: 'household', icon: Home, title: 'Household', desc: 'For my home kitchen' },
-            { value: 'establishment', icon: Store, title: 'Food Establishment', desc: 'For a restaurant or business' },
-          ] as const).map((opt) => {
-            const active = accountType === opt.value;
-            const Icon = opt.icon;
-            return (
-              <Pressable
-                key={opt.value}
-                onPress={() => setAccountType(opt.value)}
-                style={[styles.typeCard, active ? styles.typeCardActive : styles.typeCardInactive]}
-              >
-                <View style={[styles.typeIcon, active ? styles.typeIconActive : styles.typeIconInactive]}>
-                  <Icon size={20} color={active ? COLORS.white : COLORS.primary} strokeWidth={2} />
-                </View>
-                <Text style={[styles.typeTitle, active ? styles.typeTitleActive : styles.typeTitleInactive]}>
-                  {opt.title}
-                </Text>
-                <Text style={styles.typeDesc}>{opt.desc}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {/* Account type - chosen on the previous step, read-only here */}
+        <Pressable style={styles.typeChip} onPress={() => router.replace('/account-type')}>
+          <View style={styles.typeChipIcon}>
+            {accountType === 'establishment' ? (
+              <Store size={15} color={COLORS.primary} strokeWidth={2} />
+            ) : (
+              <Home size={15} color={COLORS.primary} strokeWidth={2} />
+            )}
+          </View>
+          <Text style={styles.typeChipText}>
+            {accountType === 'establishment' ? 'Food Establishment' : 'Household'}
+          </Text>
+          <Text style={styles.typeChipEdit}>Change</Text>
+        </Pressable>
 
         <View style={styles.form}>
           <View style={styles.avatarWrap}>
@@ -174,27 +164,18 @@ const styles = StyleSheet.create({
   header: { marginTop: SPACING.xl, marginBottom: SPACING.lg },
   logo: { fontSize: 28, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 14, color: COLORS.secondaryText, marginTop: SPACING.xs },
-  typeLabel: {
-    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm,
+  typeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.xs,
+    alignSelf: 'flex-start', marginBottom: SPACING.lg,
+    backgroundColor: COLORS.primaryLight, borderRadius: RADII.icon,
+    paddingVertical: 8, paddingHorizontal: 12,
   },
-  typeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
-  typeCard: {
-    flex: 1, borderRadius: RADII.card, padding: SPACING.md,
-    alignItems: 'center', gap: 4, borderWidth: 1.5,
+  typeChipIcon: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center',
   },
-  typeCardActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  typeCardInactive: { backgroundColor: COLORS.white, borderColor: COLORS.divider },
-  typeIcon: {
-    width: 38, height: 38, borderRadius: RADII.icon,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
-  },
-  typeIconActive: { backgroundColor: COLORS.primary },
-  typeIconInactive: { backgroundColor: COLORS.primaryLight },
-  typeTitle: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  typeTitleActive: { color: COLORS.primaryDark },
-  typeTitleInactive: { color: COLORS.text },
-  typeDesc: { fontSize: 11, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 15 },
+  typeChipText: { color: COLORS.primaryDark, fontSize: 13, fontWeight: '800' },
+  typeChipEdit: { color: COLORS.primary, fontSize: 12, fontWeight: '700', marginLeft: 4, textDecorationLine: 'underline' },
   form: { width: '100%' },
   avatarWrap: { alignItems: 'center', marginBottom: SPACING.lg, position: 'relative' },
   camBadge: {

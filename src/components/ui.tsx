@@ -14,9 +14,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react-native';
+import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 
-type IconComp = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral';
 
 const toneMap: Record<Tone, { bg: string; fg: string }> = {

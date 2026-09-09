@@ -9,7 +9,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
-import { Search, Plus, SlidersHorizontal, Package } from 'lucide-react-native';
+import { Search, Plus, SlidersHorizontal, Package, ScanLine } from 'lucide-react-native';
 import { Chip, StatusBadge, EmptyState } from '../../src/components/ui';
 
 type Filter = 'all' | 'available' | 'need_to_buy';
@@ -149,6 +149,9 @@ export default function InventoryScreen() {
           <Text style={styles.title}>My Inventory</Text>
           <Text style={styles.subtitle}>{items.length} item{items.length === 1 ? '' : 's'} tracked</Text>
         </View>
+        <Pressable style={styles.scanFab} onPress={() => router.push('/scan')}>
+          <ScanLine size={20} color={COLORS.primary} strokeWidth={2.3} />
+        </Pressable>
         <Pressable style={styles.addFab} onPress={() => router.push('/inventory/add')}>
           <Plus size={20} color={COLORS.white} strokeWidth={2.6} />
           <Text style={styles.addFabText}>Add Item</Text>
@@ -211,7 +214,7 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  header: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
   title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
   addFab: {
@@ -220,6 +223,11 @@ const styles = StyleSheet.create({
     borderRadius: RADII.pill,
   },
   addFabText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  scanFab: {
+    width: 46, height: 46, borderRadius: RADII.pill,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: COLORS.primary,
+  },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,

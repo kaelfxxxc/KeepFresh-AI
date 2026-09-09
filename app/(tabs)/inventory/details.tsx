@@ -1,187 +1,176 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, Alert, Pressable } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/context/AuthContext';
 import { supabase } from '../../../src/lib/supabase';
-import { InventoryItem, Consumption } from '../../../src/types';
+import { InventoryItem } from '../../../src/types';
 import { getExpirationStatus } from '../../../src/utils/expiration';
-import { COLORS, SPACING } from '../../../src/theme';
+import { COLORS, SPACING, RADII } from '../../../src/theme';
+import { CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote } from 'lucide-react-native';
+import { NavHeader, PillButton, StatusBadge, EmptyState } from '../../../src/components/ui';
 
-export default function InventoryDetailsScreen({ route }: { route: any }) {
+const emojiFor = (c?: string | null) =>
+  c === 'dairy' ? '🥛' : c === 'produce' ? '🥬' : c === 'meat' ? '🥩' : c === 'seafood' ? '🍤' : c === 'beverages' ? '🥤' : c === 'snacks' ? '🍪' : c === 'frozen' ? '🧊' : '📦';
+
+export default function InventoryDetailsScreen() {
+  const params = useLocalSearchParams<{ id: string }>();
+  const insets = useSafeAreaInsets();
   const { profile } = useAuth();
-  const itemId = route.params?.id;
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [consumedQuantity, setConsumedQuantity] = useState(0);
 
-  useEffect(() => {
-    if (!itemId || !profile) return;
-    
-    supabase
+  const fetchItem = useCallback(async () => {
+    if (!params.id) return;
+    const { data } = await supabase
       .from('inventory_items')
       .select('*')
-      .eq('id', itemId)
-      .single()
-      .then(({ data }) => setItem(data))
-      .then(() => setLoading(false));
-  }, [itemId, profile]);
+      .eq('id', params.id)
+      .single();
+    setItem(data);
+    setLoading(false);
+  }, [params.id]);
 
-  const handleConsume = async () => {
-    if (!item) return;
-    
-    Alert.prompt(
-      'Consume Item',
-      'How many consumed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Consume',
-          onPress: async (quantityStr) => {
-            const qty = parseFloat(quantityStr || '1');
-            if (qty > item.quantity) {
-              Alert.alert('Error', 'Consumed quantity cannot exceed available quantity');
-              return;
-            }
-            
-            const remaining = item.quantity - qty;
-            
-            await supabase.from('inventory_items')
-              .update({ 
-                quantity: remaining > 0 ? remaining : 0,
-                status: remaining <= 0 ? 'consumed' : 'available',
-              })
-              .eq('id', item.id);
-            
-            await supabase.from('inventory_consumption').insert({
-              user_id: profile?.id,
-              inventory_item_id: item.id,
-              quantity: qty,
-              unit: item.unit,
-            });
-            
-            setLoading(false);
-          },
+  useEffect(() => { if (profile) fetchItem(); }, [profile, fetchItem]);
+
+  const consume = () => {
+    if (!item || !profile) return;
+    Alert.prompt('Consume Item', 'How many did you use?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Consume',
+        onPress: async (quantityStr) => {
+          const qty = parseFloat(quantityStr || '1');
+          if (isNaN(qty) || qty <= 0) return;
+          if (qty > item.quantity) {
+            Alert.alert('Too many', `You only have ${item.quantity} ${item.unit} available.`);
+            return;
+          }
+          const remaining = item.quantity - qty;
+          await supabase.from('inventory_items')
+            .update({ quantity: remaining > 0 ? remaining : 0, status: remaining <= 0 ? 'consumed' : 'available' })
+            .eq('id', item.id);
+          await supabase.from('inventory_consumption').insert({
+            user_id: profile.id, inventory_item_id: item.id, quantity: qty, unit: item.unit,
+          });
+          fetchItem();
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const handleWaste = async () => {
-    if (!item) return;
-    
-    Alert.alert(
-      'Mark as Waste',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Mark as Waste',
-          onPress: async () => {
-            await supabase.from('food_waste').insert({
-              user_id: profile?.id,
-              inventory_item_id: item.id,
-              quantity: item.quantity,
-              unit: item.unit,
-              reason: 'User marked as waste',
-              estimated_value: item.price * item.quantity || 0,
-            });
-            
-            await supabase.from('inventory_items')
-              .update({ status: 'wasted' })
-              .eq('id', item.id);
-            
-            setLoading(false);
-          },
+  const markWaste = () => {
+    if (!item || !profile) return;
+    Alert.alert('Mark as Waste', `Record "${item.product_name}" as thrown away?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Mark as Waste', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('food_waste').insert({
+            user_id: profile.id, inventory_item_id: item.id,
+            quantity: item.quantity, unit: item.unit,
+            reason: 'User marked as waste',
+            estimated_value: item.price ? item.price * item.quantity : 0,
+          });
+          await supabase.from('inventory_items').update({ status: 'wasted' }).eq('id', item.id);
+          router.back();
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const handleDelete = async () => {
-    Alert.alert(
-      'Delete Item',
-      `Are you sure you want to remove "${item?.product_name || 'this item'}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.from('inventory_items').delete().eq('id', item.id);
-            setLoading(false);
-            router.back();
-          },
+  const remove = () => {
+    if (!item) return;
+    Alert.alert('Delete Item', `Remove "${item.product_name}" from your inventory?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('inventory_items').delete().eq('id', item.id);
+          router.back();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   if (loading || !item) {
     return (
-      <View style={styles.loading}>
-        <Text>Loading item details...</Text>
+      <View style={styles.container}>
+        <EmptyState title="Loading item…" />
       </View>
     );
   }
 
+  const exp = getExpirationStatus(item.expiration_date);
+  const expBadge = {
+    expired: { label: 'Expired', tone: 'danger' as const },
+    today: { label: 'Expires today', tone: 'danger' as const },
+    expiring_soon: { label: 'Expiring soon', tone: 'warning' as const },
+    safe: { label: 'Fresh', tone: 'success' as const },
+  }[exp];
+
+  const date = (s?: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not set');
+
+  const attr = (icon: any, label: string, value: string) => (
+    <View style={styles.attrRow}>
+      {icon}
+      <Text style={styles.attrLabel}>{label}</Text>
+      <Text style={styles.attrValue}>{value}</Text>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{item.product_name}</Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-          <Text style={styles.closeText}>✕</Text>
-        </TouchableOpacity>
-      </View>
+      <NavHeader title="Item Details" />
+      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 140 }}>
 
-      <View style={styles.imageSection}>
-        <Text style={styles.imagePlaceholder}>
-          {item.category === 'dairy' ? '🥛' : item.category === 'produce' ? '🥬' : item.category === 'meat' ? '🥩' : '📦'}
-        </Text>
-      </View>
+        <View style={styles.hero}>
+          <View style={styles.heroThumb}>
+            <Text style={{ fontSize: 44 }}>{emojiFor(item.category)}</Text>
+          </View>
+          <Text style={styles.name}>{item.product_name}</Text>
+          <StatusBadge label={item.status === 'available' ? expBadge.label : item.status === 'consumed' ? 'Consumed' : 'Wasted'} tone={item.status !== 'available' ? 'neutral' : expBadge.tone} />
+        </View>
 
-      <View style={styles.detailsSection}>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Brand</Text>
-          <Text style={styles.detailValue}>{item.brand || 'N/A'}</Text>
+        <View style={styles.card}>
+          {attr(<Tag size={16} color={COLORS.primary} strokeWidth={2} />, 'Brand', item.brand || '—')}
+          {attr(<Tag size={16} color={COLORS.primary} strokeWidth={2} />, 'Category', item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : '—')}
+          {attr(null, 'Quantity', `${item.quantity} ${item.unit}`)}
+          {attr(<CalendarDays size={16} color={COLORS.primary} strokeWidth={2} />, 'Expiration', date(item.expiration_date))}
+          {attr(<CalendarDays size={16} color={COLORS.primary} strokeWidth={2} />, 'Added', date(item.purchase_date))}
+          {attr(<Barcode size={16} color={COLORS.primary} strokeWidth={2} />, 'Barcode', item.barcode || '—')}
+          {attr(<StickyNote size={16} color={COLORS.primary} strokeWidth={2} />, 'Notes', item.notes || 'No notes')}
+          {attr(null, 'Price', item.price != null ? `₱${item.price.toFixed(2)}` : '—')}
         </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Category</Text>
-          <Text style={styles.detailValue}>{item.category || 'N/A'}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Quantity</Text>
-          <Text style={styles.detailValue}>{item.quantity} {item.unit}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Purchase Date</Text>
-          <Text style={styles.detailValue}>{item.purchase_date ? new Date(item.purchase_date).toLocaleDateString() : 'N/A'}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Expiration Date</Text>
-          <Text style={styles.detailValue}>
-            {item.expiration_date ? new Date(item.expiration_date).toLocaleDateString() : 'No date'}
-          </Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Barcode</Text>
-          <Text style={styles.detailValue}>{item.barcode || 'N/A'}</Text>
-        </View>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Notes</Text>
-          <Text style={styles.detailValue}>{item.notes || 'No notes'}</Text>
-        </View>
-      </View>
 
-      <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleConsume}>
-          <Text style={styles.actionButtonText}>
-            {item.quantity > 0 ? 'Mark as Consumed' : 'Consumed'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionButton, { backgroundColor: COLORS.danger }]} onPress={handleWaste}>
-          <Text style={styles.actionButtonText}>Mark as Waste</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={handleDelete}>
-          <Text style={styles.actionButtonText}>Delete Item</Text>
-        </TouchableOpacity>
+        {item.status === 'available' && (
+          <View style={styles.warningTip}>
+            <AlertTriangle size={15} color={COLORS.warningText} strokeWidth={2.2} />
+            <Text style={styles.warningTipText}>
+              {exp === 'expired' || exp === 'today'
+                ? 'This item is at risk — use it today or record it as waste.'
+                : exp === 'expiring_soon'
+                ? 'Use soon, or consider freezing or cooking it into a meal.'
+                : 'Looking fresh — no action needed right now.'}
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.md }]}>
+        {item.status === 'available' ? (
+          <>
+            <PillButton title="Mark as Waste" variant="dangerOutline" icon={Trash2} onPress={markWaste} style={{ flex: 1 }} />
+            <PillButton title="Use / Consume" icon={CheckCircle2} onPress={consume} style={{ flex: 1 }} />
+          </>
+        ) : (
+          <PillButton title="Delete Item" variant="danger" icon={Trash2} onPress={remove} />
+        )}
+        {item.status === 'available' && (
+          <Pressable onPress={remove} style={styles.deleteLink} hitSlop={8}>
+            <Text style={styles.deleteLinkText}>Delete</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -189,18 +178,27 @@ export default function InventoryDetailsScreen({ route }: { route: any }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.lg },
-  title: { fontSize: 20, fontWeight: 'bold', color: COLORS.text },
-  closeButton: { padding: SPACING.sm, color: COLORS.secondaryText },
-  closeText: { fontSize: 24 },
-  imageSection: { padding: SPACING.lg, alignItems: 'center' },
-  imagePlaceholder: { fontSize: 48 },
-  detailsSection: { paddingHorizontal: SPACING.lg },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', padding: SPACING.md, borderBottomColor: COLORS.divider, borderBottomWidth: 1 },
-  detailLabel: { fontSize: 13, color: COLORS.secondaryText },
-  detailValue: { fontSize: 14, color: COLORS.text, fontWeight: '500' },
-  actionButtons: { flexDirection: 'row', gap: SPACING.md, padding: SPACING.lg },
-  actionButton: { flex: 1, paddingVertical: SPACING.md, borderRadius: 8, alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider },
-  actionButtonText: { color: COLORS.primary, fontWeight: '600' },
+  hero: { alignItems: 'center', paddingVertical: SPACING.lg },
+  heroThumb: {
+    width: 108, height: 108, borderRadius: 30,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.md,
+  },
+  name: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.sm },
+  card: {
+    backgroundColor: COLORS.white, borderRadius: RADII.card,
+    paddingHorizontal: SPACING.lg, marginTop: SPACING.sm,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+  },
+  attrRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
+  attrLabel: { flex: 1, fontSize: 13, color: COLORS.secondaryText, marginLeft: 2 },
+  attrValue: { fontSize: 14, color: COLORS.text, fontWeight: '600', textAlign: 'right', flex: 1.4 },
+  warningTip: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: COLORS.warningBg, borderRadius: RADII.input, padding: SPACING.md, marginTop: SPACING.md },
+  warningTipText: { flex: 1, fontSize: 13, color: COLORS.warningText, lineHeight: 19 },
+  bottomBar: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+  },
+  deleteLink: { paddingHorizontal: SPACING.xs },
+  deleteLinkText: { color: COLORS.danger, fontSize: 13, fontWeight: '700' },
 });

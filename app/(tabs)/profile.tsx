@@ -10,7 +10,6 @@ import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
 } from 'lucide-react-native';
 import { AvatarCircle, ListRow, PillButton } from '../../src/components/ui';
-import type { Profile } from '../../src/types';
 
 const MENU: { label: string; icon: any; path: string; hint?: string }[] = [
   { label: 'Account Settings', icon: UserRound, path: '/settings/account', hint: 'Personal information' },
@@ -63,16 +62,10 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const setAccountType = async (account_type: Profile['account_type']) => {
-    if (!profile || profile.account_type === account_type) return;
-    const { error } = await updateProfile({ account_type });
-    if (error) Alert.alert('Could not update', error.message);
-  };
-
   return (
     <ScrollView
       style={[styles.container, { paddingTop: insets.top + 6 }]}
-      contentContainerStyle={{ paddingBottom: SPACING.xl }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
     >
       <Text style={styles.title}>Profile</Text>
 
@@ -88,33 +81,6 @@ export default function ProfileScreen() {
         </Pressable>
         <Text style={styles.name}>{profile?.full_name || 'Your Name'}</Text>
         <Text style={styles.email}>{profile?.email || ''}</Text>
-        <Text style={styles.accountPill}>
-          {profile?.account_type === 'household' ? 'Household Account' : 'Food Establishment'}
-        </Text>
-      </View>
-
-      {/* Account type selector */}
-      <View style={styles.block}>
-        <Text style={styles.blockLabel}>Account Type</Text>
-        <View style={styles.radioRow}>
-          {(['household', 'establishment'] as const).map((t) => {
-            const active = profile?.account_type === t;
-            return (
-              <Pressable
-                key={t}
-                style={[styles.radio, active ? styles.radioActive : styles.radioInactive]}
-                onPress={() => setAccountType(t)}
-              >
-                <Text style={[styles.radioText, active ? styles.radioTextActive : styles.radioTextInactive]}>
-                  {t === 'household' ? 'Household' : 'Food Establishment'}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text style={styles.blockHint}>
-          Switching changes how servings and shopping suggestions are tailored for you.
-        </Text>
       </View>
 
       {/* Menu */}
@@ -153,27 +119,11 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm },
   email: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
-  accountPill: {
-    fontSize: 12, fontWeight: '700', color: COLORS.primary,
-    marginTop: SPACING.sm, paddingHorizontal: 14, paddingVertical: 5,
-    backgroundColor: COLORS.primaryLight, borderRadius: RADII.pill, overflow: 'hidden',
-  },
   block: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.lg },
   blockLabel: {
     fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
     textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm,
   },
-  radioRow: { flexDirection: 'row', gap: SPACING.sm },
-  radio: {
-    flex: 1, paddingVertical: 13, borderRadius: RADII.pill, alignItems: 'center',
-    borderWidth: 1.5,
-  },
-  radioActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  radioInactive: { backgroundColor: COLORS.white, borderColor: COLORS.divider },
-  radioText: { fontSize: 14, fontWeight: '700' },
-  radioTextActive: { color: COLORS.white },
-  radioTextInactive: { color: COLORS.secondaryText },
-  blockHint: { fontSize: 12, color: COLORS.secondaryText, marginTop: SPACING.sm, lineHeight: 17 },
   menuCard: {
     backgroundColor: COLORS.white, borderRadius: RADII.card,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs,

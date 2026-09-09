@@ -10,7 +10,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, accountType?: Profile['account_type']) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   signInWithFacebook: () => Promise<{ error: Error | null }>;
@@ -87,18 +87,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, accountType: Profile['account_type'] = 'household') => {
     try {
-      const { data, error } = await supabase.auth.signUp({ 
-        email, 
+      const { data, error } = await supabase.auth.signUp({
+        email,
         password,
         options: {
           data: { full_name: fullName }
         }
       });
-      
+
       if (error) return { error };
-      
+
       if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
@@ -106,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: data.user.id,
             email: email,
             full_name: fullName,
-            account_type: 'household',
+            account_type: accountType,
           });
         
         if (profileError) return { error: profileError };
@@ -121,6 +121,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
       setProfile(null);
     } catch (error) {
       console.error('Sign out error:', error);

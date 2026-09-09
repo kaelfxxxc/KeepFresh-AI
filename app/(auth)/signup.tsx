@@ -7,13 +7,14 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, SPACING } from '../../src/theme';
-import { UserRound, Mail, Lock, Camera, Check } from 'lucide-react-native';
+import { COLORS, SPACING, RADII } from '../../src/theme';
+import { UserRound, Mail, Lock, Camera, Check, Home, Store } from 'lucide-react-native';
 import { Field, PillButton, AvatarCircle } from '../../src/components/ui';
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [accountType, setAccountType] = useState<'household' | 'establishment'>('household');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,7 +52,7 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
-    const { error } = await signUp(email.trim(), password, fullName.trim());
+    const { error } = await signUp(email.trim(), password, fullName.trim(), accountType);
     setLoading(false);
     if (error) {
       Alert.alert('Sign up failed', error.message);
@@ -74,6 +75,33 @@ export default function SignupScreen() {
         <View style={styles.header}>
           <Text style={styles.logo}>Create account</Text>
           <Text style={styles.subtitle}>Join KeepFresh AI and start wasting less.</Text>
+        </View>
+
+        {/* Account type - chosen here, shown read-only on Profile */}
+        <Text style={styles.typeLabel}>What best describes you?</Text>
+        <View style={styles.typeRow}>
+          {([
+            { value: 'household', icon: Home, title: 'Household', desc: 'For my home kitchen' },
+            { value: 'establishment', icon: Store, title: 'Food Establishment', desc: 'For a restaurant or business' },
+          ] as const).map((opt) => {
+            const active = accountType === opt.value;
+            const Icon = opt.icon;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => setAccountType(opt.value)}
+                style={[styles.typeCard, active ? styles.typeCardActive : styles.typeCardInactive]}
+              >
+                <View style={[styles.typeIcon, active ? styles.typeIconActive : styles.typeIconInactive]}>
+                  <Icon size={20} color={active ? COLORS.white : COLORS.primary} strokeWidth={2} />
+                </View>
+                <Text style={[styles.typeTitle, active ? styles.typeTitleActive : styles.typeTitleInactive]}>
+                  {opt.title}
+                </Text>
+                <Text style={styles.typeDesc}>{opt.desc}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <View style={styles.form}>
@@ -142,6 +170,27 @@ const styles = StyleSheet.create({
   header: { marginTop: SPACING.xl, marginBottom: SPACING.lg },
   logo: { fontSize: 28, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 14, color: COLORS.secondaryText, marginTop: SPACING.xs },
+  typeLabel: {
+    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm,
+  },
+  typeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
+  typeCard: {
+    flex: 1, borderRadius: RADII.card, padding: SPACING.md,
+    alignItems: 'center', gap: 4, borderWidth: 1.5,
+  },
+  typeCardActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
+  typeCardInactive: { backgroundColor: COLORS.white, borderColor: COLORS.divider },
+  typeIcon: {
+    width: 38, height: 38, borderRadius: RADII.icon,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
+  },
+  typeIconActive: { backgroundColor: COLORS.primary },
+  typeIconInactive: { backgroundColor: COLORS.primaryLight },
+  typeTitle: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  typeTitleActive: { color: COLORS.primaryDark },
+  typeTitleInactive: { color: COLORS.text },
+  typeDesc: { fontSize: 11, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 15 },
   form: { width: '100%' },
   avatarWrap: { alignItems: 'center', marginBottom: SPACING.lg, position: 'relative' },
   camBadge: {

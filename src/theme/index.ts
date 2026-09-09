@@ -1,37 +1,28 @@
-export const COLORS = {
-  primary: '#168A45',
-  primaryDark: '#0D6B36',
-  primaryLight: '#EAF7EE',
-  background: '#F8FBF8',
-  white: '#FFFFFF',
-  text: '#17231B',
-  secondaryText: '#6E786F',
-  warning: '#F4B740',
-  danger: '#E55353',
-  success: '#4ADE80',
-  surface: '#FFFFFF',
-  divider: '#E2E8E2',
-  disabled: '#D1D9D1',
-};
+import { COLORS, RADII, SHADOW } from './colors';
+import { SPACING } from './spacing';
+
+export { COLORS, RADII, SHADOW, SPACING };
 
 export const SIZES = {
   base: 8,
   font: 14,
-  radius: 12,
-  padding: 16,
-  margin: 12,
+  radius: RADII.card,
+  padding: SPACING.md,
+  margin: SPACING.sm,
   header: 24,
   icon: 20,
   borderWidth: 1,
 };
 
+// System fonts render as SF Pro on iOS and Roboto on Android; both are the
+// rounded, modern sans-serifs the design calls for without bundling font files.
 export const FONTS = {
   regular: 'System',
   medium: 'System',
   bold: 'System',
-  display1: { fontFamily: 'System', fontSize: 32, fontWeight: 'bold' },
-  display2: { fontFamily: 'System', fontSize: 24, fontWeight: 'bold' },
-  display3: { fontFamily: 'System', fontSize: 20, fontWeight: 'bold' },
+  display1: { fontFamily: 'System', fontSize: 32, fontWeight: '800' },
+  display2: { fontFamily: 'System', fontSize: 26, fontWeight: '800' },
+  display3: { fontFamily: 'System', fontSize: 21, fontWeight: '700' },
   headline1: { fontFamily: 'System', fontSize: 18, fontWeight: '700' },
   headline2: { fontFamily: 'System', fontSize: 16, fontWeight: '700' },
   title1: { fontFamily: 'System', fontSize: 16, fontWeight: '600' },
@@ -42,13 +33,4 @@ export const FONTS = {
   button: { fontFamily: 'System', fontSize: 16, fontWeight: '600' },
 };
 
-export const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-};
-
-export default { COLORS, SIZES, FONTS, SPACING };
+export default { COLORS, RADII, SHADOW, SIZES, FONTS, SPACING };

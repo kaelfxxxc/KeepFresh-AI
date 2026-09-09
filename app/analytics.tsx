@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
-import { useAuth } from '../../src/context/AuthContext';
-import { supabase } from '../../src/lib/supabase';
-import { COLORS, SPACING } from '../../src/theme';
-import { calculateFoodWaste, calculateFoodConsumption, calculateEstimatedSavings } from '../../src/utils/calculations';
-import { AnalyticsCard } from '../../src/components/AnalyticsCard';
+import { useAuth } from '../src/context/AuthContext';
+import { supabase } from '../src/lib/supabase';
+import { COLORS, SPACING } from '../src/theme';
+import { calculateFoodWaste, calculateFoodConsumption, calculateEstimatedSavings } from '../src/utils/calculations';
+import { AnalyticsCard } from '../src/components/AnalyticsCard';
 
 export default function AnalyticsScreen() {
   const { profile } = useAuth();

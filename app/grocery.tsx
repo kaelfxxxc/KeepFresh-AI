@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, Modal, Alert, TextInput } from 'react-native';
-import { useAuth } from '../../src/context/AuthContext';
-import { supabase } from '../../src/lib/supabase';
-import { COLORS, SPACING, FONTS } from '../../src/theme';
-import { GroceryList, GroceryItem } from '../../src/types';
-import { calculateBudget } from '../../src/utils/calculations';
+import { useAuth } from '../src/context/AuthContext';
+import { supabase } from '../src/lib/supabase';
+import { COLORS, SPACING, FONTS } from '../src/theme';
+import { GroceryList, GroceryItem } from '../src/types';
+import { calculateBudget } from '../src/utils/calculations';
 
 export default function GroceryListScreen() {
   const { profile } = useAuth();

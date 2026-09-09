@@ -1,17 +1,33 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl } from 'react-native';
+import {
+  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
+} from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, SPACING, FONTS } from '../../src/theme';
+import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
+import { Search, Plus, SlidersHorizontal, Package } from 'lucide-react-native';
+import { Chip, StatusBadge, EmptyState } from '../../src/components/ui';
+
+type Filter = 'all' | 'available' | 'need_to_buy';
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'available', label: 'Available' },
+  { key: 'need_to_buy', label: 'Need to Buy' },
+];
+
+const categoryEmoji = (c?: string | null) =>
+  c === 'dairy' ? '🥛' : c === 'produce' ? '🥬' : c === 'meat' ? '🥩' : c === 'seafood' ? '🍤' : c === 'beverages' ? '🥤' : c === 'snacks' ? '🍪' : c === 'frozen' ? '🧊' : '📦';
 
 export default function InventoryScreen() {
   const { profile } = useAuth();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'available' | 'need_to_buy'>('all');
+  const [filter, setFilter] = useState<Filter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -23,7 +39,6 @@ export default function InventoryScreen() {
         .select('*')
         .eq('user_id', profile.id)
         .order('created_at', { ascending: false });
-      
       if (data) setItems(data);
     } catch (error) {
       console.error('Error fetching inventory:', error);
@@ -33,179 +48,161 @@ export default function InventoryScreen() {
     }
   }, [profile]);
 
-  useEffect(() => {
-    fetchInventory();
-  }, [fetchInventory]);
+  useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchInventory();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchInventory(); };
 
   const handleDelete = (item: InventoryItem) => {
-    Alert.alert(
-      'Delete Item',
-      `Are you sure you want to remove "${item.product_name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.from('inventory_items').delete().eq('id', item.id);
-            fetchInventory();
-          },
+    Alert.alert('Delete Item', `Are you sure you want to remove "${item.product_name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          await supabase.from('inventory_items').delete().eq('id', item.id);
+          fetchInventory();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleConsume = (item: InventoryItem) => {
-    Alert.prompt(
-      'Consume Item',
-      'How many consumed?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Consume',
-          onPress: async (quantityStr) => {
-            const qty = parseFloat(quantityStr || '1');
-            const remaining = item.quantity - qty;
-            
-            if (remaining <= 0) {
-              await supabase.from('inventory_items').update({ status: 'consumed' }).eq('id', item.id);
-              await supabase.from('inventory_consumption').insert({
-                user_id: profile?.id,
-                inventory_item_id: item.id,
-                quantity: qty,
-                unit: item.unit,
-              });
-            } else {
-              await supabase.from('inventory_items').update({ quantity: remaining }).eq('id', item.id);
-              await supabase.from('inventory_consumption').insert({
-                user_id: profile?.id,
-                inventory_item_id: item.id,
-                quantity: qty,
-                unit: item.unit,
-              });
-            }
-            fetchInventory();
-          },
+    Alert.prompt('Consume Item', 'How many consumed?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Consume',
+        onPress: async (quantityStr) => {
+          const qty = parseFloat(quantityStr || '1');
+          const remaining = item.quantity - qty;
+          const base = { user_id: profile?.id, inventory_item_id: item.id, quantity: qty, unit: item.unit };
+          if (remaining <= 0) {
+            await supabase.from('inventory_items').update({ status: 'consumed' }).eq('id', item.id);
+            await supabase.from('inventory_consumption').insert(base);
+          } else {
+            await supabase.from('inventory_items').update({ quantity: remaining }).eq('id', item.id);
+            await supabase.from('inventory_consumption').insert(base);
+          }
+          fetchInventory();
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.product_name.toLowerCase().includes(search.toLowerCase()) ||
-      (item.brand || '').toLowerCase().includes(search.toLowerCase()) ||
-      (item.category || '').toLowerCase().includes(search.toLowerCase());
-    
+  const filteredItems = items.filter((item) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = !q ||
+      item.product_name.toLowerCase().includes(q) ||
+      (item.brand || '').toLowerCase().includes(q) ||
+      (item.category || '').toLowerCase().includes(q);
     if (filter === 'available') return matchesSearch && item.status === 'available';
     if (filter === 'need_to_buy') return matchesSearch && (item.status === 'consumed' || item.status === 'wasted');
     return matchesSearch;
   });
 
+  const statusOf = (item: InventoryItem) => {
+    if (item.status === 'consumed') return { label: 'Consumed', tone: 'neutral' as const };
+    if (item.status === 'wasted') return { label: 'Wasted', tone: 'danger' as const };
+    const exp = getExpirationStatus(item.expiration_date);
+    if (exp === 'expired') return { label: 'Expired', tone: 'danger' as const };
+    if (exp === 'today') return { label: 'Today', tone: 'danger' as const };
+    if (exp === 'expiring_soon') return { label: 'Expiring Soon', tone: 'warning' as const };
+    return { label: 'Available', tone: 'success' as const };
+  };
+
   const renderItem = ({ item }: { item: InventoryItem }) => {
-    const expirationStatus = getExpirationStatus(item.expiration_date);
-    
+    const badge = statusOf(item);
     return (
-      <TouchableOpacity
-        style={styles.itemCard}
-        onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}
-      >
-        <View style={styles.itemImage}>
-          <Text style={styles.itemImagePlaceholder}>
-            {item.category === 'dairy' ? '🥛' : item.category === 'produce' ? '🥬' : item.category === 'meat' ? '🥩' : '📦'}
-          </Text>
-          {expirationStatus === 'expired' && (
-            <View style={styles.statusBadgeExpired}>
-              <Text style={styles.statusBadgeText}>Expired</Text>
-            </View>
-          )}
-          {expirationStatus === 'today' && (
-            <View style={styles.statusBadgeToday}>
-              <Text style={styles.statusBadgeText}>Today</Text>
-            </View>
-          )}
-          {expirationStatus === 'expiring_soon' && (
-            <View style={styles.statusBadgeSoon}>
-              <Text style={styles.statusBadgeText}>Expiring Soon</Text>
-            </View>
-          )}
+      <View style={styles.rowCard}>
+        <Pressable style={styles.rowMain} onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}>
+          <View style={styles.thumb}>
+            <Text style={{ fontSize: 22 }}>{categoryEmoji(item.category)}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
+            <Text style={styles.itemMeta} numberOfLines={1}>
+              {item.quantity} {item.unit}
+              {item.brand ? ` · ${item.brand}` : ''}
+            </Text>
+            <Text style={styles.itemExpiry}>
+              {item.expiration_date
+                ? `Expires ${new Date(item.expiration_date).toLocaleDateString()}`
+                : 'No expiration date'}
+            </Text>
+          </View>
+          <StatusBadge label={badge.label} tone={badge.tone} />
+        </Pressable>
+        <View style={styles.rowActions}>
+          <Pressable style={styles.rowAction} onPress={() => handleConsume(item)}>
+            <Text style={styles.rowActionText}>✓ Use</Text>
+          </Pressable>
+          <Pressable style={styles.rowAction} onPress={() => handleDelete(item)}>
+            <Text style={[styles.rowActionText, { color: COLORS.danger }]}>Delete</Text>
+          </Pressable>
         </View>
-        <View style={styles.itemInfo}>
-          <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
-          <Text style={styles.itemDetails}>{item.quantity} {item.unit}</Text>
-          <Text style={styles.itemExpiry}>
-            {item.expiration_date ? `Expires ${new Date(item.expiration_date).toLocaleDateString()}` : 'No expiration date'}
-          </Text>
-        </View>
-        <View style={styles.itemActions}>
-          <TouchableOpacity onPress={() => handleConsume(item)}>
-            <Text style={styles.consumeButton}>✓</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDelete(item)}>
-            <Text style={styles.deleteButton}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loading}>
-        <Text>Loading inventory...</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Inventory</Text>
-        <TouchableOpacity onPress={() => router.push('/inventory/add')}>
-          <Text style={styles.addButton}>+ Add</Text>
-        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>My Inventory</Text>
+          <Text style={styles.subtitle}>{items.length} item{items.length === 1 ? '' : 's'} tracked</Text>
+        </View>
+        <Pressable style={styles.addFab} onPress={() => router.push('/inventory/add')}>
+          <Plus size={20} color={COLORS.white} strokeWidth={2.6} />
+          <Text style={styles.addFabText}>Add Item</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.searchBar}>
-        <TextInput
-          style={styles.searchInput}
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Search food or category"
-        />
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Search size={18} color={COLORS.secondaryText} strokeWidth={2} />
+          <TextInput
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search food, brand or category"
+            placeholderTextColor={COLORS.secondaryText}
+            returnKeyType="search"
+          />
+        </View>
+        <Pressable style={styles.filterBtn} onPress={() => setFilter(filter === 'all' ? 'available' : 'all')}>
+          <SlidersHorizontal size={18} color={COLORS.primary} strokeWidth={2} />
+        </Pressable>
       </View>
 
-      <View style={styles.filterTabs}>
-        {(['all', 'available', 'need_to_buy'] as const).map(f => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterTab, filter === f && styles.filterTabActive]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={[styles.filterTabText, filter === f && styles.filterTabTextActive]}>
-              {f === 'need_to_buy' ? 'Need to Buy' : f.charAt(0).toUpperCase() + f.slice(1)}
-            </Text>
-          </TouchableOpacity>
+      <View style={styles.chipRow}>
+        {FILTERS.map((f) => (
+          <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => setFilter(f.key)} />
         ))}
       </View>
 
       <FlatList
         data={filteredItems}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📭</Text>
-            <Text style={styles.emptyText}>Your inventory is empty</Text>
-            <TouchableOpacity style={styles.emptyButton} onPress={() => router.push('/inventory/add')}>
-              <Text style={styles.emptyButtonText}>Add your first item</Text>
-            </TouchableOpacity>
-          </View>
+          !loading ? (
+            search || filter !== 'all' ? (
+              <EmptyState
+                icon={Search}
+                title="No matching items"
+                hint="Try a different search or filter."
+              />
+            ) : (
+              <EmptyState
+                icon={Package}
+                title="Your inventory is empty"
+                hint="Scan a product or add items manually to start tracking freshness."
+                actionLabel="Add your first item"
+                onAction={() => router.push('/inventory/add')}
+              />
+            )
+          ) : null
         }
       />
     </View>
@@ -214,34 +211,43 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: SPACING.lg },
-  title: { fontSize: 24, fontWeight: 'bold', color: COLORS.text },
-  addButton: { fontSize: 16, color: COLORS.primary, fontWeight: '600' },
-  searchBar: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
-  searchInput: { backgroundColor: COLORS.white, borderRadius: 10, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, borderWidth: 1, borderColor: COLORS.divider },
-  filterTabs: { flexDirection: 'row', paddingHorizontal: SPACING.lg, gap: SPACING.sm, marginBottom: SPACING.md },
-  filterTab: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs, borderRadius: 20, backgroundColor: COLORS.white },
-  filterTabActive: { backgroundColor: COLORS.primaryLight },
-  filterTabText: { fontSize: 13, color: COLORS.secondaryText },
-  filterTabTextActive: { color: COLORS.primary, fontWeight: '600' },
-  itemCard: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 12, padding: SPACING.md, marginHorizontal: SPACING.lg, marginBottom: SPACING.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  itemImage: { width: 50, height: 50, borderRadius: 8, backgroundColor: COLORS.primaryLight, justifyContent: 'center', alignItems: 'center', position: 'relative' },
-  itemImagePlaceholder: { fontSize: 24 },
-  statusBadgeExpired: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.danger, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 8 },
-  statusBadgeToday: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.warning, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 8 },
-  statusBadgeSoon: { position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.primary, paddingHorizontal: 4, paddingVertical: 1, borderRadius: 8 },
-  statusBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '600' },
-  itemInfo: { flex: 1, marginLeft: SPACING.md, justifyContent: 'center' },
-  itemName: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  itemDetails: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
+  subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  addFab: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.primary, paddingHorizontal: SPACING.md, paddingVertical: 10,
+    borderRadius: RADII.pill,
+  },
+  addFabText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
+  searchBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.white, borderRadius: RADII.input,
+    borderWidth: 1, borderColor: COLORS.divider, paddingHorizontal: 14, height: 46,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
+  filterBtn: {
+    width: 46, height: 46, borderRadius: RADII.input,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  chipRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
+  rowCard: {
+    backgroundColor: COLORS.white, borderRadius: RADII.card,
+    padding: SPACING.md, ...SHADOW.card,
+  },
+  rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  thumb: {
+    width: 52, height: 52, borderRadius: RADII.image,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  itemName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
   itemExpiry: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
-  itemActions: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'center' },
-  consumeButton: { fontSize: 18, color: COLORS.success, padding: SPACING.xs },
-  deleteButton: { fontSize: 18, color: COLORS.danger, padding: SPACING.xs },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
-  emptyIcon: { fontSize: 48, marginBottom: SPACING.md },
-  emptyText: { fontSize: 16, color: COLORS.secondaryText, marginBottom: SPACING.md },
-  emptyButton: { paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, backgroundColor: COLORS.primary, borderRadius: 8 },
-  emptyButtonText: { color: COLORS.white, fontWeight: '600' },
+  rowActions: {
+    flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md,
+    marginTop: SPACING.sm, paddingTop: SPACING.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+  },
+  rowAction: { paddingHorizontal: 4 },
+  rowActionText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 });

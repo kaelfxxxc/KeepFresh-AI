@@ -63,14 +63,12 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 3. **Set up Supabase database:**
    - Go to Supabase Dashboard → SQL Editor
-   - Run the migration file: `supabase/migrations/keepfreshdb.sql`
-   - This creates all tables, RLS policies, functions, and seed data
-
-4. **Configure Supabase Storage:**
-   - Go to Storage → Create buckets:
-     - `avatars` (private)
-     - `inventory-images` (private)
-     - `recipe-images` (public)
+   - Run the schema file first: `supabase/migrations/keepfreshdb.sql`
+   - Then load real data: `supabase/migrations/seed.sql`
+   - This creates all tables, RLS policies, functions, storage buckets, 14 seed
+     recipes, and a demo household. Log in with `demo@keepfresh.app` /
+     `KeepFresh123!`. Full walkthrough + serverless backend setup:
+     [supabase/README.md](supabase/README.md)
 
 5. **Configure Authentication:**
    - Go to Authentication → Providers
@@ -179,9 +177,11 @@ keepfresh-ai/
 │   ├── utils/              # Utility functions
 │   └── theme/              # Design system
 ├── supabase/
-│   ├── migrations/         # SQL migrations
-│   ├── functions/          # Edge functions
-│   └── seed.sql
+│   ├── migrations/         # SQL: keepfreshdb.sql (schema) then seed.sql (data)
+│   ├── functions/          # Edge Functions (expiration-notifier, recipe-suggestions, weekly-summary)
+│   ├── schedule.sql        # pg_cron job for the daily expiration scan
+│   ├── README.md           # full setup walkthrough
+│   └── config.toml         # Supabase CLI / function JWT config
 ├── assets/                 # Static assets
 ├── .env.example
 ├── app.json

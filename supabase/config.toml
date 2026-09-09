@@ -1,0 +1,18 @@
+# Supabase configuration for KeepFresh AI.
+# Used by `supabase start` (local dev) and `supabase functions deploy`.
+#
+# Security note: functions triggered by the app (recipe-suggestions,
+# weekly-summary) require a signed-in user's access token. The scheduled
+# function (expiration-notifier) is invoked by pg_cron / a Supabase cron trigger
+# with the anon key, so it does NOT require a JWT.
+
+project_id = "keepfresh-ai"
+
+[functions.expiration-notifier]
+verify_jwt = false
+
+[functions.recipe-suggestions]
+verify_jwt = true
+
+[functions.weekly-summary]
+verify_jwt = true

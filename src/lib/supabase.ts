@@ -1,8 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+// Accept both the canonical name and the older _PROJECT_URL variant so a stale
+// .env can never silently hand createClient an undefined URL.
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_PROJECT_URL ||
+  '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -30,6 +35,10 @@ export type Database = {
       user_preferences: Omit<UserPreference, 'created_at' | 'updated_at'> & { created_at: string; updated_at: string };
     };
     Functions: {
+      consume_inventory_item: {
+        Args: { p_user_id: string; p_item_id: string; p_quantity?: number };
+        Returns: undefined;
+      };
       get_expiring_items: { Args: { user_id: string; days: number }; Returns: InventoryItem[] };
       calculate_food_waste: { Args: { user_id: string; start_date: string; end_date: string }; Returns: number };
       calculate_food_consumption: { Args: { user_id: string; start_date: string; end_date: string }; Returns: number };

@@ -1,5 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type {
+  Profile,
+  InventoryItem,
+  Consumption,
+  FoodWaste,
+  Recipe,
+  RecipeIngredient,
+  FavoriteRecipe,
+  GroceryList,
+  GroceryItem,
+  NotificationPreference,
+  NotificationLog,
+  UserPreference,
+} from '../types';
 
 // Accept both the canonical name and the older _PROJECT_URL variant so a stale
 // .env can never silently hand createClient an undefined URL.
@@ -14,7 +28,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInMount: true,
+    detectSessionInUrl: true,
   },
 });
 

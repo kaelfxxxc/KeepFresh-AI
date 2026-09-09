@@ -31,8 +31,7 @@ export default function PreferencesScreen() {
           (Object.keys(prefs) as string[]).forEach((k) => { if (data[k]) p[k] = data[k]; });
           setPrefs((cur) => ({ ...cur, ...p }));
         }
-      })
-      .catch(() => {});
+      }, () => {});
   }, [profile]);
 
   const choose = async (key: string, value: string) => {

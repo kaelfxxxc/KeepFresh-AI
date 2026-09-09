@@ -22,8 +22,10 @@ export default function AlertsScreen() {
 
   const startOf = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 
-  const daysUntil = (exp: string) =>
-    Math.round((startOf(new Date(exp)).getTime() - startOf(new Date()).getTime()) / (1000 * 60 * 60 * 24));
+  const daysUntil = (exp: string | null | undefined) => {
+    if (!exp) return 0;
+    return Math.round((startOf(new Date(exp)).getTime() - startOf(new Date()).getTime()) / (1000 * 60 * 60 * 24));
+  };
 
   const bucket = useCallback((): { today: InventoryItem[]; week: InventoryItem[]; month: InventoryItem[] } => {
     const today: InventoryItem[] = [];
@@ -84,7 +86,7 @@ export default function AlertsScreen() {
       d === 0 ? 'Expires today'
         : d === 1 ? 'Expires tomorrow'
         : d < 0 ? `Expired ${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} ago`
-        : `Expires in ${d} days · ${new Date(item.expiration_date).toLocaleDateString()}`;
+        : `Expires in ${d} days · ${item.expiration_date ? new Date(item.expiration_date).toLocaleDateString() : ''}`;
 
     return (
       <Pressable

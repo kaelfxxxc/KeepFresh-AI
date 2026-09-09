@@ -61,7 +61,8 @@ export const recipeService = {
       .select('recipe:recipes(*)')
       .eq('user_id', userId);
     if (error) throw error;
-    return data?.map(d => d.recipe).filter(Boolean) as Recipe[] || [];
+    const rows: any[] = data || [];
+    return rows.map((d) => d.recipe) as Recipe[];
   },
 
   async getRecipeIngredients(recipeId: string): Promise<RecipeIngredient[]> {

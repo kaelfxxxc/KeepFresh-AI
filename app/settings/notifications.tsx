@@ -32,8 +32,7 @@ export default function NotificationSettingsScreen() {
           setGroceryNotifications(data.grocery_notifications);
           setWeeklySummary(data.weekly_summary);
         }
-      })
-      .catch(() => {});
+      }, () => {});
   }, [profile]);
 
   const handleSave = async () => {

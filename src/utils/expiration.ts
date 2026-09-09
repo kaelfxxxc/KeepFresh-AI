@@ -1,6 +1,6 @@
 import moment from 'moment-timezone';
 
-export const getExpirationStatus = (expirationDate: string): 'expired' | 'today' | 'expiring_soon' | 'safe' => {
+export const getExpirationStatus = (expirationDate: string | null | undefined): 'expired' | 'today' | 'expiring_soon' | 'safe' => {
   const now = moment.tz('Asia/Manila');
   const exp = moment(expirationDate);
   

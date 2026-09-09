@@ -8,7 +8,7 @@ import { useAuth } from '../src/context/AuthContext';
 import { supabase } from '../src/lib/supabase';
 import { COLORS, SPACING, RADII } from '../src/theme';
 import { GroceryList, GroceryItem } from '../src/types';
-import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, CirclePlus } from 'lucide-react-native';
+import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle } from 'lucide-react-native';
 import { NavHeader, EmptyState } from '../src/components/ui';
 
 const peso = (n: number) => `₱${n.toFixed(2)}`;
@@ -232,7 +232,7 @@ export default function GroceryListScreen() {
           returnKeyType="done"
         />
         <Pressable style={[styles.addBtn, !draft.trim() && { opacity: 0.5 }]} onPress={addItem} disabled={!draft.trim()}>
-          <CirclePlus size={22} color={COLORS.white} strokeWidth={2.2} />
+          <PlusCircle size={22} color={COLORS.white} strokeWidth={2.2} />
           <Text style={styles.addBtnText}>Add</Text>
         </Pressable>
       </View>

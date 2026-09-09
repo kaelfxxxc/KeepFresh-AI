@@ -16,7 +16,7 @@ export const groceryService = {
       .select('*')
       .eq('grocery_list_id', lists.id);
 
-    if (itemsError) return { list, items: [] };
+    if (itemsError) return { list: lists, items: [] };
 
     return { list: items.length > 0 ? { ...lists, name: `${lists.name} (${items.length} items)` } : lists, items };
   },

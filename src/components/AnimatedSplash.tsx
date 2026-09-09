@@ -26,7 +26,7 @@ const LOGO = require('../../assets/images/keepfresh-logo.png');
 const TAGLINE = 'Smarter Food Management.\nLess Waste, More Savings.';
 
 export default function AnimatedSplash() {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
 
   const glow = useRef(new Animated.Value(0)).current; // soft halo expansion
   const rise = useRef(new Animated.Value(0)).current; // mark entrance 0 -> 1
@@ -88,8 +88,9 @@ export default function AnimatedSplash() {
     return () => anim.stop();
   }, [glow, rise, pop, nameV, tagV]);
 
-  // Responsive sizing - hero image scales with the smaller screen dimension.
-  const hero = Math.max(120, Math.min(width * 0.56, height * 0.34, 300));
+  // Responsive sizing - logo is a fixed 100x100 on normal screens and only
+  // scales down (never up) on very small phones so it never crowds the name.
+  const hero = Math.max(80, Math.min(100, Math.round(width * 0.28)));
   const heroBox = hero * 2.4;
   const glowSize = hero * 1.8;
   const glowOffset = (heroBox - glowSize) / 2; // centers halo behind the image

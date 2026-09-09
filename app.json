@@ -44,6 +44,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/keepfresh-splash-logo.png",
+          "imageWidth": 100,
+          "resizeMode": "contain",
+          "backgroundColor": "#168A45"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow KeepFresh AI to access your camera to scan product barcodes"

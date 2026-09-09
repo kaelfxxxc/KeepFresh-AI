@@ -64,9 +64,9 @@ export default function LoginScreen() {
             ]}
           >
             <Image
-              source={require('../../assets/images/keepfresh-logo.png')}
+              source={require('../../assets/images/keepfresh-logo-only.png')}
               style={{ width: logoSize, height: logoSize, borderRadius: logoRadius }}
-              resizeMode="cover"
+              resizeMode="contain"
             />
           </View>
           <Text style={styles.logo}>KeepFresh AI</Text>

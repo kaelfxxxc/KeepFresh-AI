@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../src/context/AuthContext';
 import { supabase } from '../src/lib/supabase';
 import { COLORS, SPACING, RADII } from '../src/theme';
@@ -160,7 +159,7 @@ export default function AnalyticsScreen() {
             </View>
 
             {/* Savings */}
-            <View style={[styles.savingsCard, { paddingBottom: insets.bottom > 0 ? insets.bottom : SPACING.sm }]}>
+            <View style={styles.savingsCard}>
               <View style={styles.savingsIcon}><PiggyBank size={22} color={COLORS.primaryDark} strokeWidth={2.1} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.savingsAmount}>{peso(data.consumptionValue)}</Text>

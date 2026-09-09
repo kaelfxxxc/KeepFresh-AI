@@ -4,7 +4,7 @@
     "slug": "keepfresh-ai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/keepfresh-icon.png",
+    "icon": "./assets/icons/keepfresh-icon.png",
     "userInterfaceStyle": "light",
     "scheme": "keepfreshai",
     "splash": {
@@ -26,7 +26,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icons/keepfresh-icon.png",
         "backgroundColor": "#168A45"
       },
       "package": "com.keepfreshai.app",

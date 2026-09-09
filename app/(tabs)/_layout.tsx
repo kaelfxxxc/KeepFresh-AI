@@ -13,6 +13,10 @@ const TABS = [
   { name: 'profile', label: 'Profile', icon: User },
 ] as const;
 
+// Full-screen forms/pushed screens that live under the tabs directory (so they
+// share the auth/layout context) but must never appear as tab bar buttons.
+const NON_TAB_ROUTES = ['inventory/add', 'inventory/details'] as const;
+
 export default function TabLayout() {
   return (
     <Tabs
@@ -43,6 +47,9 @@ export default function TabLayout() {
             ),
           }}
         />
+      ))}
+      {NON_TAB_ROUTES.map((name) => (
+        <Tabs.Screen key={name} name={name} options={{ href: null }} />
       ))}
     </Tabs>
   );

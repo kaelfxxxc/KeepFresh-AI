@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Alert, ScrollView,
-  KeyboardAvoidingView, Platform,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,14 +42,13 @@ export default function ResetPasswordScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={styles.flex}>
       <ScrollView
         style={[styles.container, { paddingTop: insets.top }]}
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingBottom: insets.bottom + SPACING.lg }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         <View style={styles.iconWrap}>
           <Lock size={26} color={COLORS.primary} strokeWidth={2} />
@@ -87,7 +86,7 @@ export default function ResetPasswordScreen() {
           <PillButton title="Back to Login" onPress={() => router.replace('/login')} style={{ marginTop: SPACING.md }} />
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

@@ -10,7 +10,12 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string, accountType?: Profile['account_type']) => Promise<{ error: Error | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    accountType?: Profile['account_type']
+  ) => Promise<{ error: Error | null; requiresEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   signInWithFacebook: () => Promise<{ error: Error | null }>;
@@ -93,12 +98,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         password,
         options: {
-          data: { full_name: fullName }
+          // full_name + account_type ride along as user metadata so the DB
+          // trigger (handle_new_user) creates the profile row even when the
+          // project requires email confirmation (no session is returned yet).
+          data: { full_name: fullName, account_type: accountType }
         }
       });
 
       if (error) return { error };
 
+      // No session -> email confirmation required. The trigger already queued
+      // the profile row; do NOT write here (that call would run as anon and
+      // violate RLS). Surface a friendly "confirm your email" message instead.
+      if (!data.session) {
+        return { error: null, requiresEmailConfirmation: true };
+      }
+
+      // Session present -> profile row exists (trigger) or must be created.
+      // The upsert runs authenticated and only touches the caller's own row.
       if (data.user) {
         const { error: profileError } = await supabase
           .from('profiles')
@@ -108,10 +125,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             full_name: fullName,
             account_type: accountType,
           });
-        
+
         if (profileError) return { error: profileError };
       }
-      
+
       return { error: null };
     } catch (error) {
       return { error: error as Error };

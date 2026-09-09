@@ -33,7 +33,7 @@ function RootNavigator() {
     if (!user && !inAuthGroup) {
       router.replace('/login');
     } else if (user && onLoginOrSignup) {
-      router.replace('/(tabs)/index');
+      router.replace('/(tabs)');
     }
   }, [loading, user, inAuthGroup, onLoginOrSignup, router]);
 

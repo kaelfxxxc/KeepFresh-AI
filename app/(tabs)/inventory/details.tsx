@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, RefreshControl, Modal, TextInput } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { InventoryItem, Consumption } from '../../types';
-import { getExpirationStatus } from '../../utils/expiration';
-import { COLORS, SPACING } from '../../theme';
+import { useAuth } from '../../../src/context/AuthContext';
+import { supabase } from '../../../src/lib/supabase';
+import { InventoryItem, Consumption } from '../../../src/types';
+import { getExpirationStatus } from '../../../src/utils/expiration';
+import { COLORS, SPACING } from '../../../src/theme';
 
 export default function InventoryDetailsScreen({ route }: { route: any }) {
   const { profile } = useAuth();

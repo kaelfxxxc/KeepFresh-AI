@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { COLORS, SPACING } from '../../theme';
+import { useAuth } from '../../src/context/AuthContext';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function PreferencesScreen() {
   const { profile } = useAuth();

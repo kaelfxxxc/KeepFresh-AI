@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING } from '../../theme';
+import { useAuth } from '../../src/context/AuthContext';
+import { supabase } from '../../src/lib/supabase';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function NotificationSettingsScreen() {
   const { profile } = useAuth();

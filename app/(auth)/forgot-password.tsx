@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
-import { COLORS, SPACING } from '../theme';
+import { useAuth } from '../../src/context/AuthContext';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');

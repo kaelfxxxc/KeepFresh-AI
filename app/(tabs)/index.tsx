@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING, FONTS } from '../../theme';
-import { DashboardStats, InventoryItem } from '../../types';
+import { useAuth } from '../../src/context/AuthContext';
+import { supabase } from '../../src/lib/supabase';
+import { COLORS, SPACING, FONTS } from '../../src/theme';
+import { DashboardStats, InventoryItem } from '../../src/types';
 
 export default function HomeScreen() {
   const { profile, loading: authLoading } = useAuth();

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS, SPACING } from '../../theme';
+import { COLORS, SPACING } from '../theme';
 
 interface AnalyticsCardProps {
   data: { label: string; value: string | number; subtitle?: string; icon?: string };

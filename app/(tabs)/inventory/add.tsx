@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
-import { COLORS, SPACING, FONTS } from '../../theme';
+import { supabase } from '../../../src/lib/supabase';
+import { useAuth } from '../../../src/context/AuthContext';
+import { COLORS, SPACING, FONTS } from '../../../src/theme';
 
 const CATEGORIES = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen', 'Beverages', 'Snacks', 'Condiments', 'Other'];
 const UNITS = ['pcs', 'kg', 'g', 'lb', 'oz', 'L', 'ml', 'cups', 'pack', 'bottle', 'can', 'box'];

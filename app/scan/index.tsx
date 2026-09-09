@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } fr
 import { Camera, CameraType } from 'expo-camera';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING } from '../../theme';
+import { supabase } from '../../src/lib/supabase';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function ScanScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);

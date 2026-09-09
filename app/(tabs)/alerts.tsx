@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, Modal } from 'react-native';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
-import { COLORS, SPACING, FONTS } from '../../theme';
-import { InventoryItem } from '../../types';
-import { getExpirationStatus } from '../../utils/expiration';
+import { supabase } from '../../src/lib/supabase';
+import { useAuth } from '../../src/context/AuthContext';
+import { COLORS, SPACING, FONTS } from '../../src/theme';
+import { InventoryItem } from '../../src/types';
+import { getExpirationStatus } from '../../src/utils/expiration';
 
 export default function AlertsScreen() {
   const { profile } = useAuth();

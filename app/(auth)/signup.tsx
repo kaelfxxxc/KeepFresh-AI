@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../context/AuthContext';
-import { COLORS, FONTS, SPACING } from '../theme';
+import { useAuth } from '../../src/context/AuthContext';
+import { COLORS, FONTS, SPACING } from '../../src/theme';
 
 export default function SignupScreen() {
   const [fullName, setFullName] = useState('');

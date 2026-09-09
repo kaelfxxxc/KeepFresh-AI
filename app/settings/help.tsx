@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking } from 'react-native';
-import { COLORS, SPACING } from '../../theme';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function HelpScreen() {
   const faqs = [

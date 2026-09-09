@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { COLORS, SPACING } from '../../theme';
+import { supabase } from '../../src/lib/supabase';
+import { COLORS, SPACING } from '../../src/theme';
 
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../context/AuthContext';
-import { COLORS, SPACING } from '../../theme';
-import { Recipe } from '../../types';
+import { supabase } from '../../src/lib/supabase';
+import { useAuth } from '../../src/context/AuthContext';
+import { COLORS, SPACING } from '../../src/theme';
+import { Recipe } from '../../src/types';
 
 const RECIPE_CATEGORIES = ['All', 'Desserts', 'Meals', 'Snacks', 'Beverages'];
 

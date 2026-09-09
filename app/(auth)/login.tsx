@@ -1,22 +1,27 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Alert, ActivityIndicator, ScrollView,
-  Platform, Pressable,
+  Platform, Pressable, Image, useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII } from '../../src/theme';
-import { Leaf, Mail, Lock, ArrowRight } from 'lucide-react-native';
+import { Mail, Lock, ArrowRight } from 'lucide-react-native';
 import { Field, PillButton } from '../../src/components/ui';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn, signInWithGoogle, signInWithFacebook } = useAuth();
+
+  // Responsive logo: scales with the screen width, clamped for very large/small.
+  const logoSize = Math.max(72, Math.min(Math.round(width * 0.24), 120));
+  const logoRadius = Math.round(logoSize * 0.22); // rounded square, not sharp
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -46,8 +51,23 @@ export default function LoginScreen() {
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         <View style={styles.header}>
-          <View style={styles.logoWrap}>
-            <Leaf size={30} color={COLORS.white} strokeWidth={2.2} />
+          <View
+            style={[
+              styles.logoWrap,
+              {
+                width: logoSize,
+                height: logoSize,
+                borderRadius: logoRadius,
+                shadowRadius: logoSize * 0.08,
+                elevation: Math.min(5, logoSize * 0.04),
+              },
+            ]}
+          >
+            <Image
+              source={require('../../assets/images/keepfresh-logo.png')}
+              style={{ width: logoSize, height: logoSize, borderRadius: logoRadius }}
+              resizeMode="cover"
+            />
           </View>
           <Text style={styles.logo}>KeepFresh AI</Text>
           <Text style={styles.subtitle}>
@@ -124,10 +144,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: SPACING.lg },
   header: { alignItems: 'center', marginBottom: SPACING.xl },
   logoWrap: {
-    width: 64, height: 64, borderRadius: 20,
-    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: SPACING.md,
-    transform: [{ rotate: '-8deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.14,
   },
   logo: { fontSize: 30, fontWeight: '800', color: COLORS.primaryDark, letterSpacing: -0.4 },
   subtitle: { fontSize: 14, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 21, marginTop: SPACING.sm },

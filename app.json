@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "scheme": "keepfreshai",
     "splash": {
-      "image": "./assets/images/keepfresh-splash.png",
+      "image": "./assets/images/keepfresh-splash-logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#168A45"
     },

@@ -14,6 +14,9 @@ export default function ScanScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Tracks whether this screen currently has focus so the <Camera> is only
+  // mounted while visible (see useFocusEffect below).
+  const [isFocused, setIsFocused] = useState(false);
   // Height of the barcode frame (measured), used to sweep the scan line.
   const [frameH, setFrameH] = useState(0);
   const sweep = useRef(new Animated.Value(0)).current;
@@ -33,17 +36,25 @@ export default function ScanScreen() {
 
   // Re-arm the scanner whenever this screen regains focus (e.g. returning from
   // a finished add on /scan/product) so the next barcode can be scanned.
+  //
+  // We also mount the <Camera> only while this screen is focused: the legacy
+  // expo-camera preview can come back all-black on some devices when a screen
+  // pushed on top of the scanner (like /scan/product) is later popped, because
+  // the native preview surface is lost while the Camera stayed mounted. Tearing
+  // it down on blur and remounting fresh on focus avoids that entirely.
   useFocusEffect(
     useCallback(() => {
+      setIsFocused(true);
       setScanned(false);
       setLoading(false);
+      return () => setIsFocused(false);
     }, [])
   );
 
   // Sweep the scan line up and down the frame while the camera is actively
   // scanning; freeze it once a code is locked in or a lookup is running.
   useEffect(() => {
-    if (!(hasPermission && !scanned && !loading) || frameH <= LINE_H + SWEEP_PAD * 2) {
+    if (!(isFocused && hasPermission && !scanned && !loading) || frameH <= LINE_H + SWEEP_PAD * 2) {
       return undefined;
     }
     const loop = Animated.loop(
@@ -54,7 +65,7 @@ export default function ScanScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [hasPermission, scanned, loading, frameH, sweep]);
+  }, [isFocused, hasPermission, scanned, loading, frameH, sweep]);
 
   const openReview = (review: ReviewInfo, source: 'lookup' | 'inventory') => {
     router.push({
@@ -167,14 +178,18 @@ export default function ScanScreen() {
     }
     return (
       <View style={styles.cameraWrap}>
-        <Camera
-          style={styles.camera}
-          type={CameraType.back}
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-          barCodeScannerSettings={{
-            barCodeTypes: ['ean13', 'ean8', 'upc-a', 'upc-e', 'code39', 'code93', 'code128'],
-          }}
-        />
+        {/* Mounted only while this screen is focused: remounting on return
+            gives the camera a fresh preview instead of a black screen. */}
+        {isFocused && (
+          <Camera
+            style={styles.camera}
+            type={CameraType.back}
+            onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+            barCodeScannerSettings={{
+              barCodeTypes: ['ean13', 'ean8', 'upc-a', 'upc-e', 'code39', 'code93', 'code128'],
+            }}
+          />
+        )}
 
         <View
           style={styles.cornerFrame}

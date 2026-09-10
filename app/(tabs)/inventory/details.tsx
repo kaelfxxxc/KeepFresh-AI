@@ -8,10 +8,7 @@ import { InventoryItem } from '../../../src/types';
 import { getExpirationStatus } from '../../../src/utils/expiration';
 import { COLORS, SPACING, RADII } from '../../../src/theme';
 import { CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote } from 'lucide-react-native';
-import { NavHeader, PillButton, StatusBadge, EmptyState } from '../../../src/components/ui';
-
-const emojiFor = (c?: string | null) =>
-  c === 'dairy' ? '🥛' : c === 'produce' ? '🥬' : c === 'meat' ? '🥩' : c === 'seafood' ? '🍤' : c === 'beverages' ? '🥤' : c === 'snacks' ? '🍪' : c === 'frozen' ? '🧊' : '📦';
+import { NavHeader, PillButton, StatusBadge, EmptyState, ItemImage } from '../../../src/components/ui';
 
 export default function InventoryDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -125,9 +122,7 @@ export default function InventoryDetailsScreen() {
       <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 140 }}>
 
         <View style={styles.hero}>
-          <View style={styles.heroThumb}>
-            <Text style={{ fontSize: 44 }}>{emojiFor(item.category)}</Text>
-          </View>
+          <ItemImage uri={item.image_url} category={item.category} size={108} radius={30} style={{ marginBottom: SPACING.md }} />
           <Text style={styles.name}>{item.product_name}</Text>
           <StatusBadge label={item.status === 'available' ? expBadge.label : item.status === 'consumed' ? 'Consumed' : 'Wasted'} tone={item.status !== 'available' ? 'neutral' : expBadge.tone} />
         </View>
@@ -179,10 +174,6 @@ export default function InventoryDetailsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   hero: { alignItems: 'center', paddingVertical: SPACING.lg },
-  heroThumb: {
-    width: 108, height: 108, borderRadius: 30,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.md,
-  },
   name: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.sm },
   card: {
     backgroundColor: COLORS.white, borderRadius: RADII.card,

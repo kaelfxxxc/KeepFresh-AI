@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar, Animated, Easing } from 'react-native';
 import { Camera, CameraType } from 'expo-camera/legacy';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { COLORS, SPACING } from '../../src/theme';
+import { InventoryItem } from '../../src/types';
+import { lookupBarcode, toReviewProduct, ReviewInfo } from '../../src/services/barcodeService';
 import { ScanBarcode, Camera as CameraIcon, PenLine, X } from 'lucide-react-native';
 
 export default function ScanScreen() {
@@ -12,6 +14,15 @@ export default function ScanScreen() {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Height of the barcode frame (measured), used to sweep the scan line.
+  const [frameH, setFrameH] = useState(0);
+  const sweep = useRef(new Animated.Value(0)).current;
+
+  const maxTravel = Math.max(frameH - LINE_H - SWEEP_PAD * 2, 0);
+  const translateY = sweep.interpolate({
+    inputRange: [0, 1],
+    outputRange: [SWEEP_PAD, SWEEP_PAD + maxTravel],
+  });
 
   useEffect(() => {
     (async () => {
@@ -20,30 +31,110 @@ export default function ScanScreen() {
     })();
   }, []);
 
+  // Re-arm the scanner whenever this screen regains focus (e.g. returning from
+  // a finished add on /scan/product) so the next barcode can be scanned.
+  useFocusEffect(
+    useCallback(() => {
+      setScanned(false);
+      setLoading(false);
+    }, [])
+  );
+
+  // Sweep the scan line up and down the frame while the camera is actively
+  // scanning; freeze it once a code is locked in or a lookup is running.
+  useEffect(() => {
+    if (!(hasPermission && !scanned && !loading) || frameH <= LINE_H + SWEEP_PAD * 2) {
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sweep, { toValue: 1, duration: 2300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(sweep, { toValue: 0, duration: 2300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [hasPermission, scanned, loading, frameH, sweep]);
+
+  const openReview = (review: ReviewInfo, source: 'lookup' | 'inventory') => {
+    router.push({
+      pathname: '/scan/product',
+      params: { barcode: review.barcode, source, productData: JSON.stringify(review) },
+    });
+  };
+
+  // Reuse an existing inventory row's identity fields when the user picks
+  // "Add Another", but reset the per-instance fields (quantity, expiry, price).
+  const fromExisting = (existing: InventoryItem, barcode: string): ReviewInfo => ({
+    product_name: existing.product_name,
+    brand: existing.brand || '',
+    category: existing.category || 'other',
+    expiration_date: '',
+    quantity: 1,
+    unit: existing.unit || 'pcs',
+    barcode,
+    image_url: existing.image_url || '',
+    description: existing.notes || '',
+    ingredients: '',
+  });
+
+  const offerManualEntry = (barcode: string, message: string) => {
+    Alert.alert('Product Not Found', message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => setScanned(false) },
+      {
+        text: 'Enter Manually',
+        onPress: () => router.push({ pathname: '/inventory/add', params: { barcode } }),
+      },
+    ]);
+  };
+
+  const runLookup = async (barcode: string, fallback?: InventoryItem) => {
+    const result = await lookupBarcode(barcode);
+    if (result.status === 'found') {
+      openReview(toReviewProduct(result.product), 'lookup');
+    } else if (result.status === 'unavailable' && fallback) {
+      // Server unreachable / function not deployed yet — reuse what we know.
+      openReview(fromExisting(fallback, barcode), 'inventory');
+    } else if (result.status === 'unavailable') {
+      offerManualEntry(
+        barcode,
+        'We couldn’t reach the product database. Would you like to enter the information manually?'
+      );
+    } else {
+      offerManualEntry(
+        barcode,
+        'We couldn’t find this barcode in the product database. Would you like to enter the information manually?'
+      );
+    }
+  };
+
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     setScanned(true);
     setLoading(true);
     try {
-      const { data: productData } = await supabase
+      // Already in this user's inventory? Ask what to do rather than guessing.
+      const { data: existing } = await supabase
         .from('inventory_items')
         .select('*')
         .eq('barcode', data)
-        .single();
-      if (productData) {
-        router.push({
-          pathname: '/scan/product',
-          params: { barcode: data, productData: JSON.stringify(productData) },
-        });
-      } else {
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
         Alert.alert(
-          'Product Not Found',
-          'No product found with this barcode. Would you like to enter information manually?',
+          'Already in Inventory',
+          `"${existing.product_name}" is already in your inventory. What would you like to do?`,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => setScanned(false) },
-            { text: 'Enter Manually', onPress: () => router.push('/inventory/add') },
+            { text: 'Add Another', onPress: () => runLookup(data, existing) },
+            { text: 'View Item', onPress: () => router.push({ pathname: '/inventory/details', params: { id: existing.id } }) },
           ]
         );
+        return;
       }
+
+      await runLookup(data);
     } catch (error) {
       Alert.alert('Error', 'Unable to search for this product. Please try again.');
       setScanned(false);
@@ -85,12 +176,16 @@ export default function ScanScreen() {
           }}
         />
 
-        <View style={styles.cornerFrame} pointerEvents="none">
+        <View
+          style={styles.cornerFrame}
+          pointerEvents="none"
+          onLayout={(e) => setFrameH(e.nativeEvent.layout.height)}
+        >
           <View style={[styles.corner, styles.cornerTL]} />
           <View style={[styles.corner, styles.cornerTR]} />
           <View style={[styles.corner, styles.cornerBL]} />
           <View style={[styles.corner, styles.cornerBR]} />
-          <View style={styles.scanLine} />
+          <Animated.View style={[styles.scanLine, { transform: [{ translateY: translateY }] }]} />
         </View>
 
         <View style={[styles.topHint, { top: insets.top + 10 }]} pointerEvents="none">
@@ -144,6 +239,8 @@ export default function ScanScreen() {
 }
 
 const CORNER = 30;
+const LINE_H = 2; // scan line thickness
+const SWEEP_PAD = 6; // gap the sweep keeps from the frame's top/bottom edges
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   centerState: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.xl, gap: 8 },
@@ -162,7 +259,12 @@ const styles = StyleSheet.create({
   cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 14 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 14 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 14 },
-  scanLine: { position: 'absolute', left: 12, right: 12, height: 2, backgroundColor: COLORS.secondary, opacity: 0.9 },
+  scanLine: {
+    position: 'absolute', top: 0, left: 12, right: 12, height: LINE_H,
+    backgroundColor: COLORS.secondary, borderRadius: 2,
+    shadowColor: COLORS.secondary, shadowOpacity: 0.9, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
   topHint: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   hintText: {
     color: COLORS.white, fontSize: 13, fontWeight: '600',

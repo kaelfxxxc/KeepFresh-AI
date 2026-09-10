@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII } from '../../src/theme';
-import { Sparkles, PencilLine, PackagePlus } from 'lucide-react-native';
+import { Sparkles, ScanBarcode, PencilLine, PackagePlus } from 'lucide-react-native';
 import { NavHeader, PillButton, StatusBadge } from '../../src/components/ui';
+import type { ReviewInfo } from '../../src/services/barcodeService';
+
+type ScanSource = 'photo' | 'lookup' | 'inventory';
+
+const EMPTY: ReviewInfo = {
+  product_name: '',
+  brand: '',
+  category: '',
+  expiration_date: '',
+  quantity: 1,
+  unit: 'pcs',
+  barcode: '',
+  image_url: '',
+  description: '',
+  ingredients: '',
+};
 
 const row = (label: string, value: string) => (
   <View style={styles.attrRow}>
@@ -17,15 +33,23 @@ const row = (label: string, value: string) => (
 
 export default function ProductInfoScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ barcode?: string; productData?: string }>();
+  const params = useLocalSearchParams<{ barcode?: string; source?: string; productData?: string }>();
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [info, setInfo] = useState<{
-    product_name: string; brand: string; category: string;
-    expiration_date: string; quantity: number; unit: string;
-  }>({ product_name: '', brand: '', category: '', expiration_date: '', quantity: 1, unit: '' });
+  const [imgBroken, setImgBroken] = useState(false);
+  const [info, setInfo] = useState<ReviewInfo>(EMPTY);
+
+  // 'photo' when launched bare from the Take Photo button; otherwise the scan
+  // flow hands us 'lookup' (fresh from the database) or 'inventory' (reusing an
+  // existing row for "Add Another"). No productData at all = nothing detected.
+  const source: ScanSource | undefined = params.source === 'photo'
+    ? 'photo'
+    : params.productData
+      ? params.source === 'inventory' ? 'inventory' : 'lookup'
+      : undefined;
 
   useEffect(() => {
+    setImgBroken(false);
     if (params.productData) {
       try {
         const d = JSON.parse(params.productData);
@@ -34,14 +58,18 @@ export default function ProductInfoScreen() {
           brand: d.brand || '',
           category: d.category || '',
           expiration_date: d.expiration_date || '',
-          quantity: d.quantity || 1,
-          unit: d.unit || '',
+          quantity: Number(d.quantity) || 1,
+          unit: d.unit || 'pcs',
+          barcode: d.barcode || params.barcode || '',
+          image_url: d.image_url || '',
+          description: d.description || '',
+          ingredients: d.ingredients || '',
         });
       } catch {
         /* ignore malformed param */
       }
     }
-  }, [params.productData]);
+  }, [params.productData, params.barcode]);
 
   const openEditor = () => {
     router.push({
@@ -53,7 +81,8 @@ export default function ProductInfoScreen() {
         quantity: String(info.quantity),
         unit: info.unit,
         expiration_date: info.expiration_date,
-        barcode: params.barcode || '',
+        barcode: info.barcode || params.barcode || '',
+        image_url: info.image_url,
       },
     });
   };
@@ -66,6 +95,11 @@ export default function ProductInfoScreen() {
     }
     setLoading(true);
     try {
+      const notes = source === 'photo'
+        ? 'AI-detected information. Please verify and edit if needed.'
+        : source === 'lookup' || source === 'inventory'
+          ? 'Auto-filled from barcode lookup. Please verify and edit if needed.'
+          : null;
       const { error } = await supabase.from('inventory_items').insert({
         user_id: profile.id,
         product_name: info.product_name.trim(),
@@ -74,8 +108,9 @@ export default function ProductInfoScreen() {
         expiration_date: info.expiration_date || null,
         quantity: Number(info.quantity) || 1,
         unit: info.unit || 'pcs',
-        barcode: params.barcode || null,
-        notes: 'AI-detected information. Please verify and edit if needed.',
+        barcode: info.barcode || params.barcode || null,
+        image_url: info.image_url || null,
+        notes,
       });
       if (error) {
         Alert.alert('Error', error.message);
@@ -91,18 +126,44 @@ export default function ProductInfoScreen() {
     }
   };
 
+  const emoji = info.category === 'dairy' ? '🥛'
+    : info.category === 'produce' ? '🥬'
+    : info.category === 'meat' ? '🥩'
+    : info.category === 'seafood' ? '🍤'
+    : info.category === 'beverages' ? '🥤'
+    : info.category === 'snacks' ? '🍪'
+    : info.category === 'frozen' ? '🧊'
+    : '📦';
+
+  const showImage = !!info.image_url && !imgBroken;
+  const autoFilled = source === 'lookup' || source === 'inventory';
+  const hasDetails = !!(info.description || info.ingredients);
+
   return (
     <View style={styles.container}>
       <NavHeader title="Product Information" />
-      <ScrollView contentContainerStyle={{ paddingBottom: 130 }}>
-        {/* Photo hero */}
+      <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
+        {/* Photo / product-image hero */}
         <View style={styles.hero}>
-          <Text style={styles.heroEmoji}>
-            {info.category === 'dairy' ? '🥛' : info.category === 'produce' ? '🥬' : info.category === 'meat' ? '🥩' : info.category === 'beverages' ? '🥤' : '📦'}
-          </Text>
+          {showImage ? (
+            <Image
+              source={{ uri: info.image_url as string }}
+              style={styles.heroImage}
+              resizeMode="contain"
+              onError={() => setImgBroken(true)}
+            />
+          ) : (
+            <Text style={styles.heroEmoji}>{emoji}</Text>
+          )}
           <View style={styles.aiBadge}>
-            <Sparkles size={12} color={COLORS.primaryDark} strokeWidth={2.4} />
-            <Text style={styles.aiBadgeText}>AI VERIFIED</Text>
+            {source === 'photo' ? (
+              <Sparkles size={12} color={COLORS.primaryDark} strokeWidth={2.4} />
+            ) : (
+              <ScanBarcode size={12} color={COLORS.primaryDark} strokeWidth={2.4} />
+            )}
+            <Text style={styles.aiBadgeText}>
+              {source === 'photo' ? 'AI VERIFIED' : autoFilled ? 'BARCODE RESULT' : 'PRODUCT INFO'}
+            </Text>
           </View>
         </View>
 
@@ -112,17 +173,45 @@ export default function ProductInfoScreen() {
           {row('Category', info.category ? info.category.charAt(0).toUpperCase() + info.category.slice(1) : '—')}
           {row('Expiration Date', info.expiration_date ? new Date(info.expiration_date).toLocaleDateString() : 'Not set')}
           {row('Quantity', `${info.quantity} ${info.unit || 'pcs'}`)}
-          {row('Barcode', params.barcode || '—')}
+          {row('Barcode', info.barcode || params.barcode || '—')}
         </View>
 
-        {info.brand === '' && info.product_name === '' && (
-          <View style={styles.infoNote}>
-            <StatusBadge label="Detected from photo" tone="warning" />
-            <Text style={styles.infoNoteText}>
-              Fields were read from your scan. Tap Edit Information to confirm the details before saving.
-            </Text>
+        {/* Extra detail from the product database — read-only, informative */}
+        {hasDetails && (
+          <View style={styles.card}>
+            {!!info.description && (
+              <>
+                <Text style={styles.detailTitle}>About this product</Text>
+                <Text style={styles.detailBody}>{info.description}</Text>
+              </>
+            )}
+            {!!info.ingredients && (
+              <>
+                <Text style={[styles.detailTitle, info.description ? styles.detailTitleSpaced : undefined]}>
+                  Ingredients
+                </Text>
+                <Text style={styles.detailBody}>{info.ingredients}</Text>
+              </>
+            )}
           </View>
         )}
+
+        {!info.product_name ? (
+          <View style={styles.infoNote}>
+            <StatusBadge label={source === 'photo' ? 'Detected from photo' : 'No product data'} tone="warning" />
+            <Text style={styles.infoNoteText}>
+              Nothing could be pre-filled. Tap Edit Information to enter the product details yourself.
+            </Text>
+          </View>
+        ) : autoFilled ? (
+          <View style={styles.infoNote}>
+            <StatusBadge label="Auto-filled" tone="warning" />
+            <Text style={styles.infoNoteText}>
+              Details were looked up from the product database. Review them below and tap Edit Information to correct
+              anything wrong before saving.
+            </Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.md }]}>
@@ -152,6 +241,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
+  heroImage: { width: '100%', height: '100%' },
   heroEmoji: { fontSize: 72 },
   aiBadge: {
     position: 'absolute', top: 12, left: 12,
@@ -171,6 +261,9 @@ const styles = StyleSheet.create({
   },
   attrLabel: { fontSize: 13, color: COLORS.secondaryText },
   attrValue: { fontSize: 14, color: COLORS.text, fontWeight: '600', flex: 1, textAlign: 'right', marginLeft: SPACING.md },
+  detailTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
+  detailTitleSpaced: { marginTop: SPACING.md },
+  detailBody: { fontSize: 13, color: COLORS.secondaryText, lineHeight: 20 },
   infoNote: { marginHorizontal: SPACING.lg, gap: 8 },
   infoNoteText: { fontSize: 13, color: COLORS.secondaryText, lineHeight: 19 },
   bottomBar: {

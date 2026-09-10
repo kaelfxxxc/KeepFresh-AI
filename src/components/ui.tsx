@@ -1,7 +1,7 @@
 // KeepFresh AI - shared UI kit (v2 design language)
 // Thin, presentational primitives only. All data & navigation logic lives in
 // the screens. Colors/tokens come from src/theme; icons from lucide-react-native.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -244,6 +244,56 @@ export function AvatarCircle({ uri, initials, size = 42, onPress }: {
     );
   }
   return node;
+}
+
+/* ------------------------------------------------- Product thumbnail */
+export function categoryEmoji(category?: string | null): string {
+  switch (category) {
+    case 'dairy': return '🥛';
+    case 'produce': return '🥬';
+    case 'meat': return '🥩';
+    case 'seafood': return '🍤';
+    case 'beverages': return '🥤';
+    case 'snacks': return '🍪';
+    case 'frozen': return '🧊';
+    default: return '📦';
+  }
+}
+
+// Shows the product photo when one is stored (image_url) and falls back to the
+// category emoji tile otherwise. Used for inventory rows and detail heroes.
+export function ItemImage({ uri, category, size = 52, radius = RADII.image, style }: {
+  uri?: string | null;
+  category?: string | null;
+  size?: number;
+  radius?: number;
+  style?: any;
+}) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [uri]);
+  if (uri && !broken) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{ width: size, height: size, borderRadius: radius }}
+        resizeMode="cover"
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <View
+      style={[
+        {
+          width: size, height: size, borderRadius: radius,
+          backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+        },
+        style,
+      ]}
+    >
+      <Text style={{ fontSize: Math.round(size * 0.42) }}>{categoryEmoji(category)}</Text>
+    </View>
+  );
 }
 
 /* ------------------------------------------------- Header for tab pages */

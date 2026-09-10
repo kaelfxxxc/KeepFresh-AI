@@ -16,3 +16,6 @@ verify_jwt = true
 
 [functions.weekly-summary]
 verify_jwt = true
+
+[functions.barcode-lookup]
+verify_jwt = true

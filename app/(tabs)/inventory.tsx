@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
@@ -10,7 +10,7 @@ import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { Search, Plus, SlidersHorizontal, Package, ScanLine } from 'lucide-react-native';
-import { Chip, StatusBadge, EmptyState } from '../../src/components/ui';
+import { Chip, StatusBadge, EmptyState, ItemImage } from '../../src/components/ui';
 
 type Filter = 'all' | 'available' | 'need_to_buy';
 const FILTERS: { key: Filter; label: string }[] = [
@@ -18,9 +18,6 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'available', label: 'Available' },
   { key: 'need_to_buy', label: 'Need to Buy' },
 ];
-
-const categoryEmoji = (c?: string | null) =>
-  c === 'dairy' ? '🥛' : c === 'produce' ? '🥬' : c === 'meat' ? '🥩' : c === 'seafood' ? '🍤' : c === 'beverages' ? '🥤' : c === 'snacks' ? '🍪' : c === 'frozen' ? '🧊' : '📦';
 
 export default function InventoryScreen() {
   const { profile } = useAuth();
@@ -49,6 +46,15 @@ export default function InventoryScreen() {
   }, [profile]);
 
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
+
+  // Refetch when the tab regains focus so items added from the Scan screen (or
+  // edited elsewhere) show up — with their product photo — without a manual
+  // pull-to-refresh.
+  useFocusEffect(
+    useCallback(() => {
+      if (profile) fetchInventory();
+    }, [profile, fetchInventory])
+  );
 
   const onRefresh = () => { setRefreshing(true); fetchInventory(); };
 
@@ -113,9 +119,7 @@ export default function InventoryScreen() {
     return (
       <View style={styles.rowCard}>
         <Pressable style={styles.rowMain} onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}>
-          <View style={styles.thumb}>
-            <Text style={{ fontSize: 22 }}>{categoryEmoji(item.category)}</Text>
-          </View>
+          <ItemImage uri={item.image_url} category={item.category} size={52} radius={RADII.image} />
           <View style={{ flex: 1 }}>
             <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
             <Text style={styles.itemMeta} numberOfLines={1}>
@@ -245,10 +249,6 @@ const styles = StyleSheet.create({
     padding: SPACING.md, ...SHADOW.card,
   },
   rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  thumb: {
-    width: 52, height: 52, borderRadius: RADII.image,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
-  },
   itemName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
   itemExpiry: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },

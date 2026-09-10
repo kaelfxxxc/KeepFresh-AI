@@ -7,7 +7,7 @@ import { NavHeader } from '../../src/components/ui';
 const FAQS = [
   { q: 'How do I add items to inventory?', a: 'Tap Add Item on the Inventory tab, scan a barcode on the Scan screen, or add details manually. Set an expiration date so KeepFresh can alert you.' },
   { q: 'How does expiration tracking work?', a: 'When you add an item with an expiration date, it appears in Expiration Alerts as the date approaches so you can use it in time.' },
-  { q: 'Can I scan barcodes?', a: 'Yes — open the Scan screen from Inventory. Point the camera at a product barcode and KeepFresh checks your inventory for a match.' },
+  { q: 'Can I scan barcodes?', a: 'Yes — open the Scan screen from Inventory and point the camera at a product barcode. KeepFresh auto-fills the product details for you to review, then adds it to your inventory. If the barcode is already tracked, it will ask whether you want to view the item or add another.' },
   { q: 'How are recipes recommended?', a: 'Recipes are shown by category. Pair them with ingredients you already own to cook before things expire.' },
   { q: 'How do I reduce food waste?', a: 'Check Expiration Alerts daily, buy only what\'s on your grocery list, and cook meals around items expiring soon.' },
 ];

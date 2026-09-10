@@ -16,6 +16,7 @@ supabase/
 │   ├── _shared/             # cors + admin client used by all functions
 │   ├── expiration-notifier/ # daily cron: finds items expiring within each user's window, logs nudge
 │   ├── recipe-suggestions/  # real pantry-to-recipe matching (scores coverage, "can cook now?")
+│   ├── barcode-lookup/      # scan auto-fill: proxies Barcode Lookup API (key stays server-side)
 │   └── weekly-summary/      # 7-day stats: used / wasted / estimated savings / expiring soon
 ├── schedule.sql             # 3) optional: schedule expiration-notifier daily via pg_cron
 └── config.toml              # JWT policy: scheduled fn = no JWT, app fns = require user token
@@ -59,12 +60,22 @@ supabase/
 npm install -g supabase        # the Supabase CLI
 supabase login
 supabase link --project-ref <your-project-ref>   # the subdomain of your project
-supabase functions deploy expiration-notifier recipe-suggestions weekly-summary
+supabase functions deploy expiration-notifier recipe-suggestions weekly-summary barcode-lookup
 ```
 
-- `recipe-suggestions` and `weekly-summary` require a signed-in user's access
-  token (call them with the user's `Authorization` header).
+- `recipe-suggestions`, `weekly-summary` and `barcode-lookup` require a signed-in
+  user's access token (call them with the user's `Authorization` header).
 - `expiration-notifier` needs no JWT so the scheduler can call it.
+
+`barcode-lookup` proxies the Barcode Lookup API (api.barcodelookup.com) that
+powers the Scan screen's auto-fill. Its key must be set as a **server-side
+secret** — never prefix it with `EXPO_PUBLIC_` in `.env` (that would ship it in
+the app bundle). Copy the value already in your `.env`
+(`BARCODE_SCANNER_API_KEY`) into Supabase once:
+
+```bash
+supabase secrets set BARCODE_SCANNER_API_KEY="<value from .env>"
+```
 
 Test locally first (needs `supabase start` running) or straight against hosted:
 
@@ -76,6 +87,12 @@ curl -X POST https://<ref>.supabase.co/functions/v1/recipe-suggestions \
 # 7-day analytics summary for the signed-in user
 curl -X POST https://<ref>.supabase.co/functions/v1/weekly-summary \
   -H "Authorization: Bearer <user-access-token>"
+
+# barcode product lookup (real UPC — expect ok:true, found:true)
+curl -X POST https://<ref>.supabase.co/functions/v1/barcode-lookup \
+  -H "Authorization: Bearer <user-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"barcode":"049000042566"}'
 ```
 
 ## Step 4 — Schedule the expiration scan

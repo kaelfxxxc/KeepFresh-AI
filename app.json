@@ -2,9 +2,10 @@
   "expo": {
     "name": "KeepFresh AI",
     "slug": "keepfresh-ai",
+    "owner": "alvingwapo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icons/keepfresh-icon.png",
+    "icon": "./assets/icons/keepfresh-ai-icon.png",
     "userInterfaceStyle": "light",
     "scheme": "keepfreshai",
     "splash": {
@@ -27,7 +28,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icons/keepfresh-icon.png",
+        "foregroundImage": "./assets/icons/keepfresh-ai-icon-adaptive.png",
         "backgroundColor": "#168A45"
       },
       "package": "com.keepfreshai.app",
@@ -36,11 +37,12 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.VIBRATE",
-        "android.permission.RECEIVE_BOOT_COMPLETED"
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
-      "favicon": "./assets/images/keepfresh-favicon.png"
+      "favicon": "./assets/icons/keepfresh-ai-icon.png"
     },
     "plugins": [
       "expo-router",
@@ -79,8 +81,11 @@
       ]
     ],
     "extra": {
+      "router": {
+        "origin": false
+      },
       "eas": {
-        "projectId": "keepfresh-ai"
+        "projectId": "9fecce01-9149-49cb-8719-c20dddc17728"
       }
     }
   }

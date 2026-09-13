@@ -70,7 +70,7 @@ export default function LoginScreen() {
             ]}
           >
             <Image
-              source={require('../../assets/images/keepfresh-logo-only.png')}
+              source={require('../../assets/images/Keepfresh-ai-logo.png')}
               style={{ width: logoSize, height: logoSize, borderRadius: logoRadius }}
               resizeMode="contain"
             />

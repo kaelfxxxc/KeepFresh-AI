@@ -4,7 +4,6 @@ import {
   Easing,
   Image,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -12,51 +11,49 @@ import {
 // KeepFresh AI - launch splash
 //
 // Choreography (all built on RN's core Animated API - no extra native deps):
-//   0.0-0.35s   deep-green background + soft glow expands behind the logo
-//   0.3-1.0s    the logo mark rises in from below (basket drawing itself up)
-//   1.0-1.4s    quick "pop" settle (vegetables dropping into place)
-//   1.4-2.2s    "KeepFresh AI" name fades/scales in, then the tagline fades in
-//   2.2s+       holds the final frame; the parent fades the whole cover away
+//   0.0-0.25s   deep-green background holds while the session restores
+//   0.25-1.05s  the logo disc rises in and fades up
+//   1.05-1.40s  quick "pop" settle
+//   1.40s+      holds the final frame; the parent fades the whole cover away
 //
-// Everything is sized from the window dimensions so it stays responsive on
-// small phones and large tablets alike.
+// The lockup artwork carries the mark, the wordmark and the tagline in a single
+// image, so there is no separate text to animate here. That artwork is drawn on
+// a paper-white field, so it sits on a matching paper disc rather than directly
+// on the green.
+//
+// The circle is baked into the PNG (`keepfresh-splash-disc.png`), not produced
+// by clipping in the view tree. Clipping a rectangular image with
+// `borderRadius` + `overflow: 'hidden'` is unreliable on Android as soon as the
+// same view also carries `elevation` - the corners leak and the disc reads as a
+// square - so the artwork is masked to a circle at build time instead and the
+// view tree never clips. The paper disc below only supplies the drop shadow.
 
 const DEEP_GREEN = '#168A45';
-const LOGO = require('../../assets/images/keepfresh-logo.png');
-const TAGLINE = 'Smarter Food Management.\nLess Waste, More Savings.';
+const PAPER = '#FAFBF5';
+const LOGO = require('../../assets/images/keepfresh-splash-disc.png');
 
 export default function AnimatedSplash() {
   const { width } = useWindowDimensions();
 
-  const glow = useRef(new Animated.Value(0)).current; // soft halo expansion
-  const rise = useRef(new Animated.Value(0)).current; // mark entrance 0 -> 1
-  const pop = useRef(new Animated.Value(0)).current; // 0 -> 1 -> 0 veg settle
-  const nameV = useRef(new Animated.Value(0)).current; // 0 -> 1
-  const tagV = useRef(new Animated.Value(0)).current; // 0 -> 1
+  const rise = useRef(new Animated.Value(0)).current; // disc entrance 0 -> 1
+  const pop = useRef(new Animated.Value(0)).current; // 0 -> 1 -> 0 settle
 
   useEffect(() => {
     const anim = Animated.parallel([
-      // Soft glow appears and expands behind the logo.
-      Animated.timing(glow, {
-        toValue: 1,
-        duration: 400,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      // Basket/mark slides up from the bottom with a gentle ease.
+      // Disc rises from below with a gentle ease.
       Animated.timing(rise, {
         toValue: 1,
-        duration: 700,
-        delay: 300,
+        duration: 800,
+        delay: 250,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      // Vegetables "pop": quick overshoot then settle back.
+      // Quick overshoot then settle back.
       Animated.sequence([
         Animated.timing(pop, {
           toValue: 1,
           duration: 180,
-          delay: 1020,
+          delay: 1050,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
@@ -67,96 +64,46 @@ export default function AnimatedSplash() {
           useNativeDriver: true,
         }),
       ]),
-      // Name fades & scales in (95% -> 100%).
-      Animated.timing(nameV, {
-        toValue: 1,
-        duration: 420,
-        delay: 1500,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      // Tagline fades in underneath.
-      Animated.timing(tagV, {
-        toValue: 1,
-        duration: 450,
-        delay: 1850,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
     ]);
     anim.start();
     return () => anim.stop();
-  }, [glow, rise, pop, nameV, tagV]);
+  }, [rise, pop]);
 
-  // Responsive sizing - logo is a fixed 100x100 on normal screens and only
-  // scales down (never up) on very small phones so it never crowds the name.
-  const hero = Math.max(80, Math.min(100, Math.round(width * 0.28)));
-  const heroBox = hero * 2.4;
-  const glowSize = hero * 1.8;
-  const glowOffset = (heroBox - glowSize) / 2; // centers halo behind the image
-  const nameFont = Math.max(28, Math.min(46, width * 0.1));
-  const tagFont = Math.max(13, Math.min(18, width * 0.042));
+  // Fit the disc inside the viewport with a comfortable gutter, never crowding
+  // the edges on a small phone. The artwork is already inset within its own
+  // square canvas, so the rendered size is the disc diameter and nothing more.
+  const discD = Math.max(200, Math.min(width - 100, 330));
 
   const riseStyle = {
     opacity: rise,
     transform: [
-      { translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [hero * 0.55, 0] }) },
-      { scale: rise.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) },
+      { translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [discD * 0.12, 0] }) },
+      { scale: rise.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
     ],
   };
   const popStyle = {
-    transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) }],
-  };
-  const glowStyle = {
-    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] }),
-    transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }],
-  };
-  const nameStyle = {
-    opacity: nameV,
-    transform: [{ scale: nameV.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }],
+    transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [1, 1.04] }) }],
   };
 
   return (
     <View style={styles.root}>
-      <View style={[styles.heroBox, { width: heroBox, height: heroBox }]}>
-        {/* Soft glow expands behind the mark */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.halo,
-            {
-              width: glowSize,
-              height: glowSize,
-              borderRadius: glowSize / 2,
-              top: glowOffset,
-              left: glowOffset,
-            },
-            glowStyle,
-          ]}
-        />
-        <Animated.View style={riseStyle}>
-          <Animated.View style={popStyle}>
+      <Animated.View style={riseStyle}>
+        <Animated.View style={popStyle}>
+          {/* The paper disc sits exactly under the artwork's own paper circle
+              and exists only so the shadow follows a round outline. */}
+          <View
+            style={[
+              styles.disc,
+              { width: discD, height: discD, borderRadius: discD / 2 },
+            ]}
+          >
             <Image
               source={LOGO}
-              style={{
-                width: hero,
-                height: hero,
-                borderRadius: hero / 2,
-                borderWidth: Math.max(2, hero * 0.012),
-                borderColor: 'rgba(255,255,255,0.45)',
-              }}
-              resizeMode="cover"
+              style={{ width: discD, height: discD }}
+              resizeMode="contain"
             />
-          </Animated.View>
+          </View>
         </Animated.View>
-      </View>
-
-      <Animated.View style={[styles.nameWrap, nameStyle]}>
-        <Text style={[styles.name, { fontSize: nameFont }]}>KeepFresh AI</Text>
-      </Animated.View>
-
-      <Animated.View style={[styles.tagWrap, { opacity: tagV }]}>
-        <Text style={[styles.tag, { fontSize: tagFont }]}>{TAGLINE}</Text>
       </Animated.View>
     </View>
   );
@@ -169,31 +116,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  halo: {
-    position: 'absolute',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-  },
-  heroBox: {
+  disc: {
+    backgroundColor: PAPER,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  nameWrap: {
-    marginTop: 4,
-  },
-  name: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    textAlign: 'center',
-  },
-  tagWrap: {
-    marginTop: 12,
-    paddingHorizontal: 28,
-  },
-  tag: {
-    color: 'rgba(255,255,255,0.82)',
-    fontWeight: '500',
-    textAlign: 'center',
-    lineHeight: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 8,
   },
 });

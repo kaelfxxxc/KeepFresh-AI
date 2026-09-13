@@ -19,3 +19,9 @@ verify_jwt = true
 
 [functions.barcode-lookup]
 verify_jwt = true
+
+# Purchase verification. Must never be reachable without a signed-in user: it is
+# the only path that can activate a paid plan, and it identifies the buyer from
+# the caller's own access token.
+[functions.subscription-verify]
+verify_jwt = true

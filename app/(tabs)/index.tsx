@@ -5,10 +5,12 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
+import { useSubscription } from '../../src/context/SubscriptionContext';
 import { supabase } from '../../src/lib/supabase';
 import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
-import { Bell, Package, ShoppingCart, Clock3, ChevronRight, TrendingDown } from 'lucide-react-native';
+import { Bell, Package, ShoppingCart, Clock3, ChevronRight, TrendingDown, Crown } from 'lucide-react-native';
 import { AvatarCircle, CountBadge, StatusBadge } from '../../src/components/ui';
+import { notificationService } from '../../src/services/notificationService';
 
 interface HomeStats {
   totalItems: number;
@@ -23,6 +25,7 @@ const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).pad
 
 export default function HomeScreen() {
   const { profile } = useAuth();
+  const { entitlements, refresh: refreshEntitlements } = useSubscription();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<HomeStats | null>(null);
@@ -106,6 +109,17 @@ export default function HomeScreen() {
     if (profile) fetchDashboard();
   }, [profile, fetchDashboard]);
 
+  // Notifications are reconciled on foreground: the sweep schedules expiry
+  // reminders at each item's own alert offset and retires ones for products
+  // that are already gone. Deduplication is the database's job, so running this
+  // on every visit is safe.
+  useEffect(() => {
+    if (!profile) return;
+    notificationService
+      .runSweep(profile.id, entitlements)
+      .catch((e) => console.warn('Notification sweep failed:', e));
+  }, [profile, entitlements]);
+
   if (!profile) {
     return (
       <View style={[styles.loading, { paddingTop: insets.top }]}>
@@ -121,21 +135,56 @@ export default function HomeScreen() {
 
   const maxTrend = Math.max(1, ...(stats?.trend.map((t) => t.value) ?? [1]));
 
+  // 'trialing' gets called out because a trial quietly turning into a charge is
+  // the thing users most want warning about; a lapsed plan is flagged so the
+  // downgrade is never a mystery.
+  const planName = entitlements?.plan_name ?? 'Your plan';
+  const planDaysLeft = entitlements?.current_period_end
+    ? Math.ceil(
+        (new Date(entitlements.current_period_end).getTime() - Date.now()) / 86_400_000
+      )
+    : null;
+
   return (
     <ScrollView
       style={[styles.container, { paddingTop: insets.top + 6 }]}
       contentContainerStyle={{ paddingBottom: SPACING.xl }}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchDashboard(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />
+        <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refreshEntitlements(); fetchDashboard(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />
       }
     >
-      {/* Top bar */}
+      {/* Top bar. The greeting takes the slack so the actions keep their
+          intrinsic width, and minWidth 0 on it lets the row shrink instead of
+          pushing past the screen edge. */}
       <View style={styles.topBar}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.greeting}>{greeting}, {firstName}</Text>
-          <Text style={styles.subGreeting}>Your pantry at a glance</Text>
+        <View style={styles.greetingBlock}>
+          <Text style={styles.greeting} numberOfLines={1}>{greeting}, {firstName}</Text>
+          <Text style={styles.subGreeting} numberOfLines={1}>
+            {entitlements?.is_active === false
+              ? 'Your plan has ended — your inventory is safe'
+              : planDaysLeft != null && planDaysLeft <= 7 && planDaysLeft >= 0
+                ? `${planName} · ${planDaysLeft === 0 ? 'ends today' : `${planDaysLeft} day${planDaysLeft === 1 ? '' : 's'} left`}`
+                : 'Your pantry at a glance'}
+          </Text>
         </View>
         <View style={styles.topActions}>
+          {/* Icon only: the crown alone, sized and shaped like the bell beside
+              it. The plan's name and usage live on /subscription and on the
+              profile row, so the header does not have to spell them out — but
+              the crown still turns red when the plan has lapsed, because that
+              is the one thing the icon has to say. */}
+          <Pressable
+            onPress={() => router.push('/subscription')}
+            accessibilityRole="button"
+            accessibilityLabel={`Subscription: ${planName}`}
+            style={({ pressed }) => [styles.planButton, pressed && { opacity: 0.85 }]}
+          >
+            <Crown
+              size={21}
+              color={entitlements?.is_active === false ? COLORS.danger : COLORS.primary}
+              strokeWidth={2.3}
+            />
+          </Pressable>
           <View style={styles.bellWrap}>
             <Bell size={22} color={COLORS.text} strokeWidth={2} />
             <CountBadge count={stats?.expirationAlerts ?? 0} />
@@ -155,7 +204,14 @@ export default function HomeScreen() {
             <ChevronRight size={16} color={COLORS.primary} />
           </View>
         </View>
-        <Text style={styles.bannerAmount}>{stats?.wasteThisMonth ?? 0} items</Text>
+        <Text
+          style={styles.bannerAmount}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+        >
+          {stats?.wasteThisMonth ?? 0} items
+        </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
           <View style={[styles.deltaChip, better ? { backgroundColor: COLORS.successBg } : { backgroundColor: COLORS.dangerBg }]}>
             <TrendingDown size={12} color={better ? COLORS.successText : COLORS.dangerText} strokeWidth={2.5} />
@@ -240,10 +296,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
+    gap: SPACING.sm,
   },
+  // Takes the slack so the actions keep their intrinsic width; minWidth 0 lets
+  // it actually shrink instead of forcing the row wider than the screen.
+  greetingBlock: { flex: 1, minWidth: 0 },
   greeting: { fontSize: 24, fontWeight: '800', color: COLORS.text },
   subGreeting: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flexShrink: 0 },
+  // Same 42px rounded square and shadow as the bell beside it, so the two
+  // actions read as one row. The crown's colour is the only signal it carries
+  // now that the label is gone: brand green while the plan is live, red once
+  // it has lapsed.
+  planButton: {
+    width: 42,
+    height: 42,
+    borderRadius: RADII.icon,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    ...SHADOW.faint,
+  },
   bellWrap: { width: 42, height: 42, borderRadius: RADII.icon, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', ...SHADOW.faint, position: 'relative' },
   banner: {
     marginHorizontal: SPACING.lg,

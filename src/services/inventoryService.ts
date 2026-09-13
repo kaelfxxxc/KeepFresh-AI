@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import { InventoryItem } from '../types';
+import { InventoryItem, InventoryTransaction } from '../types';
 
 export const inventoryService = {
   async getInventory(userId: string): Promise<InventoryItem[]> {
@@ -8,6 +8,27 @@ export const inventoryService = {
       .select('*')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  /**
+   * Inventory narrowed to one storage area.
+   *
+   * `'unassigned'` is a real bucket rather than a special case in the UI: items
+   * predating storage areas, or orphaned when an area was deleted, live there
+   * and must stay reachable.
+   */
+  async getInventoryByArea(
+    userId: string,
+    area: string | 'all' | 'unassigned'
+  ): Promise<InventoryItem[]> {
+    let query = supabase.from('inventory_items').select('*').eq('user_id', userId);
+
+    if (area === 'unassigned') query = query.is('storage_area_id', null);
+    else if (area !== 'all') query = query.eq('storage_area_id', area);
+
+    const { data, error } = await query.order('updated_at', { ascending: false });
     if (error) throw error;
     return data || [];
   },
@@ -25,7 +46,12 @@ export const inventoryService = {
   async createInventoryItem(item: Partial<InventoryItem>): Promise<InventoryItem> {
     const { data, error } = await supabase
       .from('inventory_items')
-      .insert(item)
+      .insert({
+        ...item,
+        // Attribution for shared/establishment inventories. The owner is the
+        // only sensible default when no one else is signed in.
+        added_by: item.added_by ?? item.user_id ?? null,
+      })
       .select()
       .single();
     if (error) throw error;
@@ -60,6 +86,51 @@ export const inventoryService = {
     if (error) throw error;
   },
 
+  /**
+   * The ± control. Uses the RPC rather than a read-modify-write so two devices
+   * tapping at once cannot clobber each other, and so the quantity can never be
+   * driven below zero — the database clamps with GREATEST(…, 0) under a row
+   * lock, and the CHECK constraint backs it up.
+   *
+   * Returns the updated row so the caller can reconcile without a refetch.
+   */
+  async adjustQuantity(itemId: string, delta: number): Promise<InventoryItem> {
+    if (delta === 0) {
+      const existing = await this.getInventoryItem(itemId);
+      if (!existing) throw new Error('That item no longer exists.');
+      return existing;
+    }
+    const { data, error } = await supabase.rpc('adjust_inventory_quantity', {
+      p_item_id: itemId,
+      p_delta: delta,
+    });
+    if (error) throw error;
+    return data as InventoryItem;
+  },
+
+  /** Set an exact quantity (typed entry). Routed through the same RPC so the
+   *  floor-at-zero and locking behaviour are identical. */
+  async setQuantity(itemId: string, quantity: number, currentQuantity: number): Promise<InventoryItem> {
+    const target = Math.max(quantity, 0);
+    return this.adjustQuantity(itemId, target - currentQuantity);
+  },
+
+  /** Edit the expiry date and/or how many days ahead to warn. */
+  async setExpiration(
+    itemId: string,
+    expirationDate: string | null,
+    alertDays?: number
+  ): Promise<InventoryItem> {
+    return this.updateInventoryItem(itemId, {
+      expiration_date: expirationDate,
+      ...(alertDays !== undefined ? { expiration_alert_days: alertDays } : {}),
+    });
+  },
+
+  async moveToArea(itemId: string, storageAreaId: string | null): Promise<InventoryItem> {
+    return this.updateInventoryItem(itemId, { storage_area_id: storageAreaId });
+  },
+
   async searchInventory(userId: string, query: string): Promise<InventoryItem[]> {
     const { data, error } = await supabase
       .from('inventory_items')
@@ -75,6 +146,35 @@ export const inventoryService = {
       user_id: userId,
       days,
     });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // ---- History -------------------------------------------------------------
+
+  /**
+   * The audit trail. Rows are written by a database trigger, so this is a true
+   * record of what happened rather than a log the client remembered to keep —
+   * including changes made from a teammate's device.
+   */
+  async getTransactions(userId: string, limit = 100): Promise<InventoryTransaction[]> {
+    const { data, error } = await supabase
+      .from('inventory_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async getItemTransactions(itemId: string, limit = 50): Promise<InventoryTransaction[]> {
+    const { data, error } = await supabase
+      .from('inventory_transactions')
+      .select('*')
+      .eq('inventory_item_id', itemId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
     if (error) throw error;
     return data || [];
   },

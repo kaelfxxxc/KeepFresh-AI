@@ -35,19 +35,45 @@ export interface ReviewInfo {
 export type LookupResult =
   | { status: 'found'; product: BarcodeProduct }
   | { status: 'not_found' }
-  | { status: 'unavailable' };
+  | { status: 'unavailable' }
+  | { status: 'limit_reached' };
+
+/**
+ * The `error` code from a function's JSON body, when the call failed with a
+ * non-2xx status. `supabase-js` hands those back as a FunctionsHttpError whose
+ * `context` is the raw Response, so the body has to be read back off it.
+ */
+async function failureCode(error: unknown): Promise<string | null> {
+  const context = (error as { context?: Response } | null)?.context;
+  if (!context || typeof context.clone !== 'function') return null;
+  try {
+    const body = (await context.clone().json()) as { error?: string } | null;
+    return body?.error ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Ask the server to look a barcode up. Never throws — degrades to
  * `unavailable` on any failure (including the function not being deployed yet)
  * so callers can fall back to manual entry.
+ *
+ * One AI scan is charged server-side per answered lookup, so `limit_reached`
+ * means the plan's monthly allowance is spent. Check `gates.aiScan` before
+ * opening the camera to show the upgrade prompt instead of the failure.
  */
 export async function lookupBarcode(barcode: string): Promise<LookupResult> {
   try {
     const { data, error } = await supabase.functions.invoke('barcode-lookup', {
       body: { barcode },
     });
-    if (error) return { status: 'unavailable' };
+    if (error) {
+      if ((await failureCode(error)) === 'ai_scan_limit_reached') {
+        return { status: 'limit_reached' };
+      }
+      return { status: 'unavailable' };
+    }
     const d = data as { ok?: boolean; found?: boolean; product?: BarcodeProduct } | null;
     if (d && d.ok && d.found && d.product) return { status: 'found', product: d.product };
     if (d && d.ok) return { status: 'not_found' };

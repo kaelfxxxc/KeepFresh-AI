@@ -1,17 +1,22 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
+  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl, ScrollView,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { inventoryService } from '../../src/services/inventoryService';
+import { storageAreaService, storageEmoji } from '../../src/services/storageAreaService';
+import { subscribeToTables, applyRealtimeEvent, type RealtimeStatus } from '../../src/lib/realtime';
 import { useAuth } from '../../src/context/AuthContext';
+import { useSubscription } from '../../src/context/SubscriptionContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
-import { InventoryItem } from '../../src/types';
+import { InventoryItem, StorageArea } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
-import { Search, Plus, SlidersHorizontal, Package, ScanLine } from 'lucide-react-native';
-import { Chip, StatusBadge, EmptyState, ItemImage, QuantityPrompt } from '../../src/components/ui';
+import { Search, Plus, SlidersHorizontal, Package, ScanLine, WifiOff } from 'lucide-react-native';
+import {
+  Chip, StatusBadge, EmptyState, ItemImage, QuantityPrompt, QuantityStepper, UpgradeNotice,
+} from '../../src/components/ui';
 
 type Filter = 'all' | 'available' | 'need_to_buy';
 const FILTERS: { key: Filter; label: string }[] = [
@@ -20,16 +25,25 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'need_to_buy', label: 'Need to Buy' },
 ];
 
+/** `'all'` and `'unassigned'` are buckets; anything else is a storage area id. */
+type AreaFilter = 'all' | 'unassigned' | string;
+
 export default function InventoryScreen() {
   const { profile } = useAuth();
+  const { gates } = useSubscription();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [areas, setAreas] = useState<StorageArea[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [areaFilter, setAreaFilter] = useState<AreaFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [consumeTarget, setConsumeTarget] = useState<InventoryItem | null>(null);
   const [busy, setBusy] = useState(false);
+  const [steppingId, setSteppingId] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState<RealtimeStatus | null>(null);
+  const [upgradeDismissed, setUpgradeDismissed] = useState(false);
 
   const fetchInventory = useCallback(async () => {
     if (!profile) return;
@@ -48,18 +62,108 @@ export default function InventoryScreen() {
     }
   }, [profile]);
 
-  useEffect(() => { fetchInventory(); }, [fetchInventory]);
+  const fetchAreas = useCallback(async () => {
+    if (!profile) return;
+    try {
+      setAreas(await storageAreaService.list(profile.id));
+    } catch {
+      // A missing area list only costs us the filter row — never the inventory.
+    }
+  }, [profile]);
+
+  useEffect(() => { fetchInventory(); fetchAreas(); }, [fetchInventory, fetchAreas]);
 
   // Refetch when the tab regains focus so items added from the Scan screen (or
   // edited elsewhere) show up — with their product photo — without a manual
   // pull-to-refresh.
   useFocusEffect(
     useCallback(() => {
-      if (profile) fetchInventory();
-    }, [profile, fetchInventory])
+      if (profile) { fetchInventory(); fetchAreas(); }
+    }, [profile, fetchInventory, fetchAreas])
   );
 
-  const onRefresh = () => { setRefreshing(true); fetchInventory(); };
+  // Live sync across devices: a teammate's quantity change, a scan from the
+  // phone, an edit in another tab. Realtime is a freshness layer only — when the
+  // socket is down the screen still works off focus + pull-to-refresh, which is
+  // why the failure state is a quiet hint rather than an error.
+  useEffect(() => {
+    if (!profile) return undefined;
+
+    return subscribeToTables(
+      `inventory:${profile.id}`,
+      ['inventory_items', 'storage_areas'],
+      (event) => {
+        if (event.table === 'storage_areas') {
+          fetchAreas();
+          return;
+        }
+        // Skip the echo of our own in-flight ± tap; the RPC's answer is
+        // authoritative and already applied.
+        if (steppingId && (event.new as InventoryItem)?.id === steppingId) return;
+        setItems((prev) => applyRealtimeEvent(prev, event));
+      },
+      { userId: profile.id, onStatus: setLiveStatus }
+    );
+  }, [profile, fetchAreas, steppingId]);
+
+  const onRefresh = () => { setRefreshing(true); fetchInventory(); fetchAreas(); };
+
+  /**
+   * The ± control.
+   *
+   * Applied optimistically so the number moves under the finger, then reconciled
+   * with the row the database actually wrote. Because the increment happens
+   * server-side under a row lock, a stale local count cannot win — and the floor
+   * at zero holds even if two devices tap at once.
+   */
+  const stepQuantity = useCallback(
+    async (item: InventoryItem, delta: number) => {
+      if (delta < 0 && item.quantity <= 0) return;
+
+      setSteppingId(item.id);
+      setItems((prev) =>
+        prev.map((row) =>
+          row.id === item.id ? { ...row, quantity: Math.max(row.quantity + delta, 0) } : row
+        )
+      );
+
+      try {
+        const updated = await inventoryService.adjustQuantity(item.id, delta);
+        setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+      } catch (error: any) {
+        // Put the real number back rather than leaving the guess on screen.
+        setItems((prev) => prev.map((row) => (row.id === item.id ? item : row)));
+        Alert.alert(
+          'Could not update quantity',
+          error?.message ?? 'Check your connection and try again.'
+        );
+      } finally {
+        setSteppingId(null);
+      }
+    },
+    []
+  );
+
+  /**
+   * How many live items sit in each area. Counted from the rows we already hold
+   * rather than a second round-trip, so the chips can never disagree with the
+   * list they filter.
+   */
+  const areaCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0, unassigned: 0 };
+    items.forEach((item) => {
+      if (item.status === 'consumed' || item.status === 'wasted') return;
+      counts.all += 1;
+      if (item.storage_area_id) {
+        counts[item.storage_area_id] = (counts[item.storage_area_id] ?? 0) + 1;
+      } else {
+        counts.unassigned += 1;
+      }
+    });
+    return counts;
+  }, [items]);
+
+  const showAreaRow = areas.length > 0 && (areas.length > 1 || areaCounts.unassigned > 0);
 
   const handleDelete = (item: InventoryItem) => {
     Alert.alert('Delete Item', `Are you sure you want to remove "${item.product_name}"?`, [
@@ -99,6 +203,15 @@ export default function InventoryScreen() {
       item.product_name.toLowerCase().includes(q) ||
       (item.brand || '').toLowerCase().includes(q) ||
       (item.category || '').toLowerCase().includes(q);
+
+    const matchesArea =
+      areaFilter === 'all'
+        ? true
+        : areaFilter === 'unassigned'
+          ? !item.storage_area_id
+          : item.storage_area_id === areaFilter;
+
+    if (!matchesArea) return false;
     if (filter === 'available') return matchesSearch && item.status === 'available';
     if (filter === 'need_to_buy') return matchesSearch && (item.status === 'consumed' || item.status === 'wasted');
     return matchesSearch;
@@ -111,11 +224,19 @@ export default function InventoryScreen() {
     if (exp === 'expired') return { label: 'Expired', tone: 'danger' as const };
     if (exp === 'today') return { label: 'Today', tone: 'danger' as const };
     if (exp === 'expiring_soon') return { label: 'Expiring Soon', tone: 'warning' as const };
-    return { label: 'Available', tone: 'success' as const };
+    // "Fresh" is the item's condition; the filter above stays "Available"
+    // because it means "not consumed or wasted", which is a different question.
+    return { label: 'Fresh', tone: 'success' as const };
   };
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
     const badge = statusOf(item);
+    const area = areas.find((a) => a.id === item.storage_area_id);
+    // A consumed or wasted item is a historical record; changing its quantity
+    // would rewrite what happened, so the control is withheld rather than
+    // clamped to zero.
+    const canStep = item.status === 'available';
+
     return (
       <View style={styles.rowCard}>
         <Pressable style={styles.rowMain} onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}>
@@ -125,15 +246,30 @@ export default function InventoryScreen() {
             <Text style={styles.itemMeta} numberOfLines={1}>
               {item.quantity} {item.unit}
               {item.brand ? ` · ${item.brand}` : ''}
+              {area ? ` · ${area.name}` : ''}
             </Text>
             <Text style={styles.itemExpiry}>
               {item.expiration_date
-                ? `Expires ${new Date(item.expiration_date).toLocaleDateString()}`
+                ? `${expStatusLabel(item.expiration_date)} · ${new Date(item.expiration_date).toLocaleDateString()}`
                 : 'No expiration date'}
             </Text>
           </View>
           <StatusBadge label={badge.label} tone={badge.tone} />
         </Pressable>
+
+        {canStep && (
+          <View style={styles.rowStepper}>
+            <QuantityStepper
+              value={item.quantity}
+              unit={item.unit}
+              busy={steppingId === item.id}
+              compact
+              onStep={(delta) => stepQuantity(item, delta)}
+            />
+            <Text style={styles.rowStepperHint}>Update stock</Text>
+          </View>
+        )}
+
         <View style={styles.rowActions}>
           <Pressable style={styles.rowAction} onPress={() => handleConsume(item)}>
             <Text style={styles.rowActionText}>✓ Use</Text>
@@ -184,6 +320,58 @@ export default function InventoryScreen() {
           <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => setFilter(f.key)} />
         ))}
       </View>
+
+      {showAreaRow && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.areaRow}
+        >
+          <Chip
+            label="All areas"
+            active={areaFilter === 'all'}
+            onPress={() => setAreaFilter('all')}
+            count={areaCounts.all}
+          />
+          {areas.map((area) => (
+            <Chip
+              key={area.id}
+              label={`${storageEmoji(area)} ${area.name}`}
+              active={areaFilter === area.id}
+              onPress={() => setAreaFilter(area.id)}
+              count={areaCounts[area.id] ?? 0}
+            />
+          ))}
+          {areaCounts.unassigned > 0 && (
+            <Chip
+              label="Unassigned"
+              active={areaFilter === 'unassigned'}
+              onPress={() => setAreaFilter('unassigned')}
+              count={areaCounts.unassigned}
+            />
+          )}
+          <Chip label="Manage areas" active={false} onPress={() => router.push('/storage-areas')} />
+        </ScrollView>
+      )}
+
+      {/* A reached product limit is surfaced here rather than at the moment the
+          write fails, so the user knows before they fill in a form. */}
+      {!gates.addProduct.allowed && !upgradeDismissed && (
+        <UpgradeNotice
+          title={gates.addProduct.title}
+          message={gates.addProduct.message}
+          onPress={() => router.push('/subscription')}
+          onDismiss={() => setUpgradeDismissed(true)}
+          style={styles.notice}
+        />
+      )}
+
+      {liveStatus !== null && liveStatus !== 'SUBSCRIBED' && (
+        <View style={styles.offlineHint}>
+          <WifiOff size={13} color={COLORS.secondaryText} strokeWidth={2} />
+          <Text style={styles.offlineHintText}>Live sync paused — pull down to refresh.</Text>
+        </View>
+      )}
 
       <FlatList
         data={filteredItems}
@@ -256,6 +444,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
   chipRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
+  areaRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  notice: { marginHorizontal: SPACING.lg, marginBottom: SPACING.md },
+  offlineHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
+  },
+  offlineHintText: { fontSize: 11.5, color: COLORS.secondaryText },
   rowCard: {
     backgroundColor: COLORS.white, borderRadius: RADII.card,
     padding: SPACING.md, ...SHADOW.card,
@@ -264,6 +459,11 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
   itemExpiry: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  rowStepper: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  rowStepperHint: { fontSize: 11.5, color: COLORS.secondaryText, fontWeight: '600' },
   rowActions: {
     flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.md,
     marginTop: SPACING.sm, paddingTop: SPACING.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
@@ -271,3 +471,16 @@ const styles = StyleSheet.create({
   rowAction: { paddingHorizontal: 4 },
   rowActionText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 });
+
+/**
+ * How the expiry reads on a row: "Expires today", "Expires in 3d", "Expired".
+ * The date itself is printed beside it, so this only has to carry the urgency.
+ */
+function expStatusLabel(date: string): string {
+  const status = getExpirationStatus(date);
+  if (status === 'expired') return 'Expired';
+  if (status === 'today') return 'Expires today';
+  const days = Math.ceil((new Date(date).getTime() - Date.now()) / 86400000);
+  if (status === 'expiring_soon') return `Expires in ${days}d`;
+  return 'Expires';
+}

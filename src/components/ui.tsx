@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 
@@ -106,14 +106,15 @@ export function PillButton({
 export const AppButton = PillButton;
 
 /* --------------------------------------------------------- Status badge */
-export function StatusBadge({ label, tone = 'neutral', icon: Icon }: {
+export function StatusBadge({ label, tone = 'neutral', icon: Icon, style }: {
   label: string;
   tone?: Tone;
   icon?: IconComp;
+  style?: any;
 }) {
   const { bg, fg } = toneMap[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
+    <View style={[styles.badge, { backgroundColor: bg }, style]}>
       {Icon && <Icon size={11} color={fg} strokeWidth={2.6} />}
       <Text style={[styles.badgeText, { color: fg }]}>{label}</Text>
     </View>
@@ -564,6 +565,252 @@ export function Divider({ style }: { style?: any }) {
   return <View style={[styles.divider, style]} />;
 }
 
+/* ------------------------------------------------------ Quantity ± */
+/**
+ * The − / quantity / + control.
+ *
+ * Purely presentational: it reports a delta and lets the caller decide how to
+ * apply it. That keeps the "never below zero" rule in one place — the database
+ * clamps with GREATEST(…, 0) — instead of being re-implemented per screen. The
+ * minus button is disabled at zero so the dead end is visible before the tap.
+ */
+export function QuantityStepper({
+  value,
+  onStep,
+  busy,
+  unit,
+  min = 0,
+  compact,
+}: {
+  value: number;
+  onStep: (delta: number) => void;
+  busy?: boolean;
+  unit?: string;
+  min?: number;
+  compact?: boolean;
+}) {
+  const atFloor = value <= min;
+  const size = compact ? 30 : 36;
+
+  return (
+    <View style={[styles.stepper, compact && styles.stepperCompact]}>
+      <Pressable
+        onPress={() => onStep(-1)}
+        disabled={busy || atFloor}
+        hitSlop={6}
+        accessibilityLabel="Decrease quantity"
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          { width: size, height: size, borderRadius: size / 2 },
+          (busy || atFloor) && styles.stepperBtnDisabled,
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        {/* A text glyph rather than an icon: the minus stays optically centred
+            at every size and needs no asset. */}
+        <Text style={[styles.stepperGlyph, compact && { fontSize: 17 }]}>−</Text>
+      </Pressable>
+
+      <View style={styles.stepperValueWrap}>
+        {busy ? (
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        ) : (
+          <Text style={[styles.stepperValue, compact && { fontSize: 15 }]} numberOfLines={1}>
+            {value}
+          </Text>
+        )}
+        {!!unit && !compact && <Text style={styles.stepperUnit}>{unit}</Text>}
+      </View>
+
+      <Pressable
+        onPress={() => onStep(1)}
+        disabled={busy}
+        hitSlop={6}
+        accessibilityLabel="Increase quantity"
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          styles.stepperBtnPlus,
+          { width: size, height: size, borderRadius: size / 2 },
+          busy && styles.stepperBtnDisabled,
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        <Text style={[styles.stepperGlyph, styles.stepperGlyphPlus, compact && { fontSize: 17 }]}>
+          +
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------ Usage meter */
+/**
+ * "75 / 100 products" with a fill bar.
+ *
+ * Used wherever a plan limit is shown, so the number and the bar can never
+ * disagree. An unlimited allowance renders the count without a denominator.
+ */
+export function UsageMeter({
+  label,
+  used,
+  limit,
+  unit,
+  style,
+}: {
+  label: string;
+  used: number;
+  limit: number;
+  unit?: string;
+  style?: any;
+}) {
+  const unlimited = limit <= 0;
+  const fraction = unlimited ? 0 : Math.min(used / limit, 1);
+  const tone =
+    unlimited || fraction < 0.8 ? COLORS.primary : fraction < 1 ? COLORS.warning : COLORS.danger;
+
+  return (
+    <View style={[{ gap: 8 }, style]}>
+      <View style={styles.meterRow}>
+        <Text style={styles.meterLabel}>{label}</Text>
+        <Text style={[styles.meterValue, { color: tone }]}>
+          {unlimited ? `${used}${unit ? ` ${unit}` : ''}` : `${used} / ${limit}${unit ? ` ${unit}` : ''}`}
+        </Text>
+      </View>
+      {!unlimited && <Bar fraction={fraction} color={tone} />}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------ Plan pill */
+/** The plan name as a small badge, with a crown when it is a paid tier. */
+export function PlanPill({
+  name,
+  tier,
+  tone = 'neutral',
+  style,
+}: {
+  name: string;
+  tier?: string;
+  tone?: Tone;
+  style?: any;
+}) {
+  const { bg, fg } = toneMap[tone];
+  const paid = tier === 'premium' || tier === 'pro';
+  return (
+    <View style={[styles.badge, { backgroundColor: bg }, style]}>
+      {paid && <Crown size={11} color={fg} strokeWidth={2.6} />}
+      <Text style={[styles.badgeText, { color: fg }]} numberOfLines={1}>
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+/* -------------------------------------------------- Upgrade notice */
+/**
+ * The message shown when a plan limit blocks an action.
+ *
+ * The spec is explicit that a reached limit must offer an upgrade rather than
+ * fail silently, so this is deliberately a first-class component: every gate in
+ * the app renders the same shape, driven by the `GateResult` the entitlement
+ * service returns.
+ */
+export function UpgradeNotice({
+  title,
+  message,
+  ctaLabel = 'View plans',
+  onPress,
+  onDismiss,
+  style,
+}: {
+  title: string;
+  message: string;
+  ctaLabel?: string;
+  onPress: () => void;
+  onDismiss?: () => void;
+  style?: any;
+}) {
+  return (
+    <View style={[styles.upgradeNotice, style]}>
+      <View style={styles.upgradeIcon}>
+        <Crown size={18} color={COLORS.primary} strokeWidth={2.2} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={styles.upgradeTitle}>{title}</Text>
+        <Text style={styles.upgradeMessage}>{message}</Text>
+        <Pressable
+          onPress={onPress}
+          style={({ pressed }) => [styles.upgradeCta, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.upgradeCtaText}>{ctaLabel}</Text>
+          <ArrowRight size={14} color={COLORS.white} strokeWidth={2.4} />
+        </Pressable>
+      </View>
+      {onDismiss && (
+        <Pressable onPress={onDismiss} hitSlop={8} style={styles.upgradeClose}>
+          <X size={16} color={COLORS.secondaryText} />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/* --------------------------------------------------- Feature lock */
+/**
+ * A whole screen standing in for a feature the current plan does not include.
+ *
+ * Shows what the feature is for, so the upsell is informative rather than a
+ * wall, and never hides the user's own data behind it — locked inventory stays
+ * readable, only the premium report or control is replaced.
+ */
+export function FeatureLock({
+  icon: Icon,
+  title,
+  message,
+  ctaLabel = 'See plans',
+  onPress,
+  bullets,
+}: {
+  icon?: IconComp;
+  title: string;
+  message: string;
+  ctaLabel?: string;
+  onPress: () => void;
+  bullets?: string[];
+}) {
+  return (
+    <View style={styles.lock}>
+      <View style={styles.lockIconWrap}>
+        {Icon ? (
+          <Icon size={32} color={COLORS.primary} strokeWidth={1.7} />
+        ) : (
+          <Crown size={32} color={COLORS.primary} strokeWidth={1.7} />
+        )}
+      </View>
+      <Text style={styles.lockTitle}>{title}</Text>
+      <Text style={styles.lockMessage}>{message}</Text>
+
+      {bullets && bullets.length > 0 && (
+        <View style={styles.lockBullets}>
+          {bullets.map((bullet) => (
+            <View key={bullet} style={styles.lockBulletRow}>
+              <Check size={15} color={COLORS.primary} strokeWidth={2.6} />
+              <Text style={styles.lockBulletText}>{bullet}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <PillButton
+        title={ctaLabel}
+        icon={Crown}
+        onPress={onPress}
+        style={{ alignSelf: 'stretch', marginTop: SPACING.lg }}
+      />
+    </View>
+  );
+}
+
 /* ================================================================== */
 const styles = StyleSheet.create({
   card: {
@@ -734,6 +981,93 @@ const styles = StyleSheet.create({
   segTextActive: { color: COLORS.white },
   segTextInactive: { color: COLORS.secondaryText },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.divider, marginVertical: SPACING.sm },
+
+  /* Quantity ± */
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.divider,
+    borderRadius: RADII.pill,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 2,
+  },
+  stepperCompact: { paddingHorizontal: 2, paddingVertical: 2 },
+  stepperBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.mutedBg,
+  },
+  stepperBtnPlus: { backgroundColor: COLORS.primaryLight },
+  stepperBtnDisabled: { opacity: 0.4 },
+  stepperGlyph: { fontSize: 20, fontWeight: '800', color: COLORS.text, lineHeight: 24 },
+  stepperGlyphPlus: { color: COLORS.primary },
+  stepperValueWrap: { minWidth: 46, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { fontSize: 17, fontWeight: '800', color: COLORS.text },
+  stepperUnit: { fontSize: 10, color: COLORS.secondaryText, marginTop: -2 },
+
+  /* Usage meter */
+  meterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  meterLabel: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  meterValue: { fontSize: 13, fontWeight: '800' },
+
+  /* Upgrade notice */
+  upgradeNotice: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: RADII.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.accentLight,
+    padding: SPACING.md,
+  },
+  upgradeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: RADII.icon,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
+  upgradeMessage: { fontSize: 12.5, color: COLORS.secondaryText, lineHeight: 17 },
+  upgradeCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: RADII.pill,
+    marginTop: 8,
+  },
+  upgradeCtaText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+  upgradeClose: { padding: 2 },
+
+  /* Feature lock */
+  lock: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
+  lockIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  lockTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  lockMessage: {
+    fontSize: 13.5,
+    color: COLORS.secondaryText,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  lockBullets: { alignSelf: 'stretch', marginTop: SPACING.md, gap: 10 },
+  lockBulletRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  lockBulletText: { flex: 1, fontSize: 13.5, color: COLORS.text },
 });
 
 // NOTE: NavHeader's default onBack currently no-ops by design when omitted —

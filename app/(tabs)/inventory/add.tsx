@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Alert, ScrollView, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { supabase } from '../../../src/lib/supabase';
 import { useAuth } from '../../../src/context/AuthContext';
+import { useSubscription } from '../../../src/context/SubscriptionContext';
+import { inventoryService } from '../../../src/services/inventoryService';
+import { storageAreaService, storageEmoji } from '../../../src/services/storageAreaService';
+import { describeEntitlementError, type GateResult } from '../../../src/services/entitlementService';
 import { COLORS, SPACING, RADII } from '../../../src/theme';
-import { Tag, CalendarDays, PackagePlus, PencilLine } from 'lucide-react-native';
-import { NavHeader, Field, PillButton } from '../../../src/components/ui';
+import { EXPIRATION_ALERT_OPTIONS, ExpirationAlertDays, StorageArea } from '../../../src/types';
+import { Tag, CalendarDays, PackagePlus, PencilLine, Bell, Boxes } from 'lucide-react-native';
+import { NavHeader, Field, PillButton, UpgradeNotice } from '../../../src/components/ui';
 
 const CATEGORIES = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen', 'Beverages', 'Snacks', 'Condiments', 'Other'];
 const UNITS = ['pcs', 'kg', 'g', 'lb', 'oz', 'L', 'ml', 'cups', 'pack', 'bottle', 'can', 'box'];
@@ -15,7 +19,12 @@ export default function AddItemScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<Record<string, string>>();
   const { profile } = useAuth();
+  const { gates } = useSubscription();
   const [loading, setLoading] = useState(false);
+  const [areas, setAreas] = useState<StorageArea[]>([]);
+  const [storageAreaId, setStorageAreaId] = useState<string | null>(null);
+  const [alertDays, setAlertDays] = useState<ExpirationAlertDays>(3);
+  const [upgrade, setUpgrade] = useState<GateResult | null>(null);
 
   const prefillCategory = (params.category || '').charAt(0).toUpperCase() + (params.category || '').slice(1);
 
@@ -35,10 +44,31 @@ export default function AddItemScreen() {
 
   const editing = !!params.product_name || !!params.barcode;
 
+  // The plan's storage areas. Pre-select the default so the common case needs
+  // no extra tap, and so new items are never silently "unassigned".
+  useEffect(() => {
+    if (!profile) return;
+    storageAreaService
+      .list(profile.id)
+      .then((list) => {
+        setAreas(list);
+        setStorageAreaId((current) => current ?? list.find((a) => a.is_default)?.id ?? list[0]?.id ?? null);
+      })
+      .catch(() => {
+        // No areas only costs us the picker; the item still saves.
+      });
+  }, [profile]);
+
   const setExpiry = (days: number) => {
+    if (days === -9999) {
+      // "Clear" must clear. Adding a negative offset produced a date in 1997,
+      // which read as long-expired rather than as no date at all.
+      setForm((prev) => ({ ...prev, expiration_date: '' }));
+      return;
+    }
     const d = new Date();
     d.setDate(d.getDate() + days);
-    setForm({ ...form, expiration_date: d.toISOString().split('T')[0] });
+    setForm((prev) => ({ ...prev, expiration_date: d.toISOString().split('T')[0] }));
   };
 
   const handleSave = async () => {
@@ -48,8 +78,9 @@ export default function AddItemScreen() {
       return;
     }
     setLoading(true);
+    setUpgrade(null);
     try {
-      const { error } = await supabase.from('inventory_items').insert({
+      await inventoryService.createInventoryItem({
         user_id: profile.id,
         product_name: form.product_name.trim(),
         brand: form.brand || null,
@@ -57,30 +88,46 @@ export default function AddItemScreen() {
         quantity: parseFloat(form.quantity) || 1,
         unit: form.unit,
         expiration_date: form.expiration_date || null,
+        expiration_alert_days: alertDays,
         purchase_date: form.purchase_date || null,
         price: form.price ? parseFloat(form.price) : null,
         barcode: form.barcode || null,
         notes: form.notes || null,
         image_url: form.image_url || null,
+        storage_area_id: storageAreaId,
       });
-      if (error) {
-        Alert.alert('Error', error.message);
-      } else {
-        Alert.alert('Saved', 'Item added to your inventory.', [
-          { text: 'OK', onPress: () => (router.canGoBack() ? router.back() : router.replace('/inventory')) },
-        ]);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Unable to save item.');
+      Alert.alert('Saved', 'Item added to your inventory.', [
+        { text: 'OK', onPress: () => (router.canGoBack() ? router.back() : router.replace('/inventory')) },
+      ]);
+    } catch (error: any) {
+      // A plan limit comes back as an error code; show it as an upgrade prompt
+      // rather than a raw message the user cannot act on.
+      const gate = describeEntitlementError(error);
+      if (gate) setUpgrade(gate);
+      else Alert.alert('Error', error?.message ?? 'Unable to save item.');
     } finally {
       setLoading(false);
     }
   };
 
+  const atProductLimit = !gates.addProduct.allowed;
+
   return (
     <View style={styles.container}>
       <NavHeader title={editing ? 'Review & Save' : 'Add Item'} subtitle={editing ? 'Details from your scan' : 'Manual entry'} />
       <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: insets.bottom + 120 }} keyboardShouldPersistTaps="handled">
+        {/* Shown before the form rather than after a failed save: the user
+            should not fill in nine fields to be told the plan is full. */}
+        {(upgrade ?? (atProductLimit ? gates.addProduct : null)) && (
+          <UpgradeNotice
+            title={(upgrade ?? gates.addProduct).title}
+            message={(upgrade ?? gates.addProduct).message}
+            onPress={() => router.push('/subscription')}
+            onDismiss={upgrade ? () => setUpgrade(null) : undefined}
+            style={{ marginBottom: SPACING.md }}
+          />
+        )}
+
         <Field
           label="Food Name *"
           icon={Tag}
@@ -155,6 +202,52 @@ export default function AddItemScreen() {
           ))}
         </View>
 
+        {/* Alert timing only means something once there is a date to count back
+            from, so it appears with the date rather than sitting there inert. */}
+        {!!form.expiration_date && (
+          <>
+            <View style={styles.labelRow}>
+              <Bell size={14} color={COLORS.text} strokeWidth={2.2} />
+              <Text style={styles.labelInline}>Alert me</Text>
+            </View>
+            <View style={styles.chipWrap}>
+              {EXPIRATION_ALERT_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.chip, alertDays === option.value && styles.chipActive]}
+                  onPress={() => setAlertDays(option.value)}
+                >
+                  <Text style={[styles.chipText, alertDays === option.value && styles.chipTextActive]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
+        {areas.length > 0 && (
+          <>
+            <View style={styles.labelRow}>
+              <Boxes size={14} color={COLORS.text} strokeWidth={2.2} />
+              <Text style={styles.labelInline}>Storage area</Text>
+            </View>
+            <View style={styles.chipWrap}>
+              {areas.map((area) => (
+                <Pressable
+                  key={area.id}
+                  style={[styles.chip, storageAreaId === area.id && styles.chipActive]}
+                  onPress={() => setStorageAreaId(area.id)}
+                >
+                  <Text style={[styles.chipText, storageAreaId === area.id && styles.chipTextActive]}>
+                    {storageEmoji(area)} {area.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
         <Field
           label="Price (₱)"
           value={form.price}
@@ -177,6 +270,7 @@ export default function AddItemScreen() {
           icon={editing ? PencilLine : PackagePlus}
           onPress={handleSave}
           loading={loading}
+          disabled={atProductLimit}
         />
       </View>
     </View>
@@ -186,6 +280,8 @@ export default function AddItemScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   label: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6, marginTop: SPACING.xs },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, marginTop: SPACING.xs },
+  labelInline: { fontSize: 13, fontWeight: '600', color: COLORS.text },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.md },
   chip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill,

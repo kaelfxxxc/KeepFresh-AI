@@ -4,14 +4,22 @@ import { Camera, CameraType } from 'expo-camera/legacy';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
+import { useSubscription } from '../../src/context/SubscriptionContext';
 import { COLORS, SPACING } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { lookupBarcode, toReviewProduct, ReviewInfo } from '../../src/services/barcodeService';
-import { ScanBarcode, Camera as CameraIcon, PenLine, X } from 'lucide-react-native';
+import { ScanBarcode, Camera as CameraIcon, PenLine, X, Sparkles } from 'lucide-react-native';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
+  const { entitlements, gates, refresh } = useSubscription();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  // A lookup is charged to the plan server-side, so the camera is not opened
+  // once the monthly allowance is spent — the user gets the upgrade prompt
+  // instead of scanning a barcode that would only come back refused. Manual
+  // entry stays available, and costs nothing.
+  const scanningEnabled = gates.aiScan.allowed;
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
   // Tracks whether this screen currently has focus so the <Camera> is only
@@ -54,7 +62,7 @@ export default function ScanScreen() {
   // Sweep the scan line up and down the frame while the camera is actively
   // scanning; freeze it once a code is locked in or a lookup is running.
   useEffect(() => {
-    if (!(isFocused && hasPermission && !scanned && !loading) || frameH <= LINE_H + SWEEP_PAD * 2) {
+    if (!(isFocused && scanningEnabled && hasPermission && !scanned && !loading) || frameH <= LINE_H + SWEEP_PAD * 2) {
       return undefined;
     }
     const loop = Animated.loop(
@@ -65,7 +73,7 @@ export default function ScanScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [isFocused, hasPermission, scanned, loading, frameH, sweep]);
+  }, [isFocused, scanningEnabled, hasPermission, scanned, loading, frameH, sweep]);
 
   const openReview = (review: ReviewInfo, source: 'lookup' | 'inventory') => {
     router.push({
@@ -99,10 +107,24 @@ export default function ScanScreen() {
     ]);
   };
 
+  const promptScanLimit = () => {
+    Alert.alert(gates.aiScan.title, gates.aiScan.message, [
+      { text: 'Not now', style: 'cancel', onPress: () => setScanned(false) },
+      { text: 'See plans', onPress: () => { setScanned(false); router.push('/subscription'); } },
+    ]);
+  };
+
   const runLookup = async (barcode: string, fallback?: InventoryItem) => {
     const result = await lookupBarcode(barcode);
+
+    // A lookup that reached the product database was charged to the plan, so
+    // pull the updated usage back rather than leaving a stale meter on screen.
+    if (result.status === 'found' || result.status === 'not_found') refresh();
+
     if (result.status === 'found') {
       openReview(toReviewProduct(result.product), 'lookup');
+    } else if (result.status === 'limit_reached') {
+      promptScanLimit();
     } else if (result.status === 'unavailable' && fallback) {
       // Server unreachable / function not deployed yet — reuse what we know.
       openReview(fromExisting(fallback, barcode), 'inventory');
@@ -155,6 +177,22 @@ export default function ScanScreen() {
   };
 
   const permissionBody = () => {
+    if (!scanningEnabled) {
+      return (
+        <View style={styles.centerState}>
+          <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+          <Text style={styles.stateTitle}>{gates.aiScan.title}</Text>
+          <Text style={styles.stateText}>{gates.aiScan.message}</Text>
+          <Pressable style={styles.manualBtn} onPress={() => router.push('/subscription')}>
+            <Sparkles size={16} color={COLORS.white} strokeWidth={2.2} />
+            <Text style={styles.manualText}>See plans</Text>
+          </Pressable>
+          <Pressable style={styles.textBtn} onPress={() => router.push('/inventory/add')} hitSlop={8}>
+            <Text style={styles.textBtnLabel}>Enter a product manually instead</Text>
+          </Pressable>
+        </View>
+      );
+    }
     if (hasPermission === null) {
       return (
         <View style={styles.centerState}>
@@ -215,7 +253,7 @@ export default function ScanScreen() {
       <StatusBar barStyle="light-content" />
       {permissionBody()}
 
-      {hasPermission && (
+      {hasPermission && scanningEnabled && (
         <>
           <Pressable
             style={[styles.closeBtn, { top: insets.top + 10 }]}
@@ -229,6 +267,11 @@ export default function ScanScreen() {
             {loading && <ActivityIndicator color={COLORS.primary} style={{ marginBottom: SPACING.sm }} />}
             <Text style={styles.sheetTitle}>Scan Product</Text>
             <Text style={styles.sheetSubtitle}>Scan a barcode, snap a photo, or enter details manually.</Text>
+            {!!entitlements && (
+              <Text style={styles.quota}>
+                {entitlements.ai_scans_used} / {entitlements.max_ai_scans} AI scans used this month
+              </Text>
+            )}
 
             <View style={styles.shutterWrap}>
               <View style={styles.shutterOuter}>
@@ -263,6 +306,8 @@ const styles = StyleSheet.create({
   stateText: { fontSize: 14, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 20 },
   manualBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.primary, borderRadius: 50, paddingHorizontal: SPACING.lg, paddingVertical: 12, marginTop: SPACING.md },
   manualText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
+  textBtn: { paddingVertical: SPACING.sm },
+  textBtnLabel: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
   cameraWrap: { flex: 1 },
   camera: { flex: 1 },
   cornerFrame: {
@@ -293,6 +338,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
   sheetSubtitle: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18, marginTop: 4 },
+  quota: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 6 },
   shutterWrap: { marginVertical: SPACING.md },
   shutterOuter: { width: 66, height: 66, borderRadius: 33, borderWidth: 3, borderColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   shutter: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.primary },

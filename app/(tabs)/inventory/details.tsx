@@ -6,11 +6,32 @@ import { useAuth } from '../../../src/context/AuthContext';
 import { supabase } from '../../../src/lib/supabase';
 import { inventoryService } from '../../../src/services/inventoryService';
 import { groceryService } from '../../../src/services/groceryService';
-import { InventoryItem } from '../../../src/types';
+import { storageAreaService, storageEmoji } from '../../../src/services/storageAreaService';
+import {
+  InventoryItem,
+  InventoryTransaction,
+  StorageArea,
+  EXPIRATION_ALERT_OPTIONS,
+  ExpirationAlertDays,
+} from '../../../src/types';
 import { getExpirationStatus } from '../../../src/utils/expiration';
 import { COLORS, SPACING, RADII } from '../../../src/theme';
-import { CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote, Heart } from 'lucide-react-native';
-import { NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt } from '../../../src/components/ui';
+import {
+  CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote,
+  Heart, Bell, Boxes, History,
+} from 'lucide-react-native';
+import {
+  NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt, Chip,
+} from '../../../src/components/ui';
+
+/** Canned offsets offered beside the expiration date. */
+const DATE_CHIPS: { label: string; days: number }[] = [
+  { label: 'Today', days: 0 },
+  { label: '+3 days', days: 3 },
+  { label: '+1 week', days: 7 },
+  { label: '+2 weeks', days: 14 },
+  { label: '+1 month', days: 30 },
+];
 
 export default function InventoryDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -22,6 +43,8 @@ export default function InventoryDetailsScreen() {
   const [busy, setBusy] = useState(false);
   const [onGroceryList, setOnGroceryList] = useState(false);
   const [savingList, setSavingList] = useState(false);
+  const [areas, setAreas] = useState<StorageArea[]>([]);
+  const [history, setHistory] = useState<InventoryTransaction[]>([]);
 
   const fetchItem = useCallback(async () => {
     if (!params.id) return;
@@ -34,7 +57,30 @@ export default function InventoryDetailsScreen() {
     setLoading(false);
   }, [params.id]);
 
-  useEffect(() => { if (profile) fetchItem(); }, [profile, fetchItem]);
+  /** The audit trail for this item — written by a database trigger, so it
+   *  includes changes made from another device. */
+  const fetchHistory = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setHistory(await inventoryService.getItemTransactions(params.id, 12));
+    } catch {
+      // History is supplementary; failing to load it must not break the screen.
+    }
+  }, [params.id]);
+
+  useEffect(() => {
+    if (!profile) return;
+    fetchItem();
+    fetchHistory();
+    storageAreaService.list(profile.id).then(setAreas).catch(() => {});
+  }, [profile, fetchItem, fetchHistory]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchItem();
+      fetchHistory();
+    }, [fetchItem, fetchHistory])
+  );
 
   // Whether this product is already on the grocery list. Re-read on focus so
   // the heart stays honest after the user edits the list on the Grocery tab.
@@ -86,6 +132,53 @@ export default function InventoryDetailsScreen() {
   };
 
   const consume = () => setPromptOpen(true);
+
+  /**
+   * Edit the expiry date and/or how many days ahead to warn.
+   *
+   * Written straight through to the row the reminder job reads, so changing
+   * "3 days before" to "7 days before" takes effect on the next sweep rather
+   * than only in this screen's memory.
+   */
+  const saveExpiration = async (days: number | null, alertDays?: ExpirationAlertDays) => {
+    if (!item) return;
+
+    let date: string | null = item.expiration_date;
+    if (days !== null) {
+      if (days === -1) {
+        date = null;
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + days);
+        date = d.toISOString().split('T')[0];
+      }
+    }
+
+    setBusy(true);
+    try {
+      const updated = await inventoryService.setExpiration(item.id, date, alertDays);
+      setItem(updated);
+      fetchHistory();
+    } catch (error: any) {
+      Alert.alert('Could not update expiration', error?.message ?? 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const moveToArea = async (areaId: string | null) => {
+    if (!item) return;
+    setBusy(true);
+    try {
+      const updated = await inventoryService.moveToArea(item.id, areaId);
+      setItem(updated);
+      fetchHistory();
+    } catch (error: any) {
+      Alert.alert('Could not move item', error?.message ?? 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Goes through the consume_inventory_item RPC: it locks the row, clamps the
   // quantity to what's on hand, and writes the consumption record atomically.
@@ -208,6 +301,98 @@ export default function InventoryDetailsScreen() {
           {attr(null, 'Price', item.price != null ? `₱${item.price.toFixed(2)}` : '—')}
         </View>
 
+        {/* Expiration is editable right here, and the alert lead time with it —
+            the spec asks for both on the item, not buried in settings. */}
+        <View style={styles.card}>
+          <View style={styles.cardHead}>
+            <CalendarDays size={16} color={COLORS.primary} strokeWidth={2.2} />
+            <Text style={styles.cardTitle}>Expiration & alerts</Text>
+            {busy && <ActivityIndicator size="small" color={COLORS.primary} />}
+          </View>
+          <Text style={styles.cardValue}>{date(item.expiration_date)}</Text>
+
+          <View style={styles.chipWrap}>
+            {DATE_CHIPS.map((option) => (
+              <Chip
+                key={option.label}
+                label={option.label}
+                active={false}
+                onPress={() => saveExpiration(option.days)}
+              />
+            ))}
+            {!!item.expiration_date && (
+              <Chip label="Clear date" active={false} onPress={() => saveExpiration(-1)} />
+            )}
+          </View>
+
+          {!!item.expiration_date && (
+            <>
+              <View style={[styles.cardHead, { marginTop: SPACING.md }]}>
+                <Bell size={16} color={COLORS.primary} strokeWidth={2.2} />
+                <Text style={styles.cardTitle}>Remind me</Text>
+              </View>
+              <View style={styles.chipWrap}>
+                {EXPIRATION_ALERT_OPTIONS.map((option) => (
+                  <Chip
+                    key={option.value}
+                    label={option.label}
+                    active={item.expiration_alert_days === option.value}
+                    onPress={() => saveExpiration(null, option.value)}
+                  />
+                ))}
+              </View>
+            </>
+          )}
+        </View>
+
+        {areas.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHead}>
+              <Boxes size={16} color={COLORS.primary} strokeWidth={2.2} />
+              <Text style={styles.cardTitle}>Storage area</Text>
+            </View>
+            <View style={styles.chipWrap}>
+              {areas.map((area) => (
+                <Chip
+                  key={area.id}
+                  label={`${storageEmoji(area)} ${area.name}`}
+                  active={item.storage_area_id === area.id}
+                  onPress={() => moveToArea(area.id)}
+                />
+              ))}
+              <Chip
+                label="Unassigned"
+                active={!item.storage_area_id}
+                onPress={() => moveToArea(null)}
+              />
+            </View>
+          </View>
+        )}
+
+        {history.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHead}>
+              <History size={16} color={COLORS.primary} strokeWidth={2.2} />
+              <Text style={styles.cardTitle}>History</Text>
+            </View>
+            {history.map((entry, index) => (
+              <View
+                key={entry.id}
+                style={[styles.historyRow, index === history.length - 1 && styles.historyRowLast]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.historyAction}>{describeAction(entry)}</Text>
+                  <Text style={styles.historyTime}>
+                    {new Date(entry.created_at).toLocaleString(undefined, {
+                      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {item.status === 'available' && (
           <View style={styles.warningTip}>
             <AlertTriangle size={15} color={COLORS.warningText} strokeWidth={2.2} />
@@ -279,4 +464,53 @@ const styles = StyleSheet.create({
   },
   deleteLink: { paddingHorizontal: SPACING.xs },
   deleteLinkText: { color: COLORS.danger, fontSize: 13, fontWeight: '700' },
+
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13 },
+  cardTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.text },
+  cardValue: { fontSize: 14, color: COLORS.secondaryText, marginTop: 4, marginBottom: SPACING.sm },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingBottom: 13 },
+  historyRow: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.divider,
+  },
+  historyRowLast: { borderBottomWidth: 0 },
+  historyAction: { fontSize: 13.5, color: COLORS.text, fontWeight: '600' },
+  historyTime: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 2 },
 });
+
+/**
+ * One history line in plain language. The database records a machine-readable
+ * action plus before/after quantities; this turns that into something a person
+ * reads at a glance.
+ */
+function describeAction(entry: InventoryTransaction): string {
+  const unit = entry.unit ? ` ${entry.unit}` : '';
+
+  switch (entry.action) {
+    case 'created':
+      return `Added to inventory (${entry.quantity_after ?? 0}${unit})`;
+    case 'quantity_increase':
+      return `Quantity increased ${entry.quantity_before ?? 0} → ${entry.quantity_after ?? 0}${unit}`;
+    case 'quantity_decrease':
+      return `Quantity reduced ${entry.quantity_before ?? 0} → ${entry.quantity_after ?? 0}${unit}`;
+    case 'consumed':
+      return `Used ${Math.abs(entry.delta ?? 0)}${unit}`;
+    case 'wasted':
+      return `Marked as waste (${Math.abs(entry.delta ?? 0)}${unit})`;
+    case 'expiration_changed':
+      return 'Expiration date changed';
+    case 'storage_moved':
+      return 'Moved to another storage area';
+    case 'bulk_add':
+      return 'Added in a bulk import';
+    case 'bulk_update':
+      return 'Changed in a bulk edit';
+    case 'bulk_delete':
+      return 'Removed in a bulk delete';
+    case 'deleted':
+      return 'Deleted';
+    default:
+      return 'Updated';
+  }
+}

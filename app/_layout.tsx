@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, StyleSheet, Animated, Easing, ActivityIndicator } from 'react-native';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
+import { SubscriptionProvider } from '../src/context/SubscriptionContext';
 import AnimatedSplash from '../src/components/AnimatedSplash';
 
 const DEEP_GREEN = '#168A45';
@@ -117,7 +118,12 @@ function CompactCover() {
 export default function Layout() {
   return (
     <AuthProvider>
-      <RootNavigator />
+      {/* Entitlements sit inside Auth so the provider can re-read them whenever
+          the signed-in user changes, and outside the navigator so every screen
+          — including the auth flow's post-signup screens — can read the plan. */}
+      <SubscriptionProvider>
+        <RootNavigator />
+      </SubscriptionProvider>
     </AuthProvider>
   );
 }

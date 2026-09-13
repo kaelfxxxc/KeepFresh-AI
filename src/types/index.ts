@@ -1,3 +1,7 @@
+// Subscription / entitlement / multi-area types live in their own module and
+// are re-exported here so every screen keeps importing from '../types'.
+export * from './subscription';
+
 export interface Profile {
   id: string;
   full_name: string | null;
@@ -23,6 +27,12 @@ export interface InventoryItem {
   image_url: string | null;
   notes: string | null;
   status: 'available' | 'consumed' | 'wasted' | 'expired';
+  // Added by 20260914120000_subscriptions_entitlements.sql
+  storage_area_id: string | null;
+  organization_id: string | null;
+  added_by: string | null;
+  /** How many days before expiry to raise an alert. One of 0 | 1 | 3 | 5 | 7. */
+  expiration_alert_days: number;
   created_at: string;
   updated_at: string;
 }
@@ -110,8 +120,16 @@ export interface NotificationPreference {
 export interface NotificationLog {
   id: string;
   user_id: string;
-  inventory_item_id: string;
+  inventory_item_id: string | null;
   notification_type: string;
+  /**
+   * Identifies the exact occasion a notification was about. A unique index on
+   * (user_id, dedupe_key) makes a repeated send a no-op; NULL rows are exempt,
+   * because Postgres keeps NULLs distinct.
+   */
+  dedupe_key: string | null;
+  title: string | null;
+  body: string | null;
   sent_at: string;
 }
 

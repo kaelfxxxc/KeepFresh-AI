@@ -12,6 +12,15 @@
 // { ok: true, found: true, product: {...} } for a match, and
 // { ok: false, error } for misconfiguration/upstream failures (the upstream body
 // is never forwarded to the client).
+//
+// One AI scan is metered per answered lookup, for the plan the caller's token
+// belongs to. The counter lives in Postgres (`consume_ai_scan`) and is charged
+// with the caller's own JWT, so the limit is enforced here and not merely
+// displayed in the app — a modified client cannot scan past its allowance.
+//
+// Charges are only taken for a definitive answer from upstream (a match, or a
+// barcode upstream has never seen). An upstream outage costs the user nothing.
+// 429 { error: 'ai_scan_limit_reached' } means the monthly allowance is spent.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { json, handleOptions } from '../_shared/cors.ts';
@@ -23,6 +32,51 @@ import { json, handleOptions } from '../_shared/cors.ts';
 // 12-digit UPC and its 13-digit EAN-13 equivalent (leading zero) still match.
 function normalized(code: string): string {
   return String(code).replace(/\s+/g, '').replace(/^0+/, '');
+}
+
+/**
+ * Charge one AI scan to the caller's plan.
+ *
+ * `p_user_id` is left null so the RPC meters whichever user the forwarded JWT
+ * belongs to — this function never accepts a user id from the client.
+ *
+ * Fails closed: if the meter cannot be reached we answer `lookup_unavailable`
+ * (which the app already degrades to manual entry) rather than hand out a scan
+ * the plan may not cover.
+ */
+async function consumeAIScan(req: Request): Promise<'ok' | 'limit' | 'error'> {
+  const url = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const auth = req.headers.get('Authorization');
+  if (!url || !anonKey || !auth) {
+    console.error('barcode-lookup: missing SUPABASE_URL / SUPABASE_ANON_KEY / Authorization');
+    return 'error';
+  }
+
+  try {
+    const res = await fetch(`${url}/rest/v1/rpc/consume_ai_scan`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_user_id: null }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (res.ok) return 'ok';
+
+    // The RPC raises 'ai_scan_limit_reached' as its only deliberate refusal.
+    const body = await res.text();
+    if (body.includes('ai_scan_limit_reached')) return 'limit';
+
+    console.error(`barcode-lookup: consume_ai_scan returned ${res.status}: ${body}`);
+    return 'error';
+  } catch (err) {
+    console.error('barcode-lookup: consume_ai_scan request failed', err);
+    return 'error';
+  }
 }
 
 serve(async (req: Request) => {
@@ -57,34 +111,46 @@ serve(async (req: Request) => {
       `&formatted=y&key=${encodeURIComponent(key)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
 
-    if (res.status === 404) return json({ ok: true, found: false });
-    if (!res.ok) {
+    // Anything other than a match or an upstream 404 is "try later", and is not
+    // charged against the user's scans.
+    if (res.status !== 404 && !res.ok) {
       // 401/403 (bad key), 429 (quota), 5xx — all "try later", not "not found".
       console.error(`barcode-lookup: upstream returned ${res.status}`);
       return json({ ok: false, error: 'lookup_unavailable' }, 502);
     }
 
-    const payload = await res.json();
-    const p = Array.isArray(payload.products) ? payload.products[0] : undefined;
-    if (!p || normalized(p.barcode_number ?? '') !== normalized(barcode)) {
-      return json({ ok: true, found: false });
+    let product: Record<string, unknown> | null = null;
+    if (res.status !== 404) {
+      const payload = await res.json();
+      const p = Array.isArray(payload.products) ? payload.products[0] : undefined;
+      if (p && normalized(p.barcode_number ?? '') === normalized(barcode)) {
+        product = {
+          barcode: p.barcode_number || barcode,
+          title: p.title || null,
+          brand: p.brand || null,
+          manufacturer: p.manufacturer || null,
+          category: p.category || null,
+          description: p.description || null,
+          ingredients: p.ingredients || null,
+          image_url: Array.isArray(p.images) && p.images.length ? p.images[0] : null,
+          size: p.size || null,
+        };
+      }
     }
 
-    return json({
-      ok: true,
-      found: true,
-      product: {
-        barcode: p.barcode_number || barcode,
-        title: p.title || null,
-        brand: p.brand || null,
-        manufacturer: p.manufacturer || null,
-        category: p.category || null,
-        description: p.description || null,
-        ingredients: p.ingredients || null,
-        image_url: Array.isArray(p.images) && p.images.length ? p.images[0] : null,
-        size: p.size || null,
-      },
-    });
+    // Upstream gave a definitive answer — a match, or a barcode it has never
+    // seen — so this lookup is charged to the caller's plan.
+    const meter = await consumeAIScan(req);
+    if (meter === 'limit') {
+      return json({ ok: false, error: 'ai_scan_limit_reached' }, 429);
+    }
+    if (meter === 'error') {
+      return json({ ok: false, error: 'lookup_unavailable' }, 502);
+    }
+
+    return product
+      ? json({ ok: true, found: true, product })
+      : json({ ok: true, found: false });
   } catch (err) {
     console.error('barcode-lookup: upstream fetch failed', err);
     return json({ ok: false, error: 'lookup_unavailable' }, 502);

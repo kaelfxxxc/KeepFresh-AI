@@ -4,11 +4,12 @@ import {
   KeyboardAvoidingView, Platform, TextInput, Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 import { supabase } from '../src/lib/supabase';
 import { COLORS, SPACING, RADII } from '../src/theme';
 import { GroceryList, GroceryItem } from '../src/types';
-import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle } from 'lucide-react-native';
+import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle, ScanBarcode } from 'lucide-react-native';
 import { NavHeader, EmptyState } from '../src/components/ui';
 
 const peso = (n: number) => `₱${n.toFixed(2)}`;
@@ -51,18 +52,29 @@ export default function GroceryListScreen() {
 
   useEffect(() => { if (currentList) fetchItems(currentList.id); }, [currentList?.id, fetchItems]);
 
-  const createList = async () => {
+  // Scanning pushes /grocery/scan on top of this screen and adds the item
+  // there, so the list has to be re-read when it comes back into focus.
+  useFocusEffect(
+    useCallback(() => {
+      fetchLists();
+      if (currentList?.id) fetchItems(currentList.id);
+      // fetchItems already tracks the current list id.
+    }, [fetchLists, fetchItems, currentList?.id])
+  );
+
+  const createList = async (): Promise<GroceryList | null> => {
     const { data, error } = await supabase
       .from('grocery_lists')
       .insert({ name: 'My Grocery List', user_id: profile?.id })
       .select()
       .single();
-    if (error) return;
+    if (error) return null;
     if (data) {
       setLists((l) => [data, ...l]);
       setCurrentList(data);
       setItems([]);
     }
+    return data ?? null;
   };
 
   const addItem = async () => {
@@ -107,6 +119,18 @@ export default function GroceryListScreen() {
     }
   };
 
+  // Scanning needs a list to add to. On a fresh account the scanner would have
+  // nowhere to put the item, so a list is created first rather than leaving a
+  // dead end behind the button.
+  const openScanner = async () => {
+    const list = currentList ?? (await createList());
+    if (!list) return;
+    router.push({
+      pathname: '/grocery/scan',
+      params: { listId: list.id, listName: list.name },
+    });
+  };
+
   // Group by category, unpurchased first.
   const grouped: { category: string; rows: GroceryItem[] }[] = [];
   const byCat = new Map<string, { pending: GroceryItem[]; done: GroceryItem[] }>();
@@ -141,9 +165,19 @@ export default function GroceryListScreen() {
       <NavHeader
         title="Grocery List"
         right={
-          <Pressable onPress={shareList} hitSlop={8} style={styles.headerIcon}>
-            <Share2 size={20} color={COLORS.primary} strokeWidth={2.2} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={openScanner}
+              hitSlop={8}
+              accessibilityLabel="Scan a product into this list"
+              style={styles.headerScan}
+            >
+              <ScanBarcode size={20} color={COLORS.white} strokeWidth={2.2} />
+            </Pressable>
+            <Pressable onPress={shareList} hitSlop={8} style={styles.headerIcon}>
+              <Share2 size={20} color={COLORS.primary} strokeWidth={2.2} />
+            </Pressable>
+          </View>
         }
       />
 
@@ -189,7 +223,7 @@ export default function GroceryListScreen() {
             <EmptyState
               icon={Leaf}
               title="Nothing on this list yet"
-              hint="Add items below — they'll be grouped by category."
+              hint="Add items below, or scan a barcode — they'll be grouped by category."
             />
           ) : (
             <ScrollView
@@ -242,7 +276,9 @@ export default function GroceryListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  headerScan: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   listChips: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, paddingBottom: SPACING.sm },
   listChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50, backgroundColor: COLORS.white,

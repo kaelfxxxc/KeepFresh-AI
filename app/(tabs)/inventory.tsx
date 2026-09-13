@@ -5,12 +5,13 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
+import { inventoryService } from '../../src/services/inventoryService';
 import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { Search, Plus, SlidersHorizontal, Package, ScanLine } from 'lucide-react-native';
-import { Chip, StatusBadge, EmptyState, ItemImage } from '../../src/components/ui';
+import { Chip, StatusBadge, EmptyState, ItemImage, QuantityPrompt } from '../../src/components/ui';
 
 type Filter = 'all' | 'available' | 'need_to_buy';
 const FILTERS: { key: Filter; label: string }[] = [
@@ -27,6 +28,8 @@ export default function InventoryScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [consumeTarget, setConsumeTarget] = useState<InventoryItem | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const fetchInventory = useCallback(async () => {
     if (!profile) return;
@@ -71,26 +74,23 @@ export default function InventoryScreen() {
     ]);
   };
 
-  const handleConsume = (item: InventoryItem) => {
-    Alert.prompt('Consume Item', 'How many consumed?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Consume',
-        onPress: async (quantityStr) => {
-          const qty = parseFloat(quantityStr || '1');
-          const remaining = item.quantity - qty;
-          const base = { user_id: profile?.id, inventory_item_id: item.id, quantity: qty, unit: item.unit };
-          if (remaining <= 0) {
-            await supabase.from('inventory_items').update({ status: 'consumed' }).eq('id', item.id);
-            await supabase.from('inventory_consumption').insert(base);
-          } else {
-            await supabase.from('inventory_items').update({ quantity: remaining }).eq('id', item.id);
-            await supabase.from('inventory_consumption').insert(base);
-          }
-          fetchInventory();
-        },
-      },
-    ]);
+  const handleConsume = (item: InventoryItem) => setConsumeTarget(item);
+
+  // Goes through the consume_inventory_item RPC: it locks the row, clamps the
+  // quantity to what's on hand, and writes the consumption record atomically.
+  const confirmConsume = async (qty: number) => {
+    const item = consumeTarget;
+    if (!item || !profile) return;
+    setBusy(true);
+    try {
+      await inventoryService.consumeInventoryItem(profile.id, item.id, qty);
+      setConsumeTarget(null);
+      await fetchInventory();
+    } catch (error: any) {
+      Alert.alert('Could not record usage', error?.message ?? 'Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const filteredItems = items.filter((item) => {
@@ -211,6 +211,18 @@ export default function InventoryScreen() {
             )
           ) : null
         }
+      />
+
+      <QuantityPrompt
+        visible={!!consumeTarget}
+        title="Use / Consume"
+        message={consumeTarget ? `How many ${consumeTarget.unit} of ${consumeTarget.product_name} did you use?` : undefined}
+        unit={consumeTarget?.unit}
+        max={consumeTarget?.quantity}
+        confirmLabel="Consume"
+        busy={busy}
+        onCancel={() => setConsumeTarget(null)}
+        onConfirm={confirmConsume}
       />
     </View>
   );

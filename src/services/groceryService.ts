@@ -31,6 +31,44 @@ export const groceryService = {
     return data || [];
   },
 
+  // The Grocery screen opens on the most recently updated list, so "the list"
+  // everywhere else means that same one. Read-only — callers that need a list
+  // to exist use createGroceryList below.
+  async getCurrentGroceryList(userId: string): Promise<GroceryList | null> {
+    const { data, error } = await supabase
+      .from('grocery_lists')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return data?.[0] ?? null;
+  },
+
+  async createGroceryList(userId: string, name = 'My Grocery List'): Promise<GroceryList> {
+    const { data, error } = await supabase
+      .from('grocery_lists')
+      .insert({ name, user_id: userId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Matches on the exact name so an inventory item maps to at most one row —
+  // that's what lets the details screen's heart toggle rather than pile up
+  // duplicates. Returns null when the product isn't on the list.
+  async findGroceryItemByName(listId: string, name: string): Promise<GroceryItem | null> {
+    const { data, error } = await supabase
+      .from('grocery_items')
+      .select('*')
+      .eq('grocery_list_id', listId)
+      .eq('name', name)
+      .limit(1);
+    if (error) throw error;
+    return data?.[0] ?? null;
+  },
+
   async addGroceryItem(listId: string, item: Partial<GroceryItem>): Promise<GroceryItem> {
     const { data, error } = await supabase
       .from('grocery_items')

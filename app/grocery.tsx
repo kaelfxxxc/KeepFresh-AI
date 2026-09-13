@@ -288,6 +288,12 @@ const styles = StyleSheet.create({
   composeInput: {
     flex: 1, height: 44, borderRadius: RADII.input, backgroundColor: COLORS.mutedBg,
     paddingHorizontal: 14, fontSize: 15, color: COLORS.text,
+    // A fixed height plus Android's default font padding squeezes the text box,
+    // so the placeholder rendered clipped / off-centre there while looking fine
+    // on iOS. Reset the vertical padding and centre the text explicitly to get
+    // the same result on both platforms. (`padding: 0` in inventory.tsx is the
+    // same workaround for its search field.)
+    paddingVertical: 0, includeFontPadding: false, textAlignVertical: 'center',
   },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4, height: 44, paddingHorizontal: 16,

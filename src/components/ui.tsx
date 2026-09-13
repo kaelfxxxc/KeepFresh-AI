@@ -1,7 +1,7 @@
 // KeepFresh AI - shared UI kit (v2 design language)
 // Thin, presentational primitives only. All data & navigation logic lives in
 // the screens. Colors/tokens come from src/theme; icons from lucide-react-native.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -190,6 +193,121 @@ export function Field({
         )}
       </View>
     </View>
+  );
+}
+
+/* ------------------------------------------------- Quantity prompt dialog */
+// Cross-platform stand-in for Alert.prompt, which is iOS-only and throws
+// "Alert.prompt is not a function" on Android. Collects a quantity (of an item
+// to consume, waste, …) and validates it against `max` before handing the
+// parsed number to onConfirm, so callers never see an invalid value.
+export function QuantityPrompt({
+  visible,
+  title,
+  message,
+  unit = '',
+  max,
+  confirmLabel = 'Confirm',
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  title: string;
+  message?: string;
+  unit?: string;
+  max?: number;
+  confirmLabel?: string;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: (quantity: number) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<TextInput>(null);
+
+  // Start each prompt fresh — a previous value or error must not leak into the
+  // next one. Prefilling with `max` makes "use it all" a single tap.
+  useEffect(() => {
+    if (visible) {
+      setValue(max != null ? String(max) : '');
+      setError(null);
+    }
+  }, [visible, max]);
+
+  const suffix = unit ? ` ${unit}` : '';
+
+  const confirm = () => {
+    const qty = parseFloat(value.replace(',', '.'));
+    if (isNaN(qty) || qty <= 0) {
+      setError('Enter a number greater than 0.');
+      return;
+    }
+    if (max != null && qty > max) {
+      setError(`You only have ${max}${suffix} left.`);
+      return;
+    }
+    setError(null);
+    onConfirm(qty);
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+      // autoFocus on a TextInput inside a Modal is unreliable on Android, so
+      // focus explicitly once the modal is actually on screen.
+      onShow={() => inputRef.current?.focus()}
+    >
+      {/* Keeps the centred card above the keyboard on both platforms. */}
+      <KeyboardAvoidingView
+        style={styles.promptKAV}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={styles.promptBackdrop} onPress={busy ? undefined : onCancel}>
+          <Pressable style={styles.promptCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.promptTitle}>{title}</Text>
+            {!!message && <Text style={styles.promptMessage}>{message}</Text>}
+
+            <View style={[styles.promptInputBox, !!error && styles.promptInputBoxError]}>
+              <TextInput
+                ref={inputRef}
+                value={value}
+                onChangeText={(t) => { setValue(t); if (error) setError(null); }}
+                keyboardType="decimal-pad"
+                selectTextOnFocus
+                editable={!busy}
+                returnKeyType="done"
+                onSubmitEditing={confirm}
+                placeholder="0"
+                placeholderTextColor={COLORS.secondaryText}
+                style={styles.promptInput}
+              />
+              {!!unit && <Text style={styles.promptUnit}>{unit}</Text>}
+            </View>
+
+            {!!error && <Text style={styles.promptError}>{error}</Text>}
+
+            {max != null && (
+              <Pressable
+                onPress={() => { setValue(String(max)); setError(null); }}
+                disabled={busy}
+                style={({ pressed }) => [styles.promptChip, pressed && { opacity: 0.8 }]}
+              >
+                <Text style={styles.promptChipText}>Use all ({max}{suffix})</Text>
+              </Pressable>
+            )}
+
+            <View style={styles.promptActions}>
+              <PillButton title="Cancel" variant="outline" onPress={onCancel} disabled={busy} style={{ flex: 1 }} />
+              <PillButton title={confirmLabel} onPress={confirm} loading={busy} style={{ flex: 1 }} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -512,6 +630,35 @@ const styles = StyleSheet.create({
   fieldIcon: { marginRight: 10 },
   fieldInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: COLORS.text, paddingLeft: 0 },
   eye: { paddingLeft: 10 },
+  promptKAV: { flex: 1 },
+  promptBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+  },
+  promptCard: {
+    width: '100%', maxWidth: 400,
+    backgroundColor: COLORS.white, borderRadius: RADII.card,
+    padding: SPACING.lg,
+  },
+  promptTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  promptMessage: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18, marginTop: 4 },
+  promptInputBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    borderRadius: RADII.input, paddingHorizontal: 14, minHeight: 52,
+    marginTop: SPACING.md,
+  },
+  promptInputBoxError: { borderColor: COLORS.danger },
+  promptInput: { flex: 1, paddingVertical: 14, fontSize: 18, fontWeight: '700', color: COLORS.text },
+  promptUnit: { fontSize: 14, fontWeight: '600', color: COLORS.secondaryText },
+  promptError: { fontSize: 12, color: COLORS.dangerText, marginTop: 6 },
+  promptChip: {
+    alignSelf: 'flex-start', marginTop: SPACING.md,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill,
+    backgroundColor: COLORS.primaryLight,
+  },
+  promptChipText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  promptActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
   iconBtn: {
     width: 40,
     height: 40,

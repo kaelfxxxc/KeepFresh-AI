@@ -1,15 +1,3 @@
--- ============================================================================
--- KeepFresh AI — Organisation member directory
--- ============================================================================
--- The staff screen needs to show who is on the team, but the `profiles` policy
--- only exposes a user's own row. Reading a colleague's name is legitimate, so
--- this opens exactly that door and nothing wider: you can see the profile of
--- someone who shares an active organisation with you.
---
--- `shares_org_with` is SECURITY DEFINER so the policy that calls it does not
--- recurse back into organization_members' own policies.
--- ============================================================================
-
 CREATE OR REPLACE FUNCTION public.shares_org_with(p_other UUID)
 RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER

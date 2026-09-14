@@ -72,7 +72,7 @@ export default function AnimatedSplash() {
   // Fit the disc inside the viewport with a comfortable gutter, never crowding
   // the edges on a small phone. The artwork is already inset within its own
   // square canvas, so the rendered size is the disc diameter and nothing more.
-  const discD = Math.max(200, Math.min(width - 100, 330));
+  const discD = Math.min(200, width - 100);
 
   const riseStyle = {
     opacity: rise,

@@ -1,37 +1,3 @@
--- ============================================================================
--- KeepFresh AI — Staff management, bulk inventory RPCs & entitlement fixes
--- ============================================================================
--- Follow-up to 20260914120000_subscriptions_entitlements.sql.
---
--- Three things:
---
---   1. SECURITY DEFINER routines that CANNOT be expressed with row-level
---      security alone:
---        * create_organization      — inserts the org and its owner row together
---        * add_org_member_by_email  — needs to read another user's profile,
---                                     which RLS deliberately forbids
---        * bulk_*                   — one authorised batch instead of N separate
---                                     round-trips that can half-apply
---
---   2. Corrections to the feature matrix. Re-reading the specification:
---      Household Premium does NOT include multiple storage areas (only Pro
---      does), and Food Establishment Premium does. The first migration granted
---      Premium a 5-area allowance; fixed here.
---
---   3. The signup bootstrap created three storage areas, which contradicts any
---      plan limited to one. New accounts now get a single default area, and the
---      surplus defaults are removed from existing accounts — but only when they
---      are unused, so no real inventory organisation is ever destroyed.
---
--- Every function below re-checks permissions explicitly. SECURITY DEFINER runs
--- as the table owner, which BYPASSES row-level security — so the ownership
--- predicates inside these bodies are the security boundary, not a nicety.
--- ============================================================================
-
--- ============================================================================
--- 1. ENTITLEMENT MATRIX CORRECTIONS
--- ============================================================================
-
 UPDATE public.feature_entitlements fe
    SET limit_value = 1
   FROM public.subscription_plans p

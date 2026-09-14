@@ -149,12 +149,20 @@ export default function GroceryListScreen() {
           {item.purchased && <Check size={13} color={COLORS.white} strokeWidth={3} />}
         </View>
       </Pressable>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.itemName, item.purchased && styles.itemNameOn]}>{item.name}</Text>
-        <Text style={styles.itemMeta}>{item.quantity} {item.unit || ''}</Text>
+      {/* The name is the only part of the row allowed to give way. Without a
+          line limit it wraps instead of shrinking, and a grocery name long
+          enough to wrap takes the row height with it while shoving the price
+          and the delete button off the right edge. */}
+      <View style={styles.rowMain}>
+        <Text style={[styles.itemName, item.purchased && styles.itemNameOn]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={styles.itemMeta} numberOfLines={1}>{item.quantity} {item.unit || ''}</Text>
       </View>
-      <Text style={[styles.price, item.purchased && styles.priceOn]}>{peso(item.estimated_price || 0)}</Text>
-      <Pressable onPress={() => deleteItem(item)} hitSlop={8} style={{ marginLeft: 8 }}>
+      <Text style={[styles.price, item.purchased && styles.priceOn]} numberOfLines={1}>
+        {peso(item.estimated_price || 0)}
+      </Text>
+      <Pressable onPress={() => deleteItem(item)} hitSlop={8}>
         <Trash2 size={16} color={COLORS.danger} strokeWidth={2} />
       </Pressable>
     </View>
@@ -204,27 +212,30 @@ export default function GroceryListScreen() {
               <View style={styles.summaryIconWrap}>
                 <ShoppingCart size={20} color={COLORS.primary} strokeWidth={2.2} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.summaryCount}>
+              <View style={styles.rowMain}>
+                <Text style={styles.summaryCount} numberOfLines={1}>
                   {pending.length} item{pending.length === 1 ? '' : 's'} to buy
                 </Text>
-                <Text style={styles.summaryDone}>
+                <Text style={styles.summaryDone} numberOfLines={1}>
                   {items.length - pending.length} checked off
                 </Text>
               </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.budgetAmount}>{peso(budget)}</Text>
+              <View style={styles.budgetBlock}>
+                <Text style={styles.budgetAmount} numberOfLines={1}>{peso(budget)}</Text>
                 <Text style={styles.budgetLabel}>estimated</Text>
               </View>
             </View>
           </View>
 
           {items.length === 0 ? (
-            <EmptyState
-              icon={Leaf}
-              title="Nothing on this list yet"
-              hint="Add items below, or scan a barcode — they'll be grouped by category."
-            />
+            <View style={styles.emptyFill}>
+              <EmptyState
+                compact
+                icon={Leaf}
+                title="Nothing on this list yet"
+                hint="Add items below, or scan a barcode — they'll be grouped by category."
+              />
+            </View>
           ) : (
             <ScrollView
               style={{ flex: 1 }}
@@ -233,7 +244,7 @@ export default function GroceryListScreen() {
             >
               {grouped.map((g) => (
                 <View key={g.category} style={{ marginTop: SPACING.md }}>
-                  <Text style={styles.groupLabel}>{g.category}</Text>
+                  <Text style={styles.groupLabel} numberOfLines={1}>{g.category}</Text>
                   <View style={styles.card}>
                     {g.rows.map(renderRow)}
                   </View>
@@ -246,13 +257,16 @@ export default function GroceryListScreen() {
           )}
         </>
       ) : (
-        <EmptyState
-          icon={ShoppingCart}
-          title="No grocery list yet"
-          hint="Create a list to track what you need on your next trip."
-          actionLabel="Create your first list"
-          onAction={createList}
-        />
+        <View style={styles.emptyFill}>
+          <EmptyState
+            compact
+            icon={ShoppingCart}
+            title="No grocery list yet"
+            hint="Create a list to track what you need on your next trip."
+            actionLabel="Create your first list"
+            onAction={createList}
+          />
+        </View>
       )}
 
       <View style={[styles.composeBar, { paddingBottom: insets.bottom + SPACING.sm }]}>
@@ -295,6 +309,16 @@ const styles = StyleSheet.create({
     padding: SPACING.md, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
   },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  // The one column that absorbs whatever width is left. `minWidth: 0` is what
+  // lets it actually shrink — without it a long string sets the column's floor
+  // and the fixed-width things beside it get pushed off the screen.
+  rowMain: { flex: 1, minWidth: 0 },
+  // The amount is money: it reads as a unit, so it keeps its intrinsic width
+  // rather than being squeezed, and the column beside it truncates instead.
+  budgetBlock: { alignItems: 'flex-end', flexShrink: 0 },
+  // Holds the empty-list placeholder in the space between the summary card and
+  // the compose bar, so shrinking it does not just leave a larger gap behind.
+  emptyFill: { flex: 1, justifyContent: 'center' },
   summaryIconWrap: { width: 42, height: 42, borderRadius: RADII.icon, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
   summaryCount: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   summaryDone: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },

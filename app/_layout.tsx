@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { SubscriptionProvider } from '../src/context/SubscriptionContext';
 import { supabaseConfig } from '../src/lib/supabase';
 import AnimatedSplash from '../src/components/AnimatedSplash';
+import { notificationService } from '../src/services/notificationService';
+import { useNotificationTaps } from '../src/hooks/useNotificationTaps';
 
 const DEEP_GREEN = '#168A45';
 
@@ -31,6 +33,19 @@ function RootNavigator() {
 
   const inAuthGroup = segments[0] === '(auth)';
   const onLoginOrSignup = segments[1] === 'login' || segments[1] === 'signup';
+
+  // Reminders shown while the app is open are only displayed at all once a
+  // foreground handler is registered — see `enableForegroundPresentation`.
+  // This effect is on the root navigator, so it lands before any child screen's
+  // sweep can present one.
+  useEffect(() => {
+    notificationService.enableForegroundPresentation();
+  }, []);
+
+  // Tapping a reminder opens the screen it is about. Gated on the session so a
+  // tap that launched the app waits for the user to be restored rather than
+  // being redirected to Login.
+  useNotificationTaps(!loading && !!user);
 
   // True when the visible screen doesn't match the session state yet.
   const mismatch =

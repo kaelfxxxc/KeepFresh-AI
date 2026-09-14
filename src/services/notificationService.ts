@@ -61,6 +61,46 @@ interface PlannedNotification {
   itemId?: string | null;
 }
 
+/** Where a tap on one of our notifications should take the user. */
+export interface NotificationTarget {
+  pathname: string;
+  params?: Record<string, string>;
+}
+
+/**
+ * The screen a notification is about, given its payload.
+ *
+ * Deliberately total and pure: every kind we can schedule has an answer, an
+ * unrecognised one still lands somewhere useful rather than doing nothing, and
+ * the mapping can be reasoned about without a running navigator.
+ *
+ * An expiry reminder is the one case with a choice — when the payload names the
+ * product we go straight to it, and when it does not (a legacy request, or one
+ * whose item has since been deleted) the alerts list is the honest fallback.
+ */
+function targetForNotification(data: unknown): NotificationTarget {
+  const fallback: NotificationTarget = { pathname: '/(tabs)/alerts' };
+  if (!isOurs(data)) return fallback;
+
+  switch (data.kind) {
+    case 'expiration':
+    case 'expired':
+      return data.itemId
+        ? { pathname: '/inventory/details', params: { id: data.itemId } }
+        : fallback;
+    case 'low_inventory':
+      return { pathname: '/(tabs)/inventory' };
+    case 'grocery_reminder':
+      return { pathname: '/grocery' };
+    case 'subscription_renewal':
+    case 'ai_usage':
+    case 'inventory_limit':
+      return { pathname: '/subscription' };
+    default:
+      return fallback;
+  }
+}
+
 function isOurs(data: unknown): data is OurData {
   return !!data && typeof data === 'object' && (data as OurData).app === APP_TAG;
 }
@@ -101,6 +141,33 @@ function formatMoney(value: number): string {
 }
 
 export const notificationService = {
+  /**
+   * Decide what the OS does with a notification that arrives while the app is
+   * in the foreground.
+   *
+   * This is not cosmetic. Until a handler is set, expo-notifications discards
+   * foreground notifications outright — and the sweep presents most reminders
+   * (anything due now: expiry today, low stock, usage limits) immediately, which
+   * only ever lands in the foreground. Without this they were never shown at
+   * all, so there was nothing to tap.
+   *
+   * Safe to call more than once; the handler is a single slot, not a stack.
+   */
+  enableForegroundPresentation(): void {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  },
+
+  /** The screen a tapped notification is about. See `targetForNotification`. */
+  targetFor(data: unknown): NotificationTarget {
+    return targetForNotification(data);
+  },
+
   async requestPermission(): Promise<boolean> {
     if (!Device.isDevice) return false;
 

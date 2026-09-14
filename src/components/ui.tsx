@@ -491,24 +491,41 @@ export function SectionLabel({ children, right }: { children: React.ReactNode; r
 }
 
 /* ------------------------------------------------------- Empty state */
-export function EmptyState({ icon: Icon, title, hint, actionLabel, onAction }: {
+/**
+ * The "nothing here yet" block.
+ *
+ * `compact` is for screens that have already said something above it. The
+ * grocery list stacks this directly under a summary card that has just reported
+ * the list as empty, so the full-size circle lands as a second and larger
+ * announcement of the same fact.
+ */
+export function EmptyState({ icon: Icon, title, hint, actionLabel, onAction, compact }: {
   icon?: IconComp;
   title: string;
   hint?: string;
   actionLabel?: string;
   onAction?: () => void;
+  compact?: boolean;
 }) {
   return (
-    <View style={styles.empty}>
+    <View style={[styles.empty, compact && styles.emptyCompact]}>
       {Icon && (
-        <View style={styles.emptyIconWrap}>
-          <Icon size={34} color={COLORS.primary} strokeWidth={1.6} />
+        <View style={[styles.emptyIconWrap, compact && styles.emptyIconWrapCompact]}>
+          <Icon
+            size={compact ? 24 : 34}
+            color={COLORS.primary}
+            strokeWidth={compact ? 1.8 : 1.6}
+          />
         </View>
       )}
-      <Text style={styles.emptyTitle}>{title}</Text>
-      {!!hint && <Text style={styles.emptyHint}>{hint}</Text>}
+      <Text style={[styles.emptyTitle, compact && styles.emptyTitleCompact]}>{title}</Text>
+      {!!hint && <Text style={[styles.emptyHint, compact && styles.emptyHintCompact]}>{hint}</Text>}
       {actionLabel && onAction && (
-        <PillButton title={actionLabel} onPress={onAction} style={{ marginTop: SPACING.md }} />
+        <PillButton
+          title={actionLabel}
+          onPress={onAction}
+          style={{ marginTop: compact ? SPACING.sm : SPACING.md }}
+        />
       )}
     </View>
   );
@@ -962,6 +979,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
   empty: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
+  emptyCompact: { padding: SPACING.md, gap: 5 },
   emptyIconWrap: {
     width: 72,
     height: 72,
@@ -971,8 +989,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 4,
   },
+  emptyIconWrapCompact: { width: 48, height: 48, borderRadius: 24, marginBottom: 2 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  emptyTitleCompact: { fontSize: 14 },
   emptyHint: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18 },
+  emptyHintCompact: { fontSize: 12, lineHeight: 16 },
   segRow: { flexDirection: 'row', gap: SPACING.sm },
   seg: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill },
   segActive: { backgroundColor: COLORS.primary },

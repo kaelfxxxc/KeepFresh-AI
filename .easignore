@@ -1,0 +1,30 @@
+# EAS Build upload rules.
+#
+# WHY THIS FILE EXISTS — do not delete it.
+#
+# EAS CLI uploads the project by cloning with `--no-checkout` and then copying
+# the working directory through a gitignore filter. Because the clone carries no
+# checked-out files and the copy step matches patterns only (it never consults
+# git's index), any file matching .gitignore is dropped — *even if it is tracked*.
+#
+# .env matches .gitignore, so it never reached the EAS builder. Every standalone
+# Android build therefore bundled an empty Supabase URL and died on launch with
+# `supabaseUrl is required.` — while development worked, because `expo start`
+# reads .env straight from disk.
+#
+# When .easignore exists, EAS ignores .gitignore entirely and uses only the rules
+# below. .env is deliberately NOT excluded here, which is what makes it upload.
+#
+# IMPORTANT: because this file replaces .gitignore for uploads, any new
+# .gitignore entry must be mirrored here or it will be shipped to the builder.
+
+node_modules
+.expo
+
+# Editor / OS noise.
+.DS_Store
+*.log
+
+# Never upload local native projects — EAS regenerates them from app config.
+android
+ios

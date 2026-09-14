@@ -1,5 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resolveSupabaseConfig, SupabaseConfigError } from './supabaseConfig';
 import type {
   Profile,
   InventoryItem,
@@ -24,22 +25,94 @@ import type {
   PriceHistoryEntry,
 } from '../types';
 
-// Accept both the canonical name and the older _PROJECT_URL variant so a stale
-// .env can never silently hand createClient an undefined URL.
-const supabaseUrl =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  process.env.EXPO_PUBLIC_SUPABASE_PROJECT_URL ||
-  '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+/**
+ * Resolved once, at import time, so every consumer and the root layout agree on
+ * the same answer and the same error.
+ */
+export const supabaseConfig = resolveSupabaseConfig();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-  },
-});
+/** Non-null only when configuration is missing — rendered by `app/_layout.tsx`. */
+export const supabaseConfigError: SupabaseConfigError | null = supabaseConfig.ok
+  ? null
+  : new SupabaseConfigError(supabaseConfig.message, supabaseConfig.missing);
+
+/**
+ * The client is deliberately left untyped so screens keep using the plain row
+ * shapes from `src/types`, matching the original `createClient` inference.
+ *
+ * Note: this must be the `SupabaseClient` type itself, not
+ * `ReturnType<typeof createClient>` — the latter resolves the generic defaults
+ * of the last overload and collapses every row type to `never` under
+ * @supabase/supabase-js v2.116.
+ */
+export type AppSupabaseClient = SupabaseClient;
+
+/**
+ * The app's single Supabase client.
+ *
+ * Created here and nowhere else in the app. `supabase/functions/_shared/
+ * supabase.ts` holds a second `createClient` call, but that one is a Deno edge
+ * function running server-side with the service-role key — it is not reachable
+ * from, and never bundled into, the mobile app.
+ */
+export const supabase: AppSupabaseClient = supabaseConfig.ok
+  ? createClient(supabaseConfig.url, supabaseConfig.anonKey, {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    })
+  : createUnconfiguredClient(supabaseConfigError!);
+
+/**
+ * Stand-in used only when configuration is missing.
+ *
+ * Calling anything on it throws the configuration error — which names the
+ * missing variables and how to set them — instead of the bare
+ * `supabaseUrl is required.` that `createClient` produces.
+ *
+ * It deliberately does not throw on property *access*: modules touch
+ * `supabase.auth` while setting themselves up, and throwing there would abort
+ * module evaluation and reintroduce exactly the crash this guards against. The
+ * throw is deferred to the call, where the root layout has already had the
+ * chance to render the configuration error screen instead of the app.
+ */
+/**
+ * The stand-in's type.
+ *
+ * Declared rather than inferred because the `get` trap returns the proxy from
+ * inside its own initializer, and TypeScript cannot infer a type that refers to
+ * itself — TS7022. (TypeScript 5.9 happens to resolve it; the 5.3 that SDK 51
+ * pins does not, so the annotation has to be explicit.)
+ *
+ * Every property — however deep the chain — is another stand-in. `undefined` is
+ * reserved for `then`, so the object is never mistaken for a thenable.
+ */
+interface UnconfiguredSupabaseClient {
+  [property: string]: UnconfiguredSupabaseClient | undefined;
+}
+
+function createUnconfiguredClient(error: SupabaseConfigError): AppSupabaseClient {
+  // Self-referential: `supabase.auth.getSession` and
+  // `supabase.from(...).select(...)` both resolve to this same stand-in, and
+  // calling it throws the configuration error. Throwing on the call rather than
+  // on the access is what keeps module setup working.
+  const unconfigured: UnconfiguredSupabaseClient = new Proxy(
+    function unconfiguredClient() {} as unknown as object,
+    {
+      get: (_target, property) => (property === 'then' ? undefined : unconfigured),
+      apply: () => {
+        throw error;
+      },
+    }
+  ) as unknown as UnconfiguredSupabaseClient;
+
+  // Through `unknown`: the stand-in deliberately shares no structure with a real
+  // client, so there is no overlap for a direct assertion to work from.
+  return unconfigured as unknown as AppSupabaseClient;
+}
 
 // Reference types for the schema. The client itself is deliberately untyped so
 // screens keep using the plain row shapes from `src/types`; this describes what

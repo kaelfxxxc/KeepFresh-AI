@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { View, StyleSheet, Animated, Easing, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, ActivityIndicator, ScrollView } from 'react-native';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { SubscriptionProvider } from '../src/context/SubscriptionContext';
+import { supabaseConfig } from '../src/lib/supabase';
 import AnimatedSplash from '../src/components/AnimatedSplash';
 
 const DEEP_GREEN = '#168A45';
@@ -115,7 +116,34 @@ function CompactCover() {
   );
 }
 
+/**
+ * Shown instead of the app when this build has no usable Supabase credentials.
+ *
+ * It renders before any provider and without the router, because both would
+ * reach for the Supabase client during mount — AuthProvider calls
+ * `supabase.auth.getSession()` in its first effect, and every route imports a
+ * service that does the same. Rendering them here would turn a legible
+ * configuration problem back into an unexplained crash.
+ */
+function ConfigurationErrorScreen({ message }: { message: string }) {
+  return (
+    <View style={styles.configError}>
+      <Text style={styles.configErrorTitle}>Configuration error</Text>
+      <Text style={styles.configErrorLead}>
+        This build was made without the Supabase settings it needs, so it cannot start.
+      </Text>
+      <ScrollView style={styles.configErrorScroll} contentContainerStyle={styles.configErrorScrollBody}>
+        <Text style={styles.configErrorDetail}>{message}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 export default function Layout() {
+  if (!supabaseConfig.ok) {
+    return <ConfigurationErrorScreen message={supabaseConfig.message} />;
+  }
+
   return (
     <AuthProvider>
       {/* Entitlements sit inside Auth so the provider can re-read them whenever
@@ -139,5 +167,38 @@ const styles = StyleSheet.create({
     backgroundColor: DEEP_GREEN,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  configError: {
+    flex: 1,
+    backgroundColor: DEEP_GREEN,
+    paddingHorizontal: 24,
+    paddingTop: 72,
+    paddingBottom: 32,
+  },
+  configErrorTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  configErrorLead: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  configErrorScroll: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    borderRadius: 12,
+  },
+  configErrorScrollBody: {
+    padding: 16,
+  },
+  configErrorDetail: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: 'monospace',
   },
 });

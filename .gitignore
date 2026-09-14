@@ -1,5 +1,23 @@
+# Dependencies
 node_modules
-node_modules
-node_modules
-#.env keep in private
+
+# Expo
+.expo
+dist
+web-build
+
+# Native projects — EAS regenerates these from app config (CNG).
+# Remove these two lines if you ever `expo prebuild` and commit native code.
+android
+ios
+
+# Secrets. `.env` holds the Supabase anon key and the demo account
+# password; it is uploaded to EAS explicitly via .easignore, not via git.
 .env
+.env.local
+.env.*.local
+
+# Editor / OS noise
+.DS_Store
+*.log
+*.orig

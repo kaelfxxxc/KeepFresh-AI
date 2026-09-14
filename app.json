@@ -10,7 +10,6 @@
     "scheme": "keepfreshai",
     "splash": {
       "image": "./assets/images/keepfresh-splash-logo.png",
-      "imageWidth": 100,
       "resizeMode": "contain",
       "backgroundColor": "#168A45"
     },
@@ -50,7 +49,6 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/keepfresh-splash-logo.png",
-          "imageWidth": 100,
           "resizeMode": "contain",
           "backgroundColor": "#168A45"
         }

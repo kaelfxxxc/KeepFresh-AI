@@ -36,10 +36,20 @@ const AUDIENCE_LABELS: Record<PlanAudience, string> = {
 };
 
 const TIER_LABELS: Record<SubscriptionPlan['tier'], string> = {
+  free: 'Free',
   free_trial: 'Free Trial',
   premium: 'Premium',
   pro: 'Pro',
 };
+
+/**
+ * The tiers the price list renders, in order.
+ *
+ * Listed explicitly rather than derived from `PlanTier` on purpose: `free` is the
+ * floor an account falls back to, not something anyone buys, so it must never
+ * appear among the plans a user is choosing between.
+ */
+const SELLABLE_TIERS: SubscriptionPlan['tier'][] = ['free_trial', 'premium', 'pro'];
 
 /**
  * How each entitlement reads on a plan card.
@@ -100,7 +110,7 @@ export const subscriptionService = {
       if (forAudience.length === 0) return;
 
       const tiers: PlanGroup['tiers'] = [];
-      (['free_trial', 'premium', 'pro'] as SubscriptionPlan['tier'][]).forEach((tier) => {
+      SELLABLE_TIERS.forEach((tier) => {
         const forTier = forAudience.filter((p) => p.tier === tier);
         if (forTier.length === 0) return;
         tiers.push({
@@ -367,11 +377,13 @@ export function storeProductId(plan: Pick<SubscriptionPlan, 'id'>): string {
   return plan.id;
 }
 
-/** Only monthly/yearly plans are purchasable. */
+/** Only monthly/yearly plans are purchasable. The free floor never is. */
 export function isPurchasable(plan: SubscriptionPlan): boolean {
   return plan.billing_period === 'monthly' || plan.billing_period === 'yearly';
 }
 
 export function periodLabel(period: BillingPeriod): string {
-  return period === 'monthly' ? 'Monthly' : period === 'yearly' ? 'Yearly' : 'Trial';
+  if (period === 'monthly') return 'Monthly';
+  if (period === 'yearly') return 'Yearly';
+  return period === 'free' ? 'Free' : 'Trial';
 }

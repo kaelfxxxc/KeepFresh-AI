@@ -35,6 +35,20 @@ export interface GateResult {
 const allowed = (): GateResult => ({ allowed: true, title: '', message: '' });
 
 /**
+ * Which tier a "you have hit the ceiling" prompt should point at.
+ *
+ * Not simply "the next tier up": the ladder differs by audience. A Household
+ * account's next step is Premium; an Establishment's is Pro. `pro` and `premium`
+ * already say where the user is, so they are taken at face value; anything below
+ * them — the free floor, a free trial, or no plan at all — is resolved by
+ * audience.
+ */
+function suggestedTier(e: Entitlements | null): 'premium' | 'pro' {
+  if (e?.tier === 'pro' || e?.tier === 'premium') return 'pro';
+  return e?.audience === 'establishment' ? 'pro' : 'premium';
+}
+
+/**
  * Error codes/messages the database raises when a limit is hit. Matching on
  * these lets a screen turn a failed write into the same upgrade prompt it would
  * have shown up front.
@@ -114,7 +128,7 @@ export function gateAddProduct(e: Entitlements | null): GateResult {
     allowed: false,
     title: 'Product limit reached',
     message: `You are using all ${e.max_products} products on ${e.plan_name}. Upgrade for more capacity — your existing items are safe.`,
-    requiredTier: e.tier === 'free_trial' ? 'premium' : 'pro',
+    requiredTier: suggestedTier(e),
     used: e.products_used,
     limit: e.max_products,
   };
@@ -127,7 +141,7 @@ export function gateUseAIScan(e: Entitlements | null): GateResult {
     allowed: false,
     title: 'AI scan limit reached',
     message: `You have used ${e.ai_scans_used} of ${e.max_ai_scans} scans this month. Upgrade for more, or enter products manually.`,
-    requiredTier: e.tier === 'free_trial' ? 'premium' : 'pro',
+    requiredTier: suggestedTier(e),
     used: e.ai_scans_used,
     limit: e.max_ai_scans,
   };
@@ -188,7 +202,7 @@ export function gateUseMultipleStorage(e: Entitlements | null, currentCount = 0)
       allowed: false,
       title: 'Storage area limit reached',
       message: `Your plan allows ${feature.limit} storage area${feature.limit === 1 ? '' : 's'}. Upgrade to add more.`,
-      requiredTier: e.tier === 'free_trial' ? 'premium' : 'pro',
+      requiredTier: suggestedTier(e),
       used: currentCount,
       limit: feature.limit,
     };

@@ -34,9 +34,12 @@ export function TrialExpiryNotice() {
     if (showing.current) return;
     showing.current = true;
 
-    // After the fallback to the free tier, `plan_name` is the trial plan's own
-    // name, which is what the user recognises.
-    const name = entitlements?.plan_name ?? 'Your free trial';
+    // `subscription_plan_name` is the ROW's plan — "Household Free Trial" — which
+    // is the name the user recognises. NOT `plan_name`: once the trial lapses the
+    // account has already fallen back to the free plan, so `plan_name` now reads
+    // "Household Free", and naming that would describe the state they are
+    // arriving at rather than the trial that just ended.
+    const name = entitlements?.subscription_plan_name ?? 'Your free trial';
     const endedOn = entitlements?.trial_ends_at
       ? new Date(entitlements.trial_ends_at).toLocaleDateString(undefined, {
           day: 'numeric',
@@ -71,7 +74,7 @@ export function TrialExpiryNotice() {
   }, [
     trialJustEnded,
     loading,
-    entitlements?.plan_name,
+    entitlements?.subscription_plan_name,
     entitlements?.trial_ends_at,
     acknowledgeTrialEnded,
     router,

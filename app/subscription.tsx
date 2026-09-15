@@ -571,7 +571,9 @@ function formatDate(value: string | null | undefined): string {
 }
 
 function periodLabelFor(period: BillingPeriod): string {
-  return period === 'yearly' ? 'per year' : period === 'monthly' ? 'per month' : 'free trial';
+  if (period === 'yearly') return 'per year';
+  if (period === 'monthly') return 'per month';
+  return period === 'free' ? 'free plan' : 'free trial';
 }
 
 const styles = StyleSheet.create({

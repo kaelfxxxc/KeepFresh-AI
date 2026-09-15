@@ -1,5 +1,18 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- NOTE — apply order
+-- ==================
+-- This file creates the schema and the original function set. It has already
+-- been applied. `trial_expiration.sql` is the file to run on top of it: it
+-- REPLACES `get_user_entitlements`, `guard_subscription_update` and
+-- `grant_default_entitlements` with later versions, and owns the split between
+-- the permanent free tier and the free trial.
+--
+-- Re-pasting THIS file would therefore roll those three functions back to their
+-- older versions. The catalogue and the feature matrix below are kept in step
+-- with trial_expiration.sql so a re-paste is at least not contradictory, but if
+-- you do re-paste it, run trial_expiration.sql again afterwards.
+
 -- ============================================================================
 -- 1. SUBSCRIPTION CATALOGUE
 -- ============================================================================
@@ -7,8 +20,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS public.subscription_plans (
   id              TEXT PRIMARY KEY,
   audience        TEXT NOT NULL CHECK (audience IN ('household', 'establishment')),
-  tier            TEXT NOT NULL CHECK (tier IN ('free_trial', 'premium', 'pro')),
-  billing_period  TEXT NOT NULL CHECK (billing_period IN ('trial', 'monthly', 'yearly')),
+  tier            TEXT NOT NULL CHECK (tier IN ('free', 'free_trial', 'premium', 'pro')),
+  billing_period  TEXT NOT NULL CHECK (billing_period IN ('free', 'trial', 'monthly', 'yearly')),
   name            TEXT NOT NULL,
   description     TEXT,
   price_php       NUMERIC(10, 2) NOT NULL DEFAULT 0,
@@ -32,12 +45,18 @@ COMMENT ON COLUMN public.subscription_plans.max_products IS
 INSERT INTO public.subscription_plans
   (id, audience, tier, billing_period, name, description, price_php, duration_days, max_products, max_ai_scans, sort_order)
 VALUES
-  ('household_trial',              'household',     'free_trial', 'trial',   'Household Free Trial',      'Try every core feature for 7 days.',            0,     7,   30,  10, 10),
+  -- The permanent free floor, one per audience. Not purchasable: the app's plan
+  -- list is built from (free_trial, premium, pro), so tier 'free' never appears
+  -- on it. See the FREE TIER vs FREE TRIAL section of trial_expiration.sql for
+  -- why the floor is a separate plan from the trial at all.
+  ('household_free',               'household',     'free',       'free',    'Household Free',            'The essentials, free for as long as you need them.',   0,     30,  30,  10, 5),
+  ('household_trial',              'household',     'free_trial', 'trial',   'Household Free Trial',      'Try every Premium feature for 7 days.',         0,     7,   100, 50, 10),
   ('household_premium_monthly',    'household',     'premium',    'monthly', 'Household Premium',         'Billed monthly. Cancel any time.',             99,   30,  100,  50, 20),
   ('household_premium_yearly',     'household',     'premium',    'yearly',  'Household Premium (Yearly)','Two months free versus monthly.',              999,  365, 100,  50, 21),
   ('household_pro_monthly',        'household',     'pro',        'monthly', 'Household Pro',             'Billed monthly. Cancel any time.',             199,  30,  300, 100, 30),
   ('household_pro_yearly',         'household',     'pro',        'yearly',  'Household Pro (Yearly)',    'Two months free versus monthly.',              1999, 365, 300, 100, 31),
-  ('establishment_trial',          'establishment', 'free_trial', 'trial',   'Establishment Free Trial',  'Try the inventory basics for 7 days.',         0,     7,   50,  10, 40),
+  ('establishment_free',           'establishment', 'free',       'free',    'Establishment Free',        'The essentials, free for as long as you need them.',   0,     30,  50,  10, 6),
+  ('establishment_trial',          'establishment', 'free_trial', 'trial',   'Establishment Free Trial',  'Try every Pro feature for 3 days.',            0,     3,   1500, 300, 40),
   ('establishment_premium_monthly','establishment', 'premium',    'monthly', 'Establishment Premium',     'Billed monthly. Cancel any time.',             499,  30,  500, 100, 50),
   ('establishment_premium_yearly', 'establishment', 'premium',    'yearly',  'Establishment Premium (Yearly)','Two months free versus monthly.',           4999, 365, 500, 100, 51),
   ('establishment_pro_monthly',    'establishment', 'pro',        'monthly', 'Establishment Pro',         'Billed monthly. Cancel any time.',             999,  30,  1500, 300, 60),
@@ -72,16 +91,30 @@ CREATE TABLE IF NOT EXISTS public.feature_entitlements (
 
 WITH feature_matrix (audience, tier, feature_key, enabled, limit_value) AS (
   VALUES
-    -- Household — Free Trial: 30 products, 10 scans, manual entry, basic
-    -- alerts, basic AI recipes, smart grocery list.
-    ('household', 'free_trial', 'manual_entry',          TRUE,  NULL::INTEGER),
+    -- Household — Free: 30 products, 10 scans. The permanent floor, and what a
+    -- household trial used to grant before the trial was lifted to Premium.
+    ('household', 'free', 'manual_entry',          TRUE,  NULL::INTEGER),
+    ('household', 'free', 'expiration_alerts',     TRUE,  NULL),
+    ('household', 'free', 'ai_recipes',            TRUE,  5),
+    ('household', 'free', 'smart_grocery_list',    TRUE,  NULL),
+    ('household', 'free', 'waste_report',          FALSE, NULL),
+    ('household', 'free', 'advanced_waste_report', FALSE, NULL),
+    ('household', 'free', 'price_tracking',        FALSE, NULL),
+    ('household', 'free', 'multiple_storage',      TRUE,  1),
+    ('household', 'free', 'advanced_inventory',    FALSE, NULL),
+    ('household', 'free', 'staff_management',      FALSE, NULL),
+    ('household', 'free', 'bulk_inventory',        FALSE, NULL),
+
+    -- Household — Free Trial: 100 products, 50 scans, exactly the Premium
+    -- matrix. The 7-day trial is a look at Premium, not a longer free plan.
+    ('household', 'free_trial', 'manual_entry',          TRUE,  NULL),
     ('household', 'free_trial', 'expiration_alerts',     TRUE,  NULL),
-    ('household', 'free_trial', 'ai_recipes',            TRUE,  5),
+    ('household', 'free_trial', 'ai_recipes',            TRUE,  NULL),
     ('household', 'free_trial', 'smart_grocery_list',    TRUE,  NULL),
-    ('household', 'free_trial', 'waste_report',          FALSE, NULL),
+    ('household', 'free_trial', 'waste_report',          TRUE,  NULL),
     ('household', 'free_trial', 'advanced_waste_report', FALSE, NULL),
-    ('household', 'free_trial', 'price_tracking',        FALSE, NULL),
-    ('household', 'free_trial', 'multiple_storage',      TRUE,  1),
+    ('household', 'free_trial', 'price_tracking',        TRUE,  NULL),
+    ('household', 'free_trial', 'multiple_storage',      TRUE,  5),
     ('household', 'free_trial', 'advanced_inventory',    FALSE, NULL),
     ('household', 'free_trial', 'staff_management',      FALSE, NULL),
     ('household', 'free_trial', 'bulk_inventory',        FALSE, NULL),
@@ -114,19 +147,35 @@ WITH feature_matrix (audience, tier, feature_key, enabled, limit_value) AS (
     ('household', 'pro', 'staff_management',             FALSE, NULL),
     ('household', 'pro', 'bulk_inventory',               FALSE, NULL),
 
-    -- Establishment — Free Trial: 50 products, 10 scans, manual entry, basic
-    -- inventory, basic expiration alerts.
+    -- Establishment — Free: 50 products, 10 scans. The permanent floor, and
+    -- what an establishment trial used to grant before the trial was lifted to
+    -- Pro. Keeping this minimal is the whole point: it is what every lapsed
+    -- establishment account falls back to.
+    ('establishment', 'free', 'manual_entry',          TRUE,  NULL),
+    ('establishment', 'free', 'expiration_alerts',     TRUE,  NULL),
+    ('establishment', 'free', 'ai_recipes',            FALSE, NULL),
+    ('establishment', 'free', 'smart_grocery_list',    FALSE, NULL),
+    ('establishment', 'free', 'waste_report',          FALSE, NULL),
+    ('establishment', 'free', 'advanced_waste_report', FALSE, NULL),
+    ('establishment', 'free', 'price_tracking',        FALSE, NULL),
+    ('establishment', 'free', 'multiple_storage',      TRUE,  1),
+    ('establishment', 'free', 'advanced_inventory',    FALSE, NULL),
+    ('establishment', 'free', 'staff_management',      FALSE, NULL),
+    ('establishment', 'free', 'bulk_inventory',        FALSE, NULL),
+
+    -- Establishment — Free Trial: 1,500 products, 300 scans, exactly the Pro
+    -- matrix. The 3-day trial is a look at Pro, not a longer free plan.
     ('establishment', 'free_trial', 'manual_entry',          TRUE,  NULL),
     ('establishment', 'free_trial', 'expiration_alerts',     TRUE,  NULL),
-    ('establishment', 'free_trial', 'ai_recipes',            FALSE, NULL),
-    ('establishment', 'free_trial', 'smart_grocery_list',    FALSE, NULL),
-    ('establishment', 'free_trial', 'waste_report',          FALSE, NULL),
-    ('establishment', 'free_trial', 'advanced_waste_report', FALSE, NULL),
-    ('establishment', 'free_trial', 'price_tracking',        FALSE, NULL),
-    ('establishment', 'free_trial', 'multiple_storage',      TRUE,  1),
-    ('establishment', 'free_trial', 'advanced_inventory',    FALSE, NULL),
-    ('establishment', 'free_trial', 'staff_management',      FALSE, NULL),
-    ('establishment', 'free_trial', 'bulk_inventory',        FALSE, NULL),
+    ('establishment', 'free_trial', 'ai_recipes',            TRUE,  NULL),
+    ('establishment', 'free_trial', 'smart_grocery_list',    TRUE,  NULL),
+    ('establishment', 'free_trial', 'waste_report',          TRUE,  NULL),
+    ('establishment', 'free_trial', 'advanced_waste_report', TRUE,  NULL),
+    ('establishment', 'free_trial', 'price_tracking',        TRUE,  NULL),
+    ('establishment', 'free_trial', 'multiple_storage',      TRUE,  NULL),
+    ('establishment', 'free_trial', 'advanced_inventory',    TRUE,  NULL),
+    ('establishment', 'free_trial', 'staff_management',      TRUE,  NULL),
+    ('establishment', 'free_trial', 'bulk_inventory',        TRUE,  NULL),
 
     -- Establishment — Premium: 500 products, 100 scans, price tracking,
     -- waste/savings reports, multiple storage areas, advanced inventory.
@@ -621,11 +670,13 @@ BEGIN
     END IF;
   END IF;
 
-  -- Fall back to the audience's free-trial plan: it defines the floor limits
-  -- that still apply after a paid plan lapses.
+  -- Fall back to the audience's `free` plan: it defines the floor limits that
+  -- still apply after a paid plan lapses. Not `free_trial` — the trial plans
+  -- carry Premium/Pro features, so falling back to one would hand a lapsed
+  -- account exactly what it just lost.
   IF v_plan.id IS NULL THEN
     SELECT * INTO v_plan FROM public.subscription_plans
-    WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free_trial'
+    WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free'
     LIMIT 1;
   END IF;
 

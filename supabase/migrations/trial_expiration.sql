@@ -1,79 +1,172 @@
 -- ============================================================================
--- KeepFresh AI — automatic trial expiration
+-- 1. FREE TIER vs FREE TRIAL
 -- ============================================================================
--- Paste this whole file into the Supabase SQL editor and run it. It is
--- idempotent: running it twice changes nothing the second time.
+-- Until this section, one plan per audience did two unrelated jobs.
+-- `household_trial` / `establishment_trial` was BOTH the 7/3-day free trial AND
+-- the permanent floor an account falls back to once its plan lapses. That is the
+-- entire reason the establishment trial could not grant Pro: the trial's own
+-- feature rows were also the floor's, so switching them on would have handed Pro
+-- to every lapsed establishment account, permanently, for free.
 --
--- Household accounts get a 7-day free trial of Premium; Food Establishment
--- accounts get a 3-day trial of Pro. When a trial ends the account falls back
--- to the free tier automatically — with nothing deleted, and with the
--- entitlement decided by the database rather than by the app.
+-- This section gives each role its own plan:
 --
--- Most of that machinery already exists (see
--- supabase/migrations/subscriptions_entitlements.sql). This file completes it:
+--   *_free    the permanent floor. Seeded with exactly what the trial granted
+--             before this file ran, so a lapsed account loses nothing.
+--   *_trial   a genuine, time-limited taste of the tier above it —
+--             Household → Premium features, Establishment → Pro features.
 --
---   1. Food Establishment trials become 3 days.
---   2. get_user_entitlements() survives the housekeeping job that flips lapsed
---      rows — and stops handing a lapsed user their old plan's features.
---   3. guard_subscription_update() lets a row catch up with the clock.
---   4. sync_my_subscription() brings the CALLER's own row up to date, which is
---      what "handled automatically on app open" means in practice. The
---      whole-table job stays un-callable by clients.
---   5. New accounts read their trial length from subscription_plans instead of
---      a hardcoded 7 days, and the backfill stops re-trialling lapsed users.
---   6. The housekeeping job runs daily. Subscription expiry needs no edge
---      function and no API key — it is pure SQL.
--- ============================================================================
+-- It must run before section 3, which re-points the fallback at tier 'free'.
 
+-- The CHECKs were written inline in CREATE TABLE, so Postgres auto-named them
+-- `<table>_<column>_check`. Dropping and re-adding is the only way to widen one,
+-- and the DROP ... IF EXISTS in front is what keeps this file re-runnable.
+ALTER TABLE public.subscription_plans
+  DROP CONSTRAINT IF EXISTS subscription_plans_tier_check;
+ALTER TABLE public.subscription_plans
+  ADD CONSTRAINT subscription_plans_tier_check
+  CHECK (tier IN ('free', 'free_trial', 'premium', 'pro'));
+
+ALTER TABLE public.subscription_plans
+  DROP CONSTRAINT IF EXISTS subscription_plans_billing_period_check;
+ALTER TABLE public.subscription_plans
+  ADD CONSTRAINT subscription_plans_billing_period_check
+  CHECK (billing_period IN ('free', 'trial', 'monthly', 'yearly'));
+
+-- The permanent free floor, one per audience. Capacity and features are exactly
+-- what the trial granted before this migration, so an account that lapses today
+-- keeps every product, storage area and feature it already had.
+--
+-- `billing_period = 'free'` is what keeps these off the plan list and out of
+-- `isPurchasable()` — they are the floor, not something to buy. `duration_days`
+-- is meaningless here (nothing ever expires a free plan); it only satisfies the
+-- NOT NULL.
+INSERT INTO public.subscription_plans
+  (id, audience, tier, billing_period, name, description, price_php, duration_days, max_products, max_ai_scans, sort_order)
+VALUES
+  ('household_free',     'household',     'free', 'free', 'Household Free',
+   'The essentials — manual entry, expiration alerts and your pantry, free for as long as you need them.',
+   0, 30, 30, 10, 90),
+  ('establishment_free', 'establishment', 'free', 'free', 'Establishment Free',
+   'The essentials — manual entry, expiration alerts and your inventory, free for as long as you need them.',
+   0, 30, 50, 10, 91)
+ON CONFLICT (id) DO UPDATE SET
+  audience       = EXCLUDED.audience,
+  tier           = EXCLUDED.tier,
+  billing_period = EXCLUDED.billing_period,
+  name           = EXCLUDED.name,
+  description    = EXCLUDED.description,
+  price_php      = EXCLUDED.price_php,
+  duration_days  = EXCLUDED.duration_days,
+  max_products   = EXCLUDED.max_products,
+  max_ai_scans   = EXCLUDED.max_ai_scans,
+  sort_order     = EXCLUDED.sort_order,
+  updated_at     = NOW();
+
+-- The floor inherits the matrix the trial used to carry, and the trial inherits
+-- the tier above it. Same shape as the matrix in subscriptions_entitlements.sql:
+-- joined on (audience, tier), so every plan of a tier picks these up.
+WITH feature_matrix (audience, tier, feature_key, enabled, limit_value) AS (
+  VALUES
+    -- Household — Free. What the household trial granted before today.
+    ('household', 'free', 'manual_entry',          TRUE,  NULL::INTEGER),
+    ('household', 'free', 'expiration_alerts',     TRUE,  NULL),
+    ('household', 'free', 'ai_recipes',            TRUE,  5),
+    ('household', 'free', 'smart_grocery_list',    TRUE,  NULL),
+    ('household', 'free', 'waste_report',          FALSE, NULL),
+    ('household', 'free', 'advanced_waste_report', FALSE, NULL),
+    ('household', 'free', 'price_tracking',        FALSE, NULL),
+    ('household', 'free', 'multiple_storage',      TRUE,  1),
+    ('household', 'free', 'advanced_inventory',    FALSE, NULL),
+    ('household', 'free', 'staff_management',      FALSE, NULL),
+    ('household', 'free', 'bulk_inventory',        FALSE, NULL),
+
+    -- Establishment — Free. What the establishment trial granted before today.
+    ('establishment', 'free', 'manual_entry',          TRUE,  NULL),
+    ('establishment', 'free', 'expiration_alerts',     TRUE,  NULL),
+    ('establishment', 'free', 'ai_recipes',            FALSE, NULL),
+    ('establishment', 'free', 'smart_grocery_list',    FALSE, NULL),
+    ('establishment', 'free', 'waste_report',          FALSE, NULL),
+    ('establishment', 'free', 'advanced_waste_report', FALSE, NULL),
+    ('establishment', 'free', 'price_tracking',        FALSE, NULL),
+    ('establishment', 'free', 'multiple_storage',      TRUE,  1),
+    ('establishment', 'free', 'advanced_inventory',    FALSE, NULL),
+    ('establishment', 'free', 'staff_management',      FALSE, NULL),
+    ('establishment', 'free', 'bulk_inventory',        FALSE, NULL),
+
+    -- Household — Free Trial. Mirrors Household Premium: the trial is a 7-day
+    -- look at Premium, not a longer version of the free plan.
+    ('household', 'free_trial', 'manual_entry',          TRUE,  NULL),
+    ('household', 'free_trial', 'expiration_alerts',     TRUE,  NULL),
+    ('household', 'free_trial', 'ai_recipes',            TRUE,  NULL),
+    ('household', 'free_trial', 'smart_grocery_list',    TRUE,  NULL),
+    ('household', 'free_trial', 'waste_report',          TRUE,  NULL),
+    ('household', 'free_trial', 'advanced_waste_report', FALSE, NULL),
+    ('household', 'free_trial', 'price_tracking',        TRUE,  NULL),
+    ('household', 'free_trial', 'multiple_storage',      TRUE,  5),
+    ('household', 'free_trial', 'advanced_inventory',    FALSE, NULL),
+    ('household', 'free_trial', 'staff_management',      FALSE, NULL),
+    ('household', 'free_trial', 'bulk_inventory',        FALSE, NULL),
+
+    -- Establishment — Free Trial. Mirrors Establishment Pro. This is the fix:
+    -- the 3-day trial now unlocks Pro, staff management and bulk inventory
+    -- included.
+    ('establishment', 'free_trial', 'manual_entry',          TRUE,  NULL),
+    ('establishment', 'free_trial', 'expiration_alerts',     TRUE,  NULL),
+    ('establishment', 'free_trial', 'ai_recipes',            TRUE,  NULL),
+    ('establishment', 'free_trial', 'smart_grocery_list',    TRUE,  NULL),
+    ('establishment', 'free_trial', 'waste_report',          TRUE,  NULL),
+    ('establishment', 'free_trial', 'advanced_waste_report', TRUE,  NULL),
+    ('establishment', 'free_trial', 'price_tracking',        TRUE,  NULL),
+    ('establishment', 'free_trial', 'multiple_storage',      TRUE,  NULL),
+    ('establishment', 'free_trial', 'advanced_inventory',    TRUE,  NULL),
+    ('establishment', 'free_trial', 'staff_management',      TRUE,  NULL),
+    ('establishment', 'free_trial', 'bulk_inventory',        TRUE,  NULL)
+)
+INSERT INTO public.feature_entitlements (plan_id, feature_key, enabled, limit_value)
+SELECT p.id, m.feature_key, m.enabled, m.limit_value
+FROM feature_matrix m
+JOIN public.subscription_plans p ON p.audience = m.audience AND p.tier = m.tier
+ON CONFLICT (plan_id, feature_key) DO UPDATE SET
+  enabled     = EXCLUDED.enabled,
+  limit_value = EXCLUDED.limit_value;
+
+-- Capacity follows the features. A trial that unlocks Pro but caps at 50
+-- products is a stranger combination than the one it replaces.
+--
+-- Note this raises what a trial can hold without lowering the floor, so an
+-- establishment that fills 1,500 products in three days keeps all of them when
+-- the trial lapses — it simply cannot add a 51st until it subscribes. Nothing is
+-- ever deleted; that is the same contract a lapsed Premium account already has.
+UPDATE public.subscription_plans AS sp
+   SET max_products = t.max_products,
+       max_ai_scans = t.max_ai_scans,
+       updated_at   = NOW()
+  FROM (VALUES ('household_trial',      100,   50),
+               ('establishment_trial', 1500, 300)) AS t(id, max_products, max_ai_scans)
+ WHERE sp.id = t.id
+   AND (sp.max_products <> t.max_products OR sp.max_ai_scans <> t.max_ai_scans);
 
 -- ============================================================================
--- 1. FOOD ESTABLISHMENT TRIAL: 3 DAYS
+-- 2. TRIAL LENGTHS
 -- ============================================================================
--- The trial length lives in subscription_plans.duration_days, which is where
--- grant_default_entitlements() reads it from. Changing it here changes every
--- account created from now on.
---
--- Trials that are ALREADY RUNNING are deliberately left alone — there is no
--- UPDATE against user_subscriptions in this section. Cutting a live trial short
--- would revoke access a user was already promised, and each row carries its own
--- current_period_end precisely so it is not at the mercy of a later edit.
 
 UPDATE public.subscription_plans
    SET duration_days = 3,
-       description   = 'Try the inventory basics for 3 days.',
+       description   = 'Try every Pro feature for 3 days.',
        updated_at    = NOW()
  WHERE id = 'establishment_trial'
-   AND (duration_days <> 3 OR description IS DISTINCT FROM 'Try the inventory basics for 3 days.');
+   AND (duration_days <> 3 OR description IS DISTINCT FROM 'Try every Pro feature for 3 days.');
 
 UPDATE public.subscription_plans
-   SET description = 'Try every core feature for 7 days.',
+   SET description = 'Try every Premium feature for 7 days.',
        updated_at  = NOW()
  WHERE id = 'household_trial'
    AND duration_days = 7
-   AND description IS DISTINCT FROM 'Try every core feature for 7 days.';
-
+   AND description IS DISTINCT FROM 'Try every Premium feature for 7 days.';
 
 -- ============================================================================
--- 2. get_user_entitlements() — the single source of truth
+-- 3. get_user_entitlements()
 -- ============================================================================
--- Three changes from the original, and no key removed, so existing callers
--- keep working:
---
---   a. The subscription lookup no longer filters to live statuses. A lapsed row
---      is still read, so the app can say "expired" or "cancelled" instead of
---      collapsing to a blank "no plan" in the window between a plan ending and
---      the daily job flipping the row.
---
---   b. The plan's features are taken ONLY while the period is actually running.
---      This is the important one. The original was safe by accident: its WHERE
---      clause hid lapsed rows, so v_plan was never populated for them. Widening
---      that clause without moving the plan lookup inside `IF v_is_active` would
---      hand a lapsed Premium account Premium features, because the free-tier
---      fallback is guarded by `IF v_plan.id IS NULL`.
---
---   c. Trial metadata is returned, so the client reads one authoritative
---      "days remaining" rather than recomputing it from a timestamp and its own
---      clock.
 
 CREATE OR REPLACE FUNCTION public.get_user_entitlements(p_user_id UUID DEFAULT NULL)
 RETURNS JSONB
@@ -91,6 +184,7 @@ DECLARE
   v_status       TEXT;
   v_is_active    BOOLEAN := FALSE;
   v_was_trial    BOOLEAN := FALSE;
+  v_was_trial_name TEXT;
   v_days_left    INTEGER := 0;
 BEGIN
   v_uid := COALESCE(p_user_id, auth.uid());
@@ -128,9 +222,12 @@ BEGIN
     v_is_active := v_sub.current_period_end > NOW()
                    AND v_sub.status IN ('trialing', 'active');
 
-    -- Was the plan this row names a trial? Read from the ROW's plan, not from
-    -- the resolved one, so a lapsed trial is still recognisable as a trial.
-    SELECT (sp.billing_period = 'trial') INTO v_was_trial
+    -- Was the plan this row names a trial, and what was it called? Read from the
+    -- ROW's plan, not the resolved one, so a lapsed trial is still recognisable as
+    -- a trial — and still nameable, now that the fallback below is a different
+    -- plan whose name would otherwise answer for it.
+    SELECT (sp.billing_period = 'trial'), sp.name
+      INTO v_was_trial, v_was_trial_name
     FROM public.subscription_plans sp
     WHERE sp.id = v_sub.plan_id;
     v_was_trial := COALESCE(v_was_trial, FALSE);
@@ -154,13 +251,17 @@ BEGIN
     );
   END IF;
 
-  -- The floor. An audience's free_trial plan defines what still applies once a
-  -- paid plan lapses, and is the plan for someone who never had one at all.
-  -- Reached whenever nothing above filled v_plan — i.e. whenever the account has
-  -- no live subscription, which is exactly the "back to a free account" state.
+  -- The floor. An audience's `free` plan defines what still applies once a paid
+  -- plan lapses, and is the plan for someone who never had one at all. Reached
+  -- whenever nothing above filled v_plan — i.e. whenever the account has no live
+  -- subscription, which is exactly the "back to a free account" state.
+  --
+  -- Pointed at tier 'free', NOT 'free_trial'. The trial plans now carry the tier
+  -- above them (Premium/Pro features), so falling back to one would hand a lapsed
+  -- account the very features it just lost.
   IF v_plan.id IS NULL THEN
     SELECT * INTO v_plan FROM public.subscription_plans
-    WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free_trial'
+    WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free'
     LIMIT 1;
   END IF;
 
@@ -215,9 +316,12 @@ BEGIN
     -- `plan_id` the moment a plan lapses: plan_id becomes the free-tier floor
     -- while this keeps naming what the user actually had. It is what lets the
     -- app tell "your free trial ended" apart from "your Premium plan ended" —
-    -- a distinction `tier` cannot make, since both report 'free_trial' after
-    -- the fallback.
+    -- a distinction `tier` cannot make, since both report 'free' after the
+    -- fallback.
     'subscription_plan_id', v_sub.plan_id,
+    -- The same plan's display name, so the "your trial has ended" notice can
+    -- name the trial itself rather than the free plan it fell back to.
+    'subscription_plan_name', v_was_trial_name,
     'trial_started_at', CASE WHEN v_was_trial THEN v_sub.started_at         ELSE NULL END,
     'trial_ends_at',    CASE WHEN v_was_trial THEN v_sub.current_period_end ELSE NULL END,
     'is_trialing',      (v_is_active AND v_status = 'trialing'),
@@ -229,22 +333,17 @@ $$;
 REVOKE ALL ON FUNCTION public.get_user_entitlements(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_user_entitlements(UUID) TO authenticated;
 
-
 -- ============================================================================
--- 3. guard_subscription_update() — let a row catch up with the clock
+-- 4. guard_subscription_update()
 -- ============================================================================
--- The original rejected EVERY client-side change to `status`, which is right
--- for a plan change and wrong for this: it meant a signed-in user could never
--- let their own lapsed row say it had lapsed.
+-- Blocks a modified client from writing its own entitlements. The one change
+-- from the original: a clock-driven transition to expired/canceled is allowed,
+-- because `sync_my_subscription` (section 5) is a SECURITY DEFINER function
+-- running as the caller and would otherwise be rejected by its own trigger.
 --
--- A period that has already ended is expired whether or not the column says so
--- — get_user_entitlements() derives that from current_period_end, not from
--- status. So permitting this transition grants nothing. A client cannot forge
--- the condition either: current_period_end is protected by the second check
--- below, so it can only be in the past if it genuinely is.
---
--- Everything that actually confers entitlement is still server-only. A client
--- still cannot buy itself a plan, move a period, or mark itself verified.
+-- Safe because `current_period_end` is still protected below, so a client cannot
+-- forge the `OLD.current_period_end <= NOW()` half of the condition — and expiry
+-- is derived from the clock on every read regardless of the stored status.
 
 CREATE OR REPLACE FUNCTION public.guard_subscription_update()
 RETURNS TRIGGER
@@ -290,7 +389,7 @@ CREATE TRIGGER trg_guard_subscription_update
 
 
 -- ============================================================================
--- 4. expire_stale_subscriptions() + sync_my_subscription()
+-- 5. expire_stale_subscriptions() + sync_my_subscription()
 -- ============================================================================
 -- Re-stated here so this file stands alone even if the earlier migration's tail
 -- never applied.
@@ -318,25 +417,6 @@ $$;
 -- expire everyone's plan.
 REVOKE ALL ON FUNCTION public.expire_stale_subscriptions() FROM PUBLIC, anon, authenticated;
 
--- ---------------------------------------------------------------------------
--- sync_my_subscription — the same rule, scoped to the caller.
---
--- This is what "handle an expired trial automatically whenever the user opens
--- the app, logs in, or checks subscription status" means in practice. The app
--- calls it on launch and on returning to the foreground; it applies the expiry
--- rule to this one user and hands back the freshly computed entitlements.
---
--- Scoping it to auth.uid() is what makes it safe to expose. The whole-table
--- version above stays un-callable by clients, so no user can expire another's
--- plan.
---
--- It reads the entitlements from the same function the database enforces with,
--- so the app can never be shown a plan the triggers would disagree with.
---
--- The UPDATE is a no-op in the ordinary case — the WHERE only matches a row
--- whose period has already ended. It touches no billing term, and only the
--- clock-driven status transition, which the guard trigger permits.
--- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.sync_my_subscription()
 RETURNS JSONB
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -365,12 +445,9 @@ $$;
 REVOKE ALL ON FUNCTION public.sync_my_subscription() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.sync_my_subscription() TO authenticated;
 
-
 -- ============================================================================
--- 5. NEW USER BOOTSTRAP — read the trial length from the plan
+-- 6. grant_default_entitlements() + backfill
 -- ============================================================================
--- The original hardcoded 7 days in two places, which is how the establishment
--- trial would have quietly stayed at 7 no matter what section 1 said.
 
 CREATE OR REPLACE FUNCTION public.grant_default_entitlements()
 RETURNS TRIGGER
@@ -387,10 +464,6 @@ BEGIN
                     THEN 'establishment_trial'
                     ELSE 'household_trial' END;
 
-  -- The trial length is a property of the plan, not of this function. The
-  -- fallback only applies if the plan row is missing outright, and it matches
-  -- the seeded values so a half-migrated database still grants something sane
-  -- rather than defaulting everyone to 7 days.
   v_default := CASE WHEN NEW.account_type = 'establishment' THEN 3 ELSE 7 END;
 
   SELECT duration_days INTO v_days
@@ -436,14 +509,6 @@ CREATE TRIGGER on_profile_created
   AFTER INSERT ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.grant_default_entitlements();
 
--- ---------------------------------------------------------------------------
--- Backfill for profiles that predate the subscription tables.
---
--- The WHERE is tightened from the original. It used to match "has no LIVE
--- subscription", which on a second run would have handed a brand-new trial to
--- every account whose plan had lapsed — silently un-expiring them. Matching
--- "has no subscription row at all" makes this genuinely once-per-account.
--- ---------------------------------------------------------------------------
 INSERT INTO public.user_subscriptions
   (user_id, plan_id, status, started_at, current_period_start, current_period_end, provider)
 SELECT
@@ -483,26 +548,16 @@ ON CONFLICT (user_id, name) DO NOTHING;
 
 
 -- ============================================================================
--- 6. DAILY HOUSEKEEPING JOB
+-- 7. Schedule the housekeeping job
 -- ============================================================================
--- Expiry needs no edge function, no HTTP call and no API key: the rule is a
--- single UPDATE, so pg_cron can run it directly on the database.
---
--- The job is a tidiness measure, not the enforcement. get_user_entitlements()
--- derives expiry from NOW() on every read, so a user is correctly locked out
--- the second their trial ends whether or not this job has run. What the job
--- adds is a row that agrees with reality — which matters for support, for
--- reporting, and for the "your trial ended" notice.
---
--- Guarded so a project without pg_cron still applies everything above.
--- Enable it under Database -> Extensions in the Supabase dashboard.
+-- Optional and guarded: a project without pg_cron still gets everything above.
 
 DO $$
 BEGIN
   BEGIN
     CREATE EXTENSION IF NOT EXISTS pg_cron;
   EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'pg_cron could not be created here (%). Enable it under Database -> Extensions, then re-run section 6.', SQLERRM;
+    RAISE NOTICE 'pg_cron could not be created here (%). Enable it under Database -> Extensions, then re-run this section.', SQLERRM;
   END;
 
   IF to_regclass('cron.job') IS NULL THEN
@@ -528,18 +583,18 @@ BEGIN
 END;
 $$;
 
-
--- ============================================================================
--- 7. Done
--- ============================================================================
-
--- Deliberately does not count cron.job: naming that relation in a plain SELECT
--- would be resolved at parse time even when pg_cron is absent, failing the whole
--- file and rolling back everything above it. Section 6's NOTICE already reports
--- whether the job was scheduled.
+-- What to expect in the output:
+--   trial_plans   household_trial = 7 days, establishment_trial = 3 days,
+--                 both at the capacity of the tier they unlock.
+--   free_plans    household_free = 30 products, establishment_free = 50 — the
+--                 floor a lapsed account lands on.
 SELECT
-  (SELECT string_agg(id || ' = ' || duration_days || ' days', ', ' ORDER BY id)
-     FROM public.subscription_plans WHERE tier = 'free_trial')            AS trial_lengths,
+  (SELECT string_agg(id || ' = ' || duration_days || 'd / ' || max_products || ' products',
+                     ', ' ORDER BY id)
+     FROM public.subscription_plans WHERE tier = 'free_trial')            AS trial_plans,
+  (SELECT string_agg(id || ' = ' || max_products || ' products / ' || max_ai_scans || ' scans',
+                     ', ' ORDER BY id)
+     FROM public.subscription_plans WHERE tier = 'free')                  AS free_plans,
   (SELECT COUNT(*) FROM public.user_subscriptions
     WHERE status IN ('trialing', 'active', 'past_due')
       AND current_period_end <= NOW())                                    AS rows_awaiting_expiry,

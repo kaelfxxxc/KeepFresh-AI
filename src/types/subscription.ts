@@ -5,8 +5,14 @@
 // Re-exported from src/types so screens can import everything from one place.
 
 export type PlanAudience = 'household' | 'establishment';
-export type PlanTier = 'free_trial' | 'premium' | 'pro';
-export type BillingPeriod = 'trial' | 'monthly' | 'yearly';
+/**
+ * `free` is the permanent floor an account falls back to once a trial or paid
+ * plan lapses — it is never sold, and the plan list is built from
+ * (free_trial, premium, pro) so it never appears there. `free_trial` is the
+ * time-limited taste of the tier above it, not a floor.
+ */
+export type PlanTier = 'free' | 'free_trial' | 'premium' | 'pro';
+export type BillingPeriod = 'free' | 'trial' | 'monthly' | 'yearly';
 
 /** A purchasable plan. `price_php` is display-only — the store is authoritative. */
 export interface SubscriptionPlan {
@@ -114,9 +120,15 @@ export interface Entitlements {
    * plan lapses — `plan_id` becomes the free-tier floor, while this keeps naming
    * what the user actually had. This is what distinguishes "your free trial
    * ended" from "your Premium plan ended"; `tier` cannot, because both report
-   * 'free_trial' once the fallback applies.
+   * 'free' once the fallback applies.
    */
   subscription_plan_id?: string | null;
+  /**
+   * That same plan's display name — "Household Free Trial", say, rather than the
+   * "Household Free" the account has already fallen back to. What a notice about
+   * a trial that ended should call it.
+   */
+  subscription_plan_name?: string | null;
   /** When the trial began. Set only when the resolved row is a trial plan. */
   trial_started_at?: string | null;
   /** When the trial ends, or ended. Also set for an already-lapsed trial. */

@@ -539,9 +539,13 @@ serve(async (req: Request) => {
     );
   }
 
-  // The plan must exist, be on sale, and be a paid plan. A free trial is
-  // granted by signup, never bought — accepting one here would let a client
-  // "purchase" its way into a trial period reset.
+  // The plan must exist and be one of the two tiers that can actually be bought.
+  //
+  // An allowlist rather than "not a free trial": the catalogue also holds the
+  // permanent free floor (tier 'free') and the free trials (tier 'free_trial'),
+  // and both are granted by the server — a trial at signup, the floor by falling
+  // back to it. Accepting either here would let a client "purchase" its way into
+  // a fresh trial period or a free plan it already has.
   const { data: plan, error: planError } = await supabaseAdmin
     .from('subscription_plans')
     .select('id, name, price_php, duration_days, tier, is_active')
@@ -552,7 +556,12 @@ serve(async (req: Request) => {
     console.error('subscription-verify: plan lookup failed', planError);
     return json({ ok: false, error: 'lookup_failed' }, 500, corsHeaders);
   }
-  if (!plan || !plan.is_active || plan.tier === 'free_trial' || Number(plan.price_php) <= 0) {
+  if (
+    !plan ||
+    !plan.is_active ||
+    (plan.tier !== 'premium' && plan.tier !== 'pro') ||
+    Number(plan.price_php) <= 0
+  ) {
     return json(
       { ok: false, error: 'invalid_plan', message: 'That plan cannot be purchased.' },
       400,

@@ -47,10 +47,13 @@ export default function LoginScreen() {
     router.push({ pathname: '/signup', params: { type } });
   };
 
+  // The inset belongs on the wrapper, not on the ScrollView's own `style`:
+  // padding there is applied to the scroll view itself and iOS lays its content
+  // out ignoring it, which pushed the centred form up under the status bar.
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { paddingTop: insets.top }]}>
       <ScrollView
-        style={[styles.container, { paddingTop: insets.top }]}
+        style={styles.container}
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingBottom: insets.bottom + SPACING.lg }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}

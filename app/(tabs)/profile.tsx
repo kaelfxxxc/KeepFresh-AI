@@ -110,95 +110,104 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top + 6 }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
-    >
-      <Text style={styles.title}>Profile</Text>
+    // The safe-area inset goes on a plain wrapper, never on the ScrollView's own
+    // `style`. Padding there is applied to the scroll view itself and iOS lays its
+    // content out ignoring it, so the title rendered at y=0 — up behind the status
+    // bar — and scrolled content slid underneath it. Same shape as the Inventory
+    // tab, and as the dashboard.
+    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+      >
+        <Text style={styles.title}>Profile</Text>
 
-      {/* Identity */}
-      <View style={styles.identityCard}>
-        <Pressable onPress={pickAvatar}>
-          <View>
-            <AvatarCircle uri={avatarUri} initials={profile?.full_name} size={96} />
-            <View style={styles.camBadge}>
-              <Camera size={14} color={COLORS.white} strokeWidth={2.4} />
+        {/* Identity */}
+        <View style={styles.identityCard}>
+          <Pressable onPress={pickAvatar}>
+            <View>
+              <AvatarCircle uri={avatarUri} initials={profile?.full_name} size={96} />
+              <View style={styles.camBadge}>
+                <Camera size={14} color={COLORS.white} strokeWidth={2.4} />
+              </View>
             </View>
+          </Pressable>
+          <Text style={styles.name}>{profile?.full_name || 'Your Name'}</Text>
+          <Text style={styles.email}>{profile?.email || ''}</Text>
+          <View style={styles.accountBadge}>
+            {profile?.account_type === 'establishment' ? (
+              <Store size={14} color={COLORS.primary} strokeWidth={2.2} />
+            ) : (
+              <Home size={14} color={COLORS.primary} strokeWidth={2.2} />
+            )}
+            <Text style={styles.accountBadgeText}>
+              {profile?.account_type === 'establishment' ? 'Food Establishment' : 'Household'}
+            </Text>
           </View>
-        </Pressable>
-        <Text style={styles.name}>{profile?.full_name || 'Your Name'}</Text>
-        <Text style={styles.email}>{profile?.email || ''}</Text>
-        <View style={styles.accountBadge}>
-          {profile?.account_type === 'establishment' ? (
-            <Store size={14} color={COLORS.primary} strokeWidth={2.2} />
-          ) : (
-            <Home size={14} color={COLORS.primary} strokeWidth={2.2} />
-          )}
-          <Text style={styles.accountBadgeText}>
-            {profile?.account_type === 'establishment' ? 'Food Establishment' : 'Household'}
-          </Text>
         </View>
-      </View>
 
-      {/* Plan — its own block because the status badge is the point of it. */}
-      <View style={styles.block}>
-        <Text style={styles.blockLabel}>Subscription</Text>
-        <View style={styles.menuCard}>
-          <ListRow
-            icon={Crown}
-            label={entitlements?.plan_name ?? 'Your plan'}
-            hint={planHint}
-            onPress={() => router.push('/subscription')}
-            right={<StatusBadge label={planStatus.label} tone={planStatus.tone} />}
-          />
+        {/* Plan — its own block because the status badge is the point of it. */}
+        <View style={styles.block}>
+          <Text style={styles.blockLabel}>Subscription</Text>
+          <View style={styles.menuCard}>
+            <ListRow
+              icon={Crown}
+              label={entitlements?.plan_name ?? 'Your plan'}
+              hint={planHint}
+              onPress={() => router.push('/subscription')}
+              right={<StatusBadge label={planStatus.label} tone={planStatus.tone} />}
+            />
+          </View>
         </View>
-      </View>
 
-      {/* Tools — the plan-gated ones appear with the tier that unlocks them. */}
-      <View style={styles.block}>
-        <Text style={styles.blockLabel}>{isEstablishment ? 'Stock & team' : 'Inventory tools'}</Text>
-        <View style={styles.menuCard}>
-          {tools.map((item, i) => (
-            <View key={item.path}>
-              {i > 0 && <View style={styles.sep} />}
-              <ListRow
-                icon={item.icon}
-                label={item.label}
-                hint={item.hint}
-                onPress={() => router.push(item.path as any)}
-                right={item.badge ? <StatusBadge label={item.badge} tone="neutral" /> : undefined}
-              />
-            </View>
-          ))}
+        {/* Tools — the plan-gated ones appear with the tier that unlocks them. */}
+        <View style={styles.block}>
+          <Text style={styles.blockLabel}>{isEstablishment ? 'Stock & team' : 'Inventory tools'}</Text>
+          <View style={styles.menuCard}>
+            {tools.map((item, i) => (
+              <View key={item.path}>
+                {i > 0 && <View style={styles.sep} />}
+                <ListRow
+                  icon={item.icon}
+                  label={item.label}
+                  hint={item.hint}
+                  onPress={() => router.push(item.path as any)}
+                  right={item.badge ? <StatusBadge label={item.badge} tone="neutral" /> : undefined}
+                />
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
 
-      {/* Menu */}
-      <View style={styles.block}>
-        <Text style={styles.blockLabel}>Settings</Text>
-        <View style={styles.menuCard}>
-          {MENU.map((item, i) => (
-            <View key={item.path}>
-              {i > 0 && <View style={styles.sep} />}
-              <ListRow icon={item.icon} label={item.label} hint={item.hint} onPress={() => router.push(item.path as any)} />
-            </View>
-          ))}
+        {/* Menu */}
+        <View style={styles.block}>
+          <Text style={styles.blockLabel}>Settings</Text>
+          <View style={styles.menuCard}>
+            {MENU.map((item, i) => (
+              <View key={item.path}>
+                {i > 0 && <View style={styles.sep} />}
+                <ListRow icon={item.icon} label={item.label} hint={item.hint} onPress={() => router.push(item.path as any)} />
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
 
-      <PillButton
-        title="Logout"
-        variant="dangerOutline"
-        icon={LogOut}
-        onPress={handleSignOut}
-        style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.md }}
-      />
-    </ScrollView>
+        <PillButton
+          title="Logout"
+          variant="dangerOutline"
+          icon={LogOut}
+          onPress={handleSignOut}
+          style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.md }}
+        />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  // The scroll view fills the wrapper; the inset lives on the wrapper's padding.
+  scroll: { flex: 1 },
   title: { fontSize: 26, fontWeight: '800', color: COLORS.text, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
   identityCard: { alignItems: 'center', paddingBottom: SPACING.lg },
   camBadge: {

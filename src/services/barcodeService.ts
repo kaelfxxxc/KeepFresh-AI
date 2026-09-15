@@ -4,6 +4,7 @@
 
 import { supabase } from '../lib/supabase';
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
+import { resolveCategory } from '../utils/categoryIcons';
 
 /** Trimmed product as returned by the barcode-lookup edge function. */
 export interface BarcodeProduct {
@@ -55,19 +56,23 @@ async function failureCode(error: unknown): Promise<string | null> {
 }
 
 /**
- * Ask the server to look a barcode up. Never throws — degrades to
- * `unavailable` on any failure (including the function not being deployed yet)
- * so callers can fall back to manual entry.
+ * Shared transport for every scan function.
  *
- * One AI scan is charged server-side per answered lookup, so `limit_reached`
- * means the plan's monthly allowance is spent. Check `gates.aiScan` before
- * opening the camera to show the upgrade prompt instead of the failure.
+ * `barcode-lookup` and `food-vision` are two ways of asking the same question —
+ * "what is this item?" — and they answer in the same envelope, fail with the same
+ * codes, and are metered against the same allowance. Keeping the call here means
+ * the photo scanner inherits the barcode scanner's behaviour exactly, including
+ * the failure handling, rather than reimplementing it and drifting.
+ *
+ * Never throws — degrades to `unavailable` on any failure (including the function
+ * not being deployed yet) so callers can fall back to manual entry.
  */
-export async function lookupBarcode(barcode: string): Promise<LookupResult> {
+export async function invokeScanFunction(
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<LookupResult> {
   try {
-    const { data, error } = await supabase.functions.invoke('barcode-lookup', {
-      body: { barcode },
-    });
+    const { data, error } = await supabase.functions.invoke(fn, { body });
     if (error) {
       if ((await failureCode(error)) === 'ai_scan_limit_reached') {
         return { status: 'limit_reached' };
@@ -83,51 +88,41 @@ export async function lookupBarcode(barcode: string): Promise<LookupResult> {
     if (err instanceof FunctionsHttpError || err instanceof FunctionsFetchError) {
       return { status: 'unavailable' };
     }
-    console.error('lookupBarcode error:', err);
+    console.error(`${fn} error:`, err);
     return { status: 'unavailable' };
   }
 }
 
+/**
+ * Ask the server to look a barcode up.
+ *
+ * One AI scan is charged server-side per answered lookup, so `limit_reached`
+ * means the plan's monthly allowance is spent. Check `gates.aiScan` before
+ * opening the camera to show the upgrade prompt instead of the failure.
+ */
+export async function lookupBarcode(barcode: string): Promise<LookupResult> {
+  return invokeScanFunction('barcode-lookup', { barcode });
+}
+
 /* ---------------------------------------------------------- pure helpers */
 
-// DB category keys (lowercase), each with substrings that commonly appear in
-// Barcode Lookup's breadcrumb-style category text (e.g. "Food, Beverages &
-// Tobacco > Beverages > Soda"). Longer keywords win so "popcorn" hits snacks,
-// not grains' "corn".
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  produce: ['produce', 'fruit', 'vegetable', 'veggie', 'herb', 'salad', 'lettuce', 'onion', 'tomato'],
-  dairy: ['dairy', 'milk', 'cheese', 'yogurt', 'yoghurt', 'butter', 'cream', 'egg', 'margarine'],
-  meat: ['meat', 'beef', 'pork', 'chicken', 'poultry', 'turkey', 'lamb', 'ham', 'bacon', 'sausage', 'deli', 'steak', 'hot dog'],
-  seafood: ['seafood', 'fish', 'shrimp', 'prawn', 'salmon', 'tuna', 'crab', 'lobster', 'squid', 'clam', 'oyster', 'tilapia'],
-  grains: ['grain', 'rice', 'pasta', 'noodle', 'cereal', 'oat', 'flour', 'bread', 'bakery', 'tortilla', 'wheat', 'granola'],
-  frozen: ['frozen', 'ice cream'],
-  beverages: ['beverage', 'drink', 'soda', 'juice', 'water', 'coffee', 'tea', 'cola', 'energy drink', 'beer', 'wine', 'liquor', 'smoothie', 'espresso'],
-  snacks: ['snack', 'chip', 'cookie', 'biscuit', 'candy', 'chocolate', 'cracker', 'popcorn', 'confectionery', 'nut'],
-  condiments: ['condiment', 'sauce', 'dressing', 'ketchup', 'mayonnaise', 'mustard', 'spread', 'jam', 'honey', 'vinegar', 'pickle', 'syrup', 'salt', 'spice', 'seasoning'],
-};
-
+/**
+ * A provider's category text → a canonical category key.
+ *
+ * The matching itself lives in `categoryIcons.resolveCategory`, which is the one
+ * place in the app that knows the vocabulary. This function only strips the
+ * generic market segment Barcode Lookup prepends to every grocery path
+ * ("Food, Beverages & Tobacco > Beverages > Soda"), because leaving it in lets
+ * the trailing root "Beverages" out-vote a more specific later segment
+ * ("… > Dairy > Cheese" must be dairy, not beverages).
+ */
 export function mapBarcodeCategory(rawPath: string | null | undefined): string {
-  // Barcode Lookup prepends a generic market segment to every grocery path
-  // ("Food, Beverages & Tobacco > Beverages > Soda"); drop it so the trailing
-  // "Beverages" in that root can't out-vote a more specific later segment
-  // ("… > Dairy > Cheese" should be dairy, not beverages).
   const text = (rawPath ?? '')
     .toLowerCase()
     .replace('food, beverages & tobacco', '')
     .replace('food, beverage & tobacco', '')
     .replace('food & beverage', '');
-  if (!text.trim()) return 'other';
-  let best: string | null = null;
-  let bestLen = 0;
-  for (const [key, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    for (const kw of keywords) {
-      if (kw.length > bestLen && text.includes(kw)) {
-        best = key;
-        bestLen = kw.length;
-      }
-    }
-  }
-  return best ?? 'other';
+  return resolveCategory(text);
 }
 
 // Units the add-inventory screen offers, in priority order: container words

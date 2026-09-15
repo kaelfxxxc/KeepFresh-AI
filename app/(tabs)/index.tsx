@@ -7,15 +7,41 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { useSubscription } from '../../src/context/SubscriptionContext';
 import { supabase } from '../../src/lib/supabase';
+import { subscribeToTables } from '../../src/lib/realtime';
 import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
-import { Bell, Package, ShoppingCart, Clock3, ChevronRight, TrendingDown, Crown } from 'lucide-react-native';
-import { AvatarCircle, CountBadge, StatusBadge } from '../../src/components/ui';
-import { notificationService } from '../../src/services/notificationService';
+import {
+  AlertTriangle, Bell, ChevronRight, Clock3, Crown, History, Package,
+  ScanLine, ShoppingCart, TrendingDown,
+} from 'lucide-react-native';
+import type { LucideProps } from 'lucide-react-native';
+import { AvatarCircle, CountBadge, ItemImage, SectionLabel, StatusBadge } from '../../src/components/ui';
+import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
+
+/** One row of the "Recently consumed" list. */
+interface ConsumedEntry {
+  id: string;
+  name: string;
+  category: string | null;
+  quantity: number;
+  unit: string;
+  at: string;
+}
 
 interface HomeStats {
   totalItems: number;
+  /**
+   * Inventory rows that have left the pantry, i.e. `status IN ('consumed',
+   * 'wasted')`.
+   *
+   * Deliberately the same predicate the Inventory tab's Need to Buy chip uses.
+   * It previously counted unpurchased `grocery_items`, which is a different
+   * question with a different answer, so the tile and the tab disagreed.
+   */
   needToBuy: number;
+  /** Still on the shelf, but at or below `LOW_STOCK_THRESHOLD`. */
+  lowStock: number;
   expirationAlerts: number;
+  recentlyConsumed: ConsumedEntry[];
   wasteThisMonth: number;   // item count this month
   wasteDeltaPct: number;    // vs previous month (+ = worse)
   trend: { month: string; value: number }[];
@@ -36,13 +62,17 @@ export default function HomeScreen() {
     try {
       const uid = profile.id;
 
-      // Available + expiring-soon inventory
+      // Everything the tiles need, in one read. The row payload is small enough
+      // that counting client-side beats four `head: true` round trips, and it
+      // means the counts are all derived from one consistent snapshot.
       const { data: items } = await supabase
         .from('inventory_items')
-        .select('status, expiration_date')
+        .select('id, product_name, category, quantity, unit, status, expiration_date')
         .eq('user_id', uid);
 
-      const available = items?.filter((i) => i.status === 'available') ?? [];
+      const all = items ?? [];
+      const available = all.filter((i) => i.status === 'available');
+
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const inAWeek = new Date(today); inAWeek.setDate(today.getDate() + 7);
       const expirationAlerts = available.filter((i) => {
@@ -51,13 +81,33 @@ export default function HomeScreen() {
         return exp >= today && exp <= inAWeek;
       }).length;
 
-      // Still-to-buy items across the user's grocery lists
-      const { count: needToBuy } = await supabase
-        .from('grocery_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('purchased', false)
-        .in('grocery_list_id',
-          (await supabase.from('grocery_lists').select('id').eq('user_id', uid)).data?.map((g) => g.id) ?? []);
+      // Need to Buy is a view over inventory_status, exactly as on the Inventory
+      // tab — nothing is copied, so the two screens cannot drift apart.
+      const needToBuy = all.filter((i) => i.status === 'consumed' || i.status === 'wasted').length;
+
+      // Running low is a separate question from need-to-buy: the item is still
+      // here, but there is nearly none of it left. Uses the same threshold the
+      // low-stock notifications use, so the badge and the alert agree.
+      const lowStock = available.filter((i) => Number(i.quantity ?? 0) <= LOW_STOCK_THRESHOLD).length;
+
+      // The last few things the user actually used up, newest first. The item
+      // join gives the row its name, category and unit; consumption records
+      // cascade away with their item, so a row here always has something to show.
+      const { data: consumed } = await supabase
+        .from('inventory_consumption')
+        .select('id, quantity, unit, consumed_at, inventory_items(product_name, category, unit)')
+        .eq('user_id', uid)
+        .order('consumed_at', { ascending: false })
+        .limit(5);
+
+      const recentlyConsumed: ConsumedEntry[] = (consumed ?? []).map((row: any) => ({
+        id: row.id as string,
+        name: row.inventory_items?.product_name || 'Item',
+        category: row.inventory_items?.category ?? null,
+        quantity: Number(row.quantity ?? 0),
+        unit: row.unit || row.inventory_items?.unit || 'pcs',
+        at: row.consumed_at as string,
+      }));
 
       // Waste rows over the last ~60 days for this vs previous month
       const since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0);
@@ -92,8 +142,10 @@ export default function HomeScreen() {
 
       setStats({
         totalItems: available.length,
-        needToBuy: needToBuy || 0,
+        needToBuy,
+        lowStock,
         expirationAlerts,
+        recentlyConsumed,
         wasteThisMonth,
         wasteDeltaPct,
         trend,
@@ -107,6 +159,21 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (profile) fetchDashboard();
+  }, [profile, fetchDashboard]);
+
+  // Every number on this screen is derived, so the honest way to keep it live is
+  // to re-run the query rather than to patch individual counters — a consume on
+  // another device moves the need-to-buy, low-stock and recently-consumed figures
+  // at once. Realtime is a freshness layer only; focus and pull-to-refresh still
+  // carry the screen when the socket is down.
+  useEffect(() => {
+    if (!profile) return undefined;
+    return subscribeToTables(
+      `dashboard:${profile.id}`,
+      ['inventory_items', 'inventory_consumption'],
+      () => { fetchDashboard(); },
+      { userId: profile.id }
+    );
   }, [profile, fetchDashboard]);
 
   // Notifications are reconciled on foreground: the sweep schedules expiry
@@ -134,6 +201,30 @@ export default function HomeScreen() {
   const better = (stats?.wasteDeltaPct ?? 0) <= 0;
 
   const maxTrend = Math.max(1, ...(stats?.trend.map((t) => t.value) ?? [1]));
+
+  const consumed = stats?.recentlyConsumed ?? [];
+  const lowStockCount = stats?.lowStock ?? 0;
+
+  /**
+   * Shortcuts to the three things the dashboard is a summary of. Each one lands
+   * on its destination already filtered, so "Need to Buy" opens the Inventory tab
+   * with that chip selected rather than on the full list.
+   */
+  const quickActions: { key: string; label: string; icon: React.ComponentType<LucideProps>; go: () => void }[] = [
+    { key: 'scan', label: 'Scanner', icon: ScanLine, go: () => router.push('/scan') },
+    { key: 'inventory', label: 'Inventory', icon: Package, go: () => router.push('/inventory') },
+    {
+      key: 'need',
+      label: 'Need to Buy',
+      icon: ShoppingCart,
+      go: () => router.push({ pathname: '/inventory', params: { filter: 'need_to_buy' } }),
+    },
+  ];
+
+  // Amber while it is a nudge, red once there is enough of it to be a problem.
+  const lowTone = lowStockCount >= 4
+    ? { bg: COLORS.dangerBg, fg: COLORS.dangerText }
+    : { bg: COLORS.warningBg, fg: COLORS.warningText };
 
   // 'trialing' gets called out because a trial quietly turning into a charge is
   // the thing users most want warning about; a lapsed plan is flagged so the
@@ -231,35 +322,108 @@ export default function HomeScreen() {
           <View style={styles.metricIconWrap}>
             <Package size={20} color={COLORS.primary} strokeWidth={2.1} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.metricValue}>{stats?.totalItems ?? 0}</Text>
-            <Text style={styles.metricLabel}>Items in inventory</Text>
+            <Text style={styles.metricLabel} numberOfLines={2}>Items in inventory</Text>
           </View>
         </Pressable>
-        <Pressable style={styles.metric} onPress={() => router.push('/grocery')}>
+        <Pressable style={styles.metric} onPress={() => router.push({ pathname: '/inventory', params: { filter: 'need_to_buy' } })}>
           <View style={[styles.metricIconWrap, { backgroundColor: COLORS.warningBg }]}>
             <ShoppingCart size={20} color={COLORS.warningText} strokeWidth={2.1} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.metricValue}>{stats?.needToBuy ?? 0}</Text>
-            <Text style={styles.metricLabel}>Need to buy</Text>
+            <Text style={styles.metricLabel} numberOfLines={2}>Need to buy</Text>
           </View>
         </Pressable>
       </View>
+
+      {/* Quick actions */}
+      <View style={styles.quickRow}>
+        {quickActions.map((action) => {
+          const Icon = action.icon;
+          return (
+            <Pressable
+              key={action.key}
+              style={({ pressed }) => [styles.quickTile, pressed && { opacity: 0.85 }]}
+              onPress={action.go}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+            >
+              <View style={styles.quickIconWrap}>
+                <Icon size={19} color={COLORS.primary} strokeWidth={2.2} />
+              </View>
+              <Text style={styles.quickLabel} numberOfLines={1}>{action.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Low stock strip. Sits above the expiration strip because it is the one
+          the user can act on with a shopping trip — it is also the count that
+          drives the low-stock notifications. */}
+      {lowStockCount > 0 && (
+        <Pressable
+          style={[styles.alertStrip, { backgroundColor: lowTone.bg }]}
+          onPress={() => router.push('/inventory')}
+        >
+          <View style={styles.alertIconWrap}>
+            <AlertTriangle size={20} color={lowTone.fg} strokeWidth={2.1} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.alertTitle, { color: lowTone.fg }]}>Running Low</Text>
+            <Text style={[styles.alertSub, { color: lowTone.fg }]} numberOfLines={2}>
+              {lowStockCount} item{lowStockCount === 1 ? '' : 's'} at {LOW_STOCK_THRESHOLD} or fewer left
+            </Text>
+          </View>
+          <ChevronRight size={20} color={lowTone.fg} />
+        </Pressable>
+      )}
 
       {/* Expiration alert strip */}
       <Pressable style={styles.alertStrip} onPress={() => router.push('/alerts')}>
         <View style={styles.alertIconWrap}>
           <Clock3 size={20} color={COLORS.warningText} strokeWidth={2.1} />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.alertTitle}>Expiration Alerts</Text>
-          <Text style={styles.alertSub}>
+          <Text style={styles.alertSub} numberOfLines={2}>
             {stats?.expirationAlerts ?? 0} item{(stats?.expirationAlerts ?? 0) === 1 ? '' : 's'} expiring soon
           </Text>
         </View>
         <ChevronRight size={20} color={COLORS.warningText} />
       </Pressable>
+
+      {/* Recently consumed — what has actually left the pantry lately. The
+          category icon comes from the same resolver the inventory rows use, so
+          the same food looks the same in both places. */}
+      {consumed.length > 0 && (
+        <View style={styles.section}>
+          <SectionLabel
+            right={
+              <Pressable onPress={() => router.push('/inventory')} hitSlop={8}>
+                <Text style={styles.sectionLink}>View all</Text>
+              </Pressable>
+            }
+          >
+            Recently Consumed
+          </SectionLabel>
+          <View style={styles.card}>
+            {consumed.map((entry, index) => (
+              <View key={entry.id} style={[styles.consumeRow, index > 0 && styles.consumeRowDivided]}>
+                <ItemImage category={entry.category} size={38} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.consumeName} numberOfLines={1}>{entry.name}</Text>
+                  <Text style={styles.consumeMeta} numberOfLines={1}>
+                    {entry.quantity} {entry.unit} · {timeAgo(entry.at)}
+                  </Text>
+                </View>
+                <StatusBadge label="Used" tone="neutral" icon={History} />
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
 
       {/* Waste trend */}
       <View style={styles.chartCard}>
@@ -349,6 +513,38 @@ const styles = StyleSheet.create({
   metricIconWrap: { width: 40, height: 40, borderRadius: RADII.icon, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
   metricValue: { fontSize: 22, fontWeight: '800', color: COLORS.text },
   metricLabel: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
+  // Three equal thirds. `flexBasis: 0` plus `flexGrow: 1` is what makes them
+  // equal rather than proportional to their labels, and `minWidth: 0` lets a
+  // long label ellipsise instead of widening its tile.
+  quickRow: { flexDirection: 'row', gap: SPACING.sm, marginHorizontal: SPACING.lg, marginTop: SPACING.md },
+  quickTile: {
+    flexBasis: 0,
+    flexGrow: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: 6,
+    backgroundColor: COLORS.white,
+    borderRadius: RADII.card,
+    ...SHADOW.card,
+  },
+  quickIconWrap: {
+    width: 38, height: 38, borderRadius: RADII.icon,
+    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  quickLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text, maxWidth: '100%' },
+  section: { marginHorizontal: SPACING.lg, marginTop: SPACING.lg },
+  sectionLink: { fontSize: 12.5, fontWeight: '700', color: COLORS.primary },
+  card: {
+    backgroundColor: COLORS.white, borderRadius: RADII.card,
+    paddingHorizontal: SPACING.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+  },
+  consumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  consumeRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider },
+  consumeName: { fontSize: 14.5, fontWeight: '600', color: COLORS.text },
+  consumeMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
   alertStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -378,3 +574,25 @@ const styles = StyleSheet.create({
   chartBar: { width: '100%', backgroundColor: COLORS.secondary, borderTopLeftRadius: 9, borderTopRightRadius: 9 },
   chartLabel: { fontSize: 11, color: COLORS.secondaryText, marginTop: 6, fontWeight: '600' },
 });
+
+/**
+ * How long ago something was consumed, at the resolution that matters on a
+ * dashboard: minutes and hours for the same day, days for the rest of the week,
+ * then the date itself.
+ */
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+
+  const minutes = Math.floor((Date.now() - then) / 60_000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+
+  return new Date(iso).toLocaleDateString();
+}

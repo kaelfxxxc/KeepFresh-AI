@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar, Animated, Easing, Linking } from 'react-native';
 import { Camera, CameraType } from 'expo-camera/legacy';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
@@ -8,7 +9,28 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { COLORS, SPACING } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { lookupBarcode, toReviewProduct, ReviewInfo } from '../../src/services/barcodeService';
-import { ScanBarcode, Camera as CameraIcon, PenLine, X, Sparkles } from 'lucide-react-native';
+import { recognizeFood } from '../../src/services/foodVisionService';
+import { ScanBarcode, Camera as CameraIcon, Images, PenLine, Settings, X, Sparkles } from 'lucide-react-native';
+
+/**
+ * How a photo is picked. `quality` is the only size lever available —
+ * expo-image-manipulator is not installed — and it matters because the picked
+ * file is base64-encoded and sent to the vision function, which refuses anything
+ * over a few megabytes. `allowsEditing` lets the user crop a cluttered shelf down
+ * to the one item, which is also what makes recognition reliable.
+ */
+const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
+  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  allowsEditing: true,
+  quality: 0.5,
+};
+
+/**
+ * Below this the model is guessing: its own accuracy guidance calls out images
+ * under 200px. Refusing here costs nothing, where sending it would spend one of
+ * the month's AI scans on a thumbnail.
+ */
+const MIN_PHOTO_EDGE = 200;
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -75,7 +97,7 @@ export default function ScanScreen() {
     return () => loop.stop();
   }, [isFocused, scanningEnabled, hasPermission, scanned, loading, frameH, sweep]);
 
-  const openReview = (review: ReviewInfo, source: 'lookup' | 'inventory') => {
+  const openReview = (review: ReviewInfo, source: 'lookup' | 'inventory' | 'photo') => {
     router.push({
       pathname: '/scan/product',
       params: { barcode: review.barcode, source, productData: JSON.stringify(review) },
@@ -97,8 +119,8 @@ export default function ScanScreen() {
     ingredients: '',
   });
 
-  const offerManualEntry = (barcode: string, message: string) => {
-    Alert.alert('Product Not Found', message, [
+  const offerManualEntry = (barcode: string, message: string, title = 'Product Not Found') => {
+    Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel', onPress: () => setScanned(false) },
       {
         text: 'Enter Manually',
@@ -112,6 +134,108 @@ export default function ScanScreen() {
       { text: 'Not now', style: 'cancel', onPress: () => setScanned(false) },
       { text: 'See plans', onPress: () => { setScanned(false); router.push('/subscription'); } },
     ]);
+  };
+
+  const promptPhotoPermission = (which: 'camera' | 'library') => {
+    const what = which === 'camera' ? 'Camera' : 'Photo library';
+    Alert.alert(
+      `${what} access needed`,
+      which === 'camera'
+        ? 'Allow camera access to photograph an item, or upload a picture of it instead.'
+        : 'Allow photo library access to pick a picture of your item, or photograph it instead.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        // Nothing in the app can re-grant a denied permission; the settings app
+        // is the only place that can, so send the user there.
+        { text: 'Open Settings', onPress: () => { Linking.openSettings().catch(() => {}); } },
+      ],
+    );
+  };
+
+  /**
+   * Pick a photo and identify what is in it.
+   *
+   * Both photo buttons land here and differ only in where the image comes from.
+   * The result is run through exactly the same branches as a barcode lookup,
+   * because `recognizeFood` answers in the same shape `lookupBarcode` does —
+   * so a photo that identifies food opens the same review screen, and a photo
+   * that does not falls back to the same manual-entry prompt.
+   */
+  const pickAndRecognize = async (from: 'camera' | 'library') => {
+    if (loading) return;
+
+    // A photo is metered against the same allowance a barcode scan is, so a
+    // spent quota is refused before the picker opens rather than after.
+    if (!scanningEnabled) {
+      promptScanLimit();
+      return;
+    }
+
+    try {
+      if (from === 'library') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          promptPhotoPermission('library');
+          return;
+        }
+      } else {
+        // Taking a photo uses the same camera permission the barcode scanner
+        // already holds, so this normally resolves without a prompt.
+        const { status } = await Camera.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          setHasPermission(false);
+          promptPhotoPermission('camera');
+          return;
+        }
+        setHasPermission(true);
+      }
+
+      const picked = from === 'camera'
+        ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
+        : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
+
+      if (picked.canceled || !picked.assets?.length) return;
+      const asset = picked.assets[0];
+
+      if (Math.min(asset.width || 0, asset.height || 0) < MIN_PHOTO_EDGE) {
+        Alert.alert(
+          'Photo Too Small',
+          'That image is too small to identify. Try a closer, higher-resolution photo.'
+        );
+        return;
+      }
+
+      setLoading(true);
+      const outcome = await recognizeFood(asset.uri, asset.fileName);
+
+      if (outcome.status === 'found') {
+        refresh();
+        // The picked photo becomes the review screen's hero image.
+        openReview({ ...toReviewProduct(outcome.product), image_url: asset.uri }, 'photo');
+      } else if (outcome.status === 'limit_reached') {
+        refresh();
+        promptScanLimit();
+      } else if (outcome.status === 'invalid_image') {
+        Alert.alert('Photo Not Usable', outcome.reason);
+      } else if (outcome.status === 'unavailable') {
+        offerManualEntry(
+          '',
+          'We couldn’t analyze that photo right now. Would you like to enter the information manually?',
+          'Couldn’t Analyze Photo'
+        );
+      } else {
+        offerManualEntry(
+          '',
+          'We couldn’t identify a food item in that photo. Try a clearer picture, or enter the details manually.',
+          'No Food Detected'
+        );
+      }
+    } catch (error) {
+      console.error('pickAndRecognize error:', error);
+      Alert.alert('Error', 'Something went wrong while reading that photo. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const runLookup = async (barcode: string, fallback?: InventoryItem) => {
@@ -142,6 +266,9 @@ export default function ScanScreen() {
   };
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    // The camera stays live while a picked photo is being analyzed, so a code
+    // drifting into frame must not hijack the scan already in flight.
+    if (loading) return;
     setScanned(true);
     setLoading(true);
     try {
@@ -206,10 +333,13 @@ export default function ScanScreen() {
         <View style={styles.centerState}>
           <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
           <Text style={styles.stateTitle}>Camera access needed</Text>
-          <Text style={styles.stateText}>Enable camera permission to scan product barcodes.</Text>
-          <Pressable style={styles.manualBtn} onPress={() => router.push('/inventory/add')}>
-            <PenLine size={16} color={COLORS.white} strokeWidth={2.2} />
-            <Text style={styles.manualText}>Add Manually</Text>
+          <Text style={styles.stateText}>
+            Enable camera permission to scan barcodes and photograph items. You can still upload a photo or add one
+            manually.
+          </Text>
+          <Pressable style={styles.manualBtn} onPress={() => { Linking.openSettings().catch(() => {}); }}>
+            <Settings size={16} color={COLORS.white} strokeWidth={2.2} />
+            <Text style={styles.manualText}>Open Settings</Text>
           </Pressable>
         </View>
       );
@@ -253,7 +383,10 @@ export default function ScanScreen() {
       <StatusBar barStyle="light-content" />
       {permissionBody()}
 
-      {hasPermission && scanningEnabled && (
+      {/* Shown whenever scanning is permitted, even with the camera denied: the
+          photo options and manual entry do not need camera access, and hiding
+          the whole sheet behind that permission would take them away too. */}
+      {scanningEnabled && hasPermission !== null && (
         <>
           <Pressable
             style={[styles.closeBtn, { top: insets.top + 10 }]}
@@ -273,22 +406,35 @@ export default function ScanScreen() {
               </Text>
             )}
 
-            <View style={styles.shutterWrap}>
+            {/* The shutter is the take-a-photo control, the way it is in any
+                camera app — it was previously inert decoration. */}
+            <Pressable
+              style={styles.shutterWrap}
+              onPress={() => pickAndRecognize('camera')}
+              disabled={loading}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Take a photo of the item"
+            >
               <View style={styles.shutterOuter}>
                 <View style={styles.shutter} />
               </View>
-            </View>
+            </Pressable>
 
             <View style={styles.actionRow}>
-              <Pressable style={[styles.modeBtn, styles.modePrimary]} onPress={() => router.push('/inventory/add')}>
-                <PenLine size={17} color={COLORS.white} strokeWidth={2.2} />
-                <Text style={styles.modePrimaryText}>Manual Entry</Text>
+              <Pressable style={styles.modeBtn} onPress={() => pickAndRecognize('camera')} disabled={loading}>
+                <CameraIcon size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
+                <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Take Photo</Text>
               </Pressable>
-              <Pressable style={styles.modeBtn} onPress={() => router.push({ pathname: '/scan/product' })}>
-                <CameraIcon size={17} color={COLORS.primary} strokeWidth={2.2} />
-                <Text style={styles.modeText}>Take Photo</Text>
+              <Pressable style={styles.modeBtn} onPress={() => pickAndRecognize('library')} disabled={loading}>
+                <Images size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
+                <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Upload Photo</Text>
               </Pressable>
             </View>
+
+            <Pressable style={styles.textBtn} onPress={() => router.push('/inventory/add')} hitSlop={8} disabled={loading}>
+              <Text style={styles.textBtnLabel}>Enter the details manually</Text>
+            </Pressable>
           </View>
         </>
       )}
@@ -347,7 +493,6 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     height: 48, borderRadius: 50, borderWidth: 1.5, borderColor: COLORS.primary, backgroundColor: COLORS.white,
   },
-  modePrimary: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   modeText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
-  modePrimaryText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  modeTextDisabled: { color: COLORS.secondaryText },
 });

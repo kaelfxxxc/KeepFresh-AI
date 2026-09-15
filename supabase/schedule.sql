@@ -1,14 +1,3 @@
--- ============================================================================
--- KeepFresh AI - schedule the expiration-notifier Edge Function
--- Runs the function every day at 08:07 (off the busy top-of-the-hour).
--- Requires the pg_cron and pg_net extensions:
---   CREATE EXTENSION IF NOT EXISTS pg_cron;   (also enabled on Supabase UI:
---    Database -> Extensions -> enable "pg_cron" and "pg_net")
---
--- Alternative without SQL: Supabase Dashboard -> Edge Functions ->
--- expiration-notifier -> Cron -> create "Daily at 08:07". Same effect.
--- ============================================================================
-
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 

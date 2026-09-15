@@ -11,8 +11,13 @@ import { COLORS, SPACING, RADII } from '../../../src/theme';
 import { EXPIRATION_ALERT_OPTIONS, ExpirationAlertDays, StorageArea } from '../../../src/types';
 import { Tag, CalendarDays, PackagePlus, PencilLine, Bell, Boxes } from 'lucide-react-native';
 import { NavHeader, Field, PillButton, UpgradeNotice } from '../../../src/components/ui';
+import {
+  CATEGORY_KEYS,
+  CATEGORY_LABELS,
+  categoryIcon,
+  resolveCategory,
+} from '../../../src/utils/categoryIcons';
 
-const CATEGORIES = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Grains', 'Frozen', 'Beverages', 'Snacks', 'Condiments', 'Other'];
 const UNITS = ['pcs', 'kg', 'g', 'lb', 'oz', 'L', 'ml', 'cups', 'pack', 'bottle', 'can', 'box'];
 
 export default function AddItemScreen() {
@@ -26,12 +31,15 @@ export default function AddItemScreen() {
   const [alertDays, setAlertDays] = useState<ExpirationAlertDays>(3);
   const [upgrade, setUpgrade] = useState<GateResult | null>(null);
 
-  const prefillCategory = (params.category || '').charAt(0).toUpperCase() + (params.category || '').slice(1);
-
+  // The form holds a canonical category key, not a label: the key is what gets
+  // stored and what the icon resolver reads back, so nothing has to translate
+  // between the two on save. A value handed over from a scan is normalized here,
+  // which is what lets a barcode provider's breadcrumb or a vision model's answer
+  // land on the right chip instead of falling through to "Other".
   const [form, setForm] = useState({
     product_name: params.product_name || '',
     brand: params.brand || '',
-    category: CATEGORIES.includes(prefillCategory) ? prefillCategory : 'Other',
+    category: resolveCategory(params.category),
     quantity: params.quantity || '1',
     unit: UNITS.includes(params.unit || '') ? (params.unit as string) : 'pcs',
     expiration_date: params.expiration_date || '',
@@ -84,7 +92,7 @@ export default function AddItemScreen() {
         user_id: profile.id,
         product_name: form.product_name.trim(),
         brand: form.brand || null,
-        category: form.category.toLowerCase(),
+        category: form.category,
         quantity: parseFloat(form.quantity) || 1,
         unit: form.unit,
         expiration_date: form.expiration_date || null,
@@ -139,15 +147,20 @@ export default function AddItemScreen() {
 
         <Text style={styles.label}>Category</Text>
         <View style={styles.chipWrap}>
-          {CATEGORIES.map((cat) => (
-            <Pressable
-              key={cat}
-              style={[styles.chip, form.category === cat && styles.chipActive]}
-              onPress={() => setForm({ ...form, category: cat })}
-            >
-              <Text style={[styles.chipText, form.category === cat && styles.chipTextActive]}>{cat}</Text>
-            </Pressable>
-          ))}
+          {CATEGORY_KEYS.map((key) => {
+            const Icon = categoryIcon(key);
+            const active = form.category === key;
+            return (
+              <Pressable
+                key={key}
+                style={[styles.chip, styles.categoryChip, active && styles.chipActive]}
+                onPress={() => setForm({ ...form, category: key })}
+              >
+                <Icon size={14} color={active ? COLORS.white : COLORS.secondaryText} strokeWidth={2.2} />
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>{CATEGORY_LABELS[key]}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <Field
@@ -288,6 +301,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
   },
   chipGhost: { backgroundColor: 'transparent' },
+  categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
   chipTextActive: { color: COLORS.white },

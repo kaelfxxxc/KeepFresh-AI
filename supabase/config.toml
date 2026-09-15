@@ -20,6 +20,12 @@ verify_jwt = true
 [functions.barcode-lookup]
 verify_jwt = true
 
+# Photo identification. Requires a JWT for the same reason barcode-lookup does:
+# the call is metered against the caller's plan, and the meter reads the user
+# from the forwarded token rather than from the request body.
+[functions.food-vision]
+verify_jwt = true
+
 # Purchase verification. Must never be reachable without a signed-in user: it is
 # the only path that can activate a paid plan, and it identifies the buyer from
 # the caller's own access token.

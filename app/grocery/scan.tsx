@@ -52,20 +52,7 @@ import {
   type BarcodeProduct,
 } from '../../src/services/barcodeService';
 import type { GroceryItem } from '../../src/types';
-
-/** The category keys the app stores, mapped to what a shopper would call them. */
-const CATEGORY_LABEL: Record<string, string> = {
-  produce: 'Produce',
-  dairy: 'Dairy',
-  meat: 'Meat',
-  seafood: 'Seafood',
-  grains: 'Grains',
-  frozen: 'Frozen',
-  beverages: 'Beverages',
-  snacks: 'Snacks',
-  condiments: 'Condiments',
-  other: 'Other',
-};
+import { CATEGORY_KEYS, CATEGORY_LABELS, categoryIcon } from '../../src/utils/categoryIcons';
 
 /** What the review sheet edits before the item lands on the list. */
 interface Draft {
@@ -263,7 +250,9 @@ export default function GroceryScanScreen() {
     const { error } = await supabase.from('grocery_items').insert({
       grocery_list_id: listId,
       name,
-      category: CATEGORY_LABEL[draft.category] ?? 'Other',
+      // The canonical key, not its label: the key is what the icon resolver and
+      // the category filter read, and the list screen renders the label.
+      category: draft.category || 'other',
       quantity,
       unit: draft.unit || 'pcs',
       estimated_price: price,
@@ -472,7 +461,7 @@ function ReviewSheet({
   const step = (delta: number) =>
     onChange({ ...draft, quantity: Math.max(draft.quantity + delta, 1) });
 
-  const categories = Object.keys(CATEGORY_LABEL);
+  const categories = CATEGORY_KEYS;
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -536,18 +525,23 @@ function ReviewSheet({
 
           <Text style={styles.pickLabel}>Category</Text>
           <View style={styles.chipWrap}>
-            {categories.map((key) => (
-              <Pressable
-                key={key}
-                onPress={() => onChange({ ...draft, category: key })}
-                disabled={saving}
-                style={[styles.chip, draft.category === key && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, draft.category === key && styles.chipTextActive]}>
-                  {CATEGORY_LABEL[key]}
-                </Text>
-              </Pressable>
-            ))}
+            {categories.map((key) => {
+              const Icon = categoryIcon(key);
+              const active = draft.category === key;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => onChange({ ...draft, category: key })}
+                  disabled={saving}
+                  style={[styles.chip, styles.categoryChip, active && styles.chipActive]}
+                >
+                  <Icon size={14} color={active ? COLORS.white : COLORS.secondaryText} strokeWidth={2.2} />
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                    {CATEGORY_LABELS[key]}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </ScrollView>
 
@@ -662,6 +656,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
   },
   chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipText: { fontSize: 12.5, fontWeight: '600', color: COLORS.secondaryText },
   chipTextActive: { color: COLORS.white },
 

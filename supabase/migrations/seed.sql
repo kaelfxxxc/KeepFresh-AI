@@ -241,62 +241,95 @@ INSERT INTO public.inventory_items
   (id, user_id, product_name, brand, category, quantity, unit, purchase_date, expiration_date, price, notes, status, created_at)
 VALUES
 -- Available, expiring within the next few days (feed the Alerts screen + RPC)
-('c0ffee20-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'Fresh Milk 1L', 'Magnolia', 'Dairy', 2, 'L',
+('c0ffee20-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'Fresh Milk 1L', 'Magnolia', 'dairy', 2, 'L',
  CURRENT_DATE - 4, CURRENT_DATE + 2, 118.00, 'For shakes and morning coffee', 'available', NOW() - INTERVAL '4 days'),
-('c0ffee20-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'Eggs (Large)', 'Local Farm', 'Eggs', 6, 'pcs',
+('c0ffee20-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'Eggs (Large)', 'Local Farm', 'dairy', 6, 'pcs',
  CURRENT_DATE - 6, CURRENT_DATE + 6, 10.00, 'Keep refrigerated', 'available', NOW() - INTERVAL '6 days'),
-('c0ffee20-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'Chicken Breast (Boneless)', 'Magnolia', 'Meat & Poultry', 1.2, 'kg',
+('c0ffee20-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'Chicken Breast (Boneless)', 'Magnolia', 'meat', 1.2, 'kg',
  CURRENT_DATE - 1, CURRENT_DATE + 3, 240.00, 'Portion and freeze the rest', 'available', NOW() - INTERVAL '1 day'),
-('c0ffee20-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', 'Pork Belly (Liempo)', 'Monterey', 'Meat & Poultry', 1.0, 'kg',
+('c0ffee20-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', 'Pork Belly (Liempo)', 'Monterey', 'meat', 1.0, 'kg',
  CURRENT_DATE - 2, CURRENT_DATE + 5, 330.00, NULL, 'available', NOW() - INTERVAL '2 days'),
-('c0ffee20-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111', 'Tomatoes', 'Wet Market', 'Produce', 6, 'pcs',
+('c0ffee20-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111', 'Tomatoes', 'Wet Market', 'produce', 6, 'pcs',
  CURRENT_DATE - 3, CURRENT_DATE + 4, 3.50, NULL, 'available', NOW() - INTERVAL '3 days'),
-('c0ffee20-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111', 'Red Onions', 'Wet Market', 'Produce', 1, 'kg',
+('c0ffee20-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111', 'Red Onions', 'Wet Market', 'produce', 1, 'kg',
  CURRENT_DATE - 3, CURRENT_DATE + 45, 120.00, 'Store in a cool dry place', 'available', NOW() - INTERVAL '3 days'),
-('c0ffee20-0000-4000-8000-000000000007', '11111111-1111-4111-8111-111111111111', 'Garlic', 'Wet Market', 'Produce', 0.25, 'kg',
+('c0ffee20-0000-4000-8000-000000000007', '11111111-1111-4111-8111-111111111111', 'Garlic', 'Wet Market', 'produce', 0.25, 'kg',
  CURRENT_DATE - 5, CURRENT_DATE + 60, 160.00, NULL, 'available', NOW() - INTERVAL '5 days'),
-('c0ffee20-0000-4000-8000-000000000008', '11111111-1111-4111-8111-111111111111', 'Kangkong (Water Spinach)', 'Wet Market', 'Produce', 1, 'bunch',
+('c0ffee20-0000-4000-8000-000000000008', '11111111-1111-4111-8111-111111111111', 'Kangkong (Water Spinach)', 'Wet Market', 'produce', 1, 'bunch',
  CURRENT_DATE - 2, CURRENT_DATE + 1, 25.00, 'Use for sinigang tonight', 'available', NOW() - INTERVAL '2 days'),
-('c0ffee20-0000-4000-8000-000000000009', '11111111-1111-4111-8111-111111111111', 'Lakatan Bananas', 'Wet Market', 'Produce', 6, 'pcs',
+('c0ffee20-0000-4000-8000-000000000009', '11111111-1111-4111-8111-111111111111', 'Lakatan Bananas', 'Wet Market', 'produce', 6, 'pcs',
  CURRENT_DATE - 2, CURRENT_DATE + 3, 10.00, NULL, 'available', NOW() - INTERVAL '2 days'),
-('c0ffee20-0000-4000-8000-000000000010', '11111111-1111-4111-8111-111111111111', 'Milkfish (Bangus, whole)', 'Wet Market', 'Seafood', 1, 'pc',
+('c0ffee20-0000-4000-8000-000000000010', '11111111-1111-4111-8111-111111111111', 'Milkfish (Bangus, whole)', 'Wet Market', 'seafood', 1, 'pc',
  CURRENT_DATE - 1, CURRENT_DATE + 1, 135.00, 'Cook today - very fresh', 'available', NOW() - INTERVAL '1 day'),
 -- Available, long shelf life
-('c0ffee20-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'Evaporated Milk 370ml', 'Alaska', 'Dairy', 2, 'can',
+('c0ffee20-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'Evaporated Milk 370ml', 'Alaska', 'dairy', 2, 'can',
  CURRENT_DATE - 10, CURRENT_DATE + 150, 32.00, NULL, 'available', NOW() - INTERVAL '10 days'),
-('c0ffee20-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'Tuna Flakes in Oil 155g', 'Century', 'Pantry', 3, 'can',
+('c0ffee20-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'Tuna Flakes in Oil 155g', 'Century', 'canned', 3, 'can',
  CURRENT_DATE - 12, CURRENT_DATE + 120, 32.00, 'Backup lunch option', 'available', NOW() - INTERVAL '12 days'),
-('c0ffee20-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'Sinandomeng Rice 5kg', 'Doña Maria', 'Pantry', 5, 'kg',
+('c0ffee20-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'Sinandomeng Rice 5kg', 'Doña Maria', 'canned', 5, 'kg',
  CURRENT_DATE - 15, CURRENT_DATE + 365, 52.00, NULL, 'available', NOW() - INTERVAL '15 days'),
-('c0ffee20-0000-4000-8000-000000000014', '11111111-1111-4111-8111-111111111111', 'Sunflower Cooking Oil 1L', 'Sunny', 'Pantry', 1, 'L',
+('c0ffee20-0000-4000-8000-000000000014', '11111111-1111-4111-8111-111111111111', 'Sunflower Cooking Oil 1L', 'Sunny', 'canned', 1, 'L',
  CURRENT_DATE - 8, CURRENT_DATE + 180, 115.00, NULL, 'available', NOW() - INTERVAL '8 days'),
-('c0ffee20-0000-4000-8000-000000000015', '11111111-1111-4111-8111-111111111111', 'Quickmelt Cheese 160g', 'Eden', 'Dairy', 2, 'block',
+('c0ffee20-0000-4000-8000-000000000015', '11111111-1111-4111-8111-111111111111', 'Quickmelt Cheese 160g', 'Eden', 'dairy', 2, 'block',
  CURRENT_DATE - 14, CURRENT_DATE + 90, 76.00, NULL, 'available', NOW() - INTERVAL '14 days'),
-('c0ffee20-0000-4000-8000-000000000016', '11111111-1111-4111-8111-111111111111', 'Plain Yogurt 400g', 'Nestle', 'Dairy', 1, 'tub',
+('c0ffee20-0000-4000-8000-000000000016', '11111111-1111-4111-8111-111111111111', 'Plain Yogurt 400g', 'Nestle', 'dairy', 1, 'tub',
  CURRENT_DATE - 2, CURRENT_DATE + 5, 135.00, NULL, 'available', NOW() - INTERVAL '2 days'),
 -- Consumed (feeds consumption analytics)
-('c0ffee20-0000-4000-8000-000000000017', '11111111-1111-4111-8111-111111111111', 'Ground Pork 500g', 'Monterey', 'Meat & Poultry', 0.5, 'kg',
+('c0ffee20-0000-4000-8000-000000000017', '11111111-1111-4111-8111-111111111111', 'Ground Pork 500g', 'Monterey', 'meat', 0.5, 'kg',
  CURRENT_DATE - 12, CURRENT_DATE - 6, 300.00, NULL, 'consumed', NOW() - INTERVAL '12 days'),
-('c0ffee20-0000-4000-8000-000000000018', '11111111-1111-4111-8111-111111111111', 'Cabbage', 'Wet Market', 'Produce', 1, 'head',
+('c0ffee20-0000-4000-8000-000000000018', '11111111-1111-4111-8111-111111111111', 'Cabbage', 'Wet Market', 'produce', 1, 'head',
  CURRENT_DATE - 9, CURRENT_DATE - 4, 65.00, NULL, 'consumed', NOW() - INTERVAL '9 days'),
-('c0ffee20-0000-4000-8000-000000000019', '11111111-1111-4111-8111-111111111111', 'Indian Mangoes', 'Wet Market', 'Produce', 3, 'pcs',
+('c0ffee20-0000-4000-8000-000000000019', '11111111-1111-4111-8111-111111111111', 'Indian Mangoes', 'Wet Market', 'produce', 3, 'pcs',
  CURRENT_DATE - 6, CURRENT_DATE - 3, 45.00, NULL, 'consumed', NOW() - INTERVAL '6 days'),
 -- Wasted (feeds waste analytics + savings)
-('c0ffee20-0000-4000-8000-000000000020', '11111111-1111-4111-8111-111111111111', 'Iceberg Lettuce', 'Local', 'Produce', 1, 'head',
+('c0ffee20-0000-4000-8000-000000000020', '11111111-1111-4111-8111-111111111111', 'Iceberg Lettuce', 'Local', 'produce', 1, 'head',
  CURRENT_DATE - 10, CURRENT_DATE - 5, 75.00, NULL, 'wasted', NOW() - INTERVAL '10 days'),
-('c0ffee20-0000-4000-8000-000000000021', '11111111-1111-4111-8111-111111111111', 'Cream Cheese 250g', 'Philadelphia', 'Dairy', 1, 'tub',
+('c0ffee20-0000-4000-8000-000000000021', '11111111-1111-4111-8111-111111111111', 'Cream Cheese 250g', 'Philadelphia', 'dairy', 1, 'tub',
  CURRENT_DATE - 12, CURRENT_DATE - 7, 130.00, NULL, 'wasted', NOW() - INTERVAL '12 days'),
 -- Expired but not yet logged as waste (an honest open alert)
-('c0ffee20-0000-4000-8000-000000000022', '11111111-1111-4111-8111-111111111111', 'Sliced Wheat Bread', 'Gardenia', 'Bakery', 1, 'loaf',
- CURRENT_DATE - 5, CURRENT_DATE - 1, 90.00, 'Missed the window - check the bread drawer first', 'expired', NOW() - INTERVAL '5 days');
+('c0ffee20-0000-4000-8000-000000000022', '11111111-1111-4111-8111-111111111111', 'Sliced Wheat Bread', 'Gardenia', 'grains', 1, 'loaf',
+ CURRENT_DATE - 5, CURRENT_DATE - 1, 90.00, 'Missed the window - check the bread drawer first', 'expired', NOW() - INTERVAL '5 days'),
+-- Used up: quantity 0 + status 'consumed'. These are the rows that populate the
+-- Need to Buy chip and the dashboard's Need-to-buy tile, and every one of them is
+-- also on the grocery list below - which is what restocking is supposed to clear.
+('c0ffee20-0000-4000-8000-000000000023', '11111111-1111-4111-8111-111111111111', 'Soy Sauce 1L', 'Silver Swan', 'condiments', 0, 'bottle',
+ CURRENT_DATE - 30, CURRENT_DATE + 300, 42.00, 'Ran out - added to the grocery list', 'consumed', NOW() - INTERVAL '30 days'),
+('c0ffee20-0000-4000-8000-000000000024', '11111111-1111-4111-8111-111111111111', 'White Vinegar 1L', 'Datu Puti', 'condiments', 0, 'bottle',
+ CURRENT_DATE - 30, CURRENT_DATE + 300, 60.00, NULL, 'consumed', NOW() - INTERVAL '30 days'),
+('c0ffee20-0000-4000-8000-000000000025', '11111111-1111-4111-8111-111111111111', 'Fish Sauce (Patis) 385ml', 'Rufina', 'condiments', 0, 'bottle',
+ CURRENT_DATE - 45, CURRENT_DATE + 300, 35.00, NULL, 'consumed', NOW() - INTERVAL '45 days'),
+('c0ffee20-0000-4000-8000-000000000026', '11111111-1111-4111-8111-111111111111', 'Banana Ketchup 320g', 'Jufran', 'condiments', 0, 'bottle',
+ CURRENT_DATE - 40, CURRENT_DATE + 200, 40.00, NULL, 'consumed', NOW() - INTERVAL '40 days'),
+-- Running low: quantity 1-2, which is exactly what LOW_STOCK_THRESHOLD flags
+('c0ffee20-0000-4000-8000-000000000027', '11111111-1111-4111-8111-111111111111', 'Butter 225g', 'Anchor', 'dairy', 1, 'block',
+ CURRENT_DATE - 20, CURRENT_DATE + 4, 165.00, 'Last block - pick up more', 'available', NOW() - INTERVAL '20 days'),
+('c0ffee20-0000-4000-8000-000000000028', '11111111-1111-4111-8111-111111111111', 'Instant Coffee 100g', 'Nescafe Classic', 'beverages', 1, 'jar',
+ CURRENT_DATE - 25, CURRENT_DATE + 365, 95.00, 'Almost empty', 'available', NOW() - INTERVAL '25 days'),
+('c0ffee20-0000-4000-8000-000000000029', '11111111-1111-4111-8111-111111111111', 'Sandwich Cookies 133g', 'Oreo', 'snacks', 1, 'pack',
+ CURRENT_DATE - 16, CURRENT_DATE + 90, 55.00, NULL, 'available', NOW() - INTERVAL '16 days'),
+-- The remaining categories, so every icon in the app has a row behind it
+('c0ffee20-0000-4000-8000-000000000030', '11111111-1111-4111-8111-111111111111', 'Frozen Mixed Vegetables 500g', 'Ardo', 'frozen', 2, 'pack',
+ CURRENT_DATE - 18, CURRENT_DATE + 240, 145.00, NULL, 'available', NOW() - INTERVAL '18 days'),
+('c0ffee20-0000-4000-8000-000000000031', '11111111-1111-4111-8111-111111111111', 'Vanilla Ice Cream 1.5L', 'Selecta', 'frozen', 1, 'tub',
+ CURRENT_DATE - 9, CURRENT_DATE + 150, 265.00, 'For the weekend', 'available', NOW() - INTERVAL '9 days'),
+('c0ffee20-0000-4000-8000-000000000032', '11111111-1111-4111-8111-111111111111', 'Bottled Water 500ml', 'Wilkins', 'beverages', 12, 'bottle',
+ CURRENT_DATE - 7, CURRENT_DATE + 400, 18.00, NULL, 'available', NOW() - INTERVAL '7 days'),
+('c0ffee20-0000-4000-8000-000000000033', '11111111-1111-4111-8111-111111111111', 'Potato Chips 110g', 'Piattos', 'snacks', 3, 'pack',
+ CURRENT_DATE - 11, CURRENT_DATE + 120, 38.00, NULL, 'available', NOW() - INTERVAL '11 days');
 
 -- ----------------------------------------------------------------------------
 -- 5. Consumption records (each links to an item marked 'consumed')
+--    The ones from the last 7 days are what the dashboard's "Recently consumed"
+--    list reads, so at least a few must stay recent.
 -- ----------------------------------------------------------------------------
 INSERT INTO public.inventory_consumption (id, user_id, inventory_item_id, quantity, unit, consumed_at) VALUES
 ('c0ffee30-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000017', 0.5, 'kg', NOW() - INTERVAL '8 days'),
 ('c0ffee30-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000018', 1.0, 'head', NOW() - INTERVAL '5 days'),
-('c0ffee30-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000019', 3.0, 'pcs', NOW() - INTERVAL '4 days');
+('c0ffee30-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000019', 3.0, 'pcs', NOW() - INTERVAL '4 days'),
+('c0ffee30-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000025', 1.0, 'bottle', NOW() - INTERVAL '3 days'),
+('c0ffee30-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000023', 1.0, 'bottle', NOW() - INTERVAL '2 days'),
+('c0ffee30-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000024', 1.0, 'bottle', NOW() - INTERVAL '2 days'),
+('c0ffee30-0000-4000-8000-000000000007', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000026', 1.0, 'bottle', NOW() - INTERVAL '1 day');
 
 -- ----------------------------------------------------------------------------
 -- 6. Waste records (each links to an item marked 'wasted')
@@ -315,14 +348,14 @@ INSERT INTO public.grocery_lists (id, user_id, name, created_at, updated_at) VAL
 ('c0ffee40-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'Adobo + Sinigang run', NOW() - INTERVAL '1 day', NOW());
 
 INSERT INTO public.grocery_items (id, grocery_list_id, name, category, quantity, unit, estimated_price, purchased, created_at) VALUES
-('c0ffee41-0000-4000-8000-000000000001', 'c0ffee40-0000-4000-8000-000000000001', 'Soy Sauce 1L', 'Condiments', 1, 'bottle', 42.00, true,  NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000002', 'c0ffee40-0000-4000-8000-000000000001', 'White Vinegar 1L', 'Condiments', 1, 'bottle', 60.00, true,  NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000003', 'c0ffee40-0000-4000-8000-000000000001', 'Canned Sardines 155g', 'Pantry', 3, 'can', 35.00, false, NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000004', 'c0ffee40-0000-4000-8000-000000000001', 'Banana Ketchup 320g', 'Condiments', 1, 'bottle', 40.00, false, NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000005', 'c0ffee40-0000-4000-8000-000000000001', 'Chicken Bouillon Cubes', 'Pantry', 1, 'box', 28.00, false, NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000006', 'c0ffee40-0000-4000-8000-000000000001', 'Bay Leaves', 'Herbs', 1, 'box', 25.00, false, NOW() - INTERVAL '2 days'),
-('c0ffee41-0000-4000-8000-000000000007', 'c0ffee40-0000-4000-8000-000000000002', 'Black Peppercorns', 'Herbs', 1, 'box', 45.00, false, NOW() - INTERVAL '1 day'),
-('c0ffee41-0000-4000-8000-000000000008', 'c0ffee40-0000-4000-8000-000000000002', 'Fish Sauce (Patis)', 'Condiments', 1, 'bottle', 35.00, false, NOW() - INTERVAL '1 day');
+('c0ffee41-0000-4000-8000-000000000001', 'c0ffee40-0000-4000-8000-000000000001', 'Soy Sauce 1L', 'condiments', 1, 'bottle', 42.00, true,  NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000002', 'c0ffee40-0000-4000-8000-000000000001', 'White Vinegar 1L', 'condiments', 1, 'bottle', 60.00, true,  NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000003', 'c0ffee40-0000-4000-8000-000000000001', 'Canned Sardines 155g', 'canned', 3, 'can', 35.00, false, NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000004', 'c0ffee40-0000-4000-8000-000000000001', 'Banana Ketchup 320g', 'condiments', 1, 'bottle', 40.00, false, NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000005', 'c0ffee40-0000-4000-8000-000000000001', 'Chicken Bouillon Cubes', 'canned', 1, 'box', 28.00, false, NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000006', 'c0ffee40-0000-4000-8000-000000000001', 'Bay Leaves', 'condiments', 1, 'box', 25.00, false, NOW() - INTERVAL '2 days'),
+('c0ffee41-0000-4000-8000-000000000007', 'c0ffee40-0000-4000-8000-000000000002', 'Black Peppercorns', 'condiments', 1, 'box', 45.00, false, NOW() - INTERVAL '1 day'),
+('c0ffee41-0000-4000-8000-000000000008', 'c0ffee40-0000-4000-8000-000000000002', 'Fish Sauce (Patis)', 'condiments', 1, 'bottle', 35.00, false, NOW() - INTERVAL '1 day');
 
 -- ----------------------------------------------------------------------------
 -- 8. Favorites + notification history + preferences
@@ -337,10 +370,144 @@ INSERT INTO public.notification_logs (id, user_id, inventory_item_id, notificati
 ('c0ffee36-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000010', 'expiration', NOW() - INTERVAL '10 hours'),
 ('c0ffee36-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', 'c0ffee20-0000-4000-8000-000000000008', 'expiration', NOW() - INTERVAL '6 hours');
 
+-- Upserts, not inserts. Inserting the demo profile above fires
+-- `on_profile_created` -> `grant_default_entitlements()`, which has *already*
+-- created a preferences row for this user. A plain INSERT therefore collides on
+-- idx_notification_prefs_unique / idx_preferences_unique.
 INSERT INTO public.notification_preferences (id, user_id, enabled, days_before, recipe_notifications, grocery_notifications, weekly_summary)
-VALUES ('c0ffee60-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', true, 3, true, true, true);
+VALUES ('c0ffee60-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', true, 3, true, true, true)
+ON CONFLICT (user_id) DO UPDATE
+  SET enabled = EXCLUDED.enabled,
+      days_before = EXCLUDED.days_before,
+      recipe_notifications = EXCLUDED.recipe_notifications,
+      grocery_notifications = EXCLUDED.grocery_notifications,
+      weekly_summary = EXCLUDED.weekly_summary;
 
 INSERT INTO public.user_preferences (id, user_id, weight_unit, volume_unit, currency, language)
-VALUES ('c0ffee70-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'g', 'ml', 'PHP', 'en');
+VALUES ('c0ffee70-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'g', 'ml', 'PHP', 'en')
+ON CONFLICT (user_id) DO UPDATE
+  SET weight_unit = EXCLUDED.weight_unit,
+      volume_unit = EXCLUDED.volume_unit,
+      currency = EXCLUDED.currency,
+      language = EXCLUDED.language;
 
 COMMIT;
+
+
+-- ============================================================================
+-- 9. OPTIONAL — the same demo data in YOUR OWN account
+-- ----------------------------------------------------------------------------
+-- Everything above lands in the demo login (demo@keepfresh.app / KeepFresh123!).
+-- If you want the same pantry in the account you actually sign in with, set
+-- v_email below and run THIS BLOCK ON ITS OWN (it is deliberately outside the
+-- BEGIN/COMMIT above so it can be pasted independently).
+--
+-- Safe to re-run: every row it writes gets a '5eed…' id derived from a hash of
+-- your user id, and the block deletes its own previous rows first. Child rows
+-- (consumption, waste, grocery items) cascade away with their parent.
+-- ============================================================================
+DO $$
+DECLARE
+  v_email TEXT := 'you@example.com';   -- ← put your KeepFresh account email here
+  v_uid   UUID;
+  v_list  UUID;
+BEGIN
+  SELECT id INTO v_uid FROM auth.users WHERE lower(email) = lower(v_email);
+
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION
+      'No account found for "%". Sign up in the app first, then run this block again.', v_email;
+  END IF;
+
+  v_list := ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || 'list'), 1, 12))::uuid;
+
+  DELETE FROM public.grocery_lists WHERE id = v_list;
+  DELETE FROM public.inventory_items
+   WHERE user_id = v_uid AND id::text LIKE '5eed0000-0000-4000-8000-%';
+
+  -- --------------------------------------------------------------------------
+  -- Inventory. Covers every category the app has an icon for, and includes
+  -- the three states the dashboard reports on: running low (quantity at or
+  -- below LOW_STOCK_THRESHOLD), used up (quantity 0 + 'consumed', which is what
+  -- makes Need to Buy non-empty), and already gone ('wasted' / 'expired').
+  -- --------------------------------------------------------------------------
+  INSERT INTO public.inventory_items
+    (id, user_id, product_name, brand, category, quantity, unit,
+     purchase_date, expiration_date, price, notes, status, created_at)
+  SELECT ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || i.k), 1, 12))::uuid,
+         v_uid, i.product_name, i.brand, i.category, i.quantity, i.unit,
+         CURRENT_DATE - i.age_days, CURRENT_DATE + i.due_days, i.price, i.notes, i.status,
+         NOW() - make_interval(days => i.age_days)
+  FROM (VALUES
+    ('milk',      'Fresh Milk 1L',               'Magnolia',        'dairy',      2,   'L',      4,   2,   118.00, 'For shakes and morning coffee',                     'available'),
+    ('eggs',      'Eggs (Large)',                'Local Farm',      'dairy',      6,   'pcs',    6,   6,    10.00, NULL,                                                'available'),
+    ('butter',    'Butter 225g',                 'Anchor',          'dairy',      1,   'block',  20,  4,   165.00, 'Last block - pick up more',                          'available'),
+    ('cream',     'Cream Cheese 250g',           'Philadelphia',    'dairy',      1,   'tub',    12,  -7,   130.00, NULL,                                                'wasted'),
+    ('chicken',   'Chicken Breast (Boneless)',   'Magnolia',        'meat',       1.2, 'kg',     1,   3,   240.00, 'Portion and freeze the rest',                        'available'),
+    ('pork',      'Pork Belly (Liempo)',         'Monterey',        'meat',       1.0, 'kg',     2,   5,   330.00, NULL,                                                'available'),
+    ('tomatoes',  'Tomatoes',                    'Wet Market',      'produce',    6,   'pcs',    3,   4,     3.50, NULL,                                                'available'),
+    ('kangkong',  'Kangkong (Water Spinach)',    'Wet Market',      'produce',    1,   'bunch',  2,   1,    25.00, 'Use for sinigang tonight',                           'available'),
+    ('bananas',   'Lakatan Bananas',             'Wet Market',      'produce',    6,   'pcs',    2,   3,    10.00, NULL,                                                'available'),
+    ('lettuce',   'Iceberg Lettuce',             'Local',           'produce',    1,   'head',   10, -5,    75.00, NULL,                                                'wasted'),
+    ('milkfish',  'Milkfish (Bangus, whole)',    'Wet Market',      'seafood',    1,   'pc',     1,   1,   135.00, 'Cook today - very fresh',                            'available'),
+    ('rice',      'Sinandomeng Rice 5kg',        'Doña Maria',      'canned',     5,   'kg',     15,  365,  52.00, NULL,                                                'available'),
+    ('tuna',      'Tuna Flakes in Oil 155g',     'Century',         'canned',     3,   'can',    12,  120,  32.00, 'Backup lunch option',                                'available'),
+    ('bread',     'Sliced Wheat Bread',          'Gardenia',        'grains',     1,   'loaf',   5,   -1,   90.00, 'Missed the window - check the bread drawer first',    'expired'),
+    ('oats',      'Rolled Oats 500g',            'Quaker',          'grains',     1,   'pack',   21,  200, 145.00, NULL,                                                'available'),
+    ('frozenveg', 'Frozen Mixed Vegetables 500g','Ardo',            'frozen',     2,   'pack',   18,  240, 145.00, NULL,                                                'available'),
+    ('icecream',  'Vanilla Ice Cream 1.5L',      'Selecta',         'frozen',     1,   'tub',    9,   150, 265.00, 'For the weekend',                                    'available'),
+    ('water',     'Bottled Water 500ml',         'Wilkins',         'beverages',  12,  'bottle', 7,   400,  18.00, NULL,                                                'available'),
+    ('coffee',    'Instant Coffee 100g',         'Nescafe Classic', 'beverages',  1,   'jar',    25,  365,  95.00, 'Almost empty',                                       'available'),
+    ('chips',     'Potato Chips 110g',           'Piattos',         'snacks',     3,   'pack',   11,  120,  38.00, NULL,                                                'available'),
+    ('cookies',   'Sandwich Cookies 133g',       'Oreo',            'snacks',     1,   'pack',   16,  90,   55.00, NULL,                                                'available'),
+    ('soy',       'Soy Sauce 1L',                'Silver Swan',     'condiments', 0,   'bottle', 30,  300,  42.00, 'Ran out - added to the grocery list',                 'consumed'),
+    ('vinegar',   'White Vinegar 1L',            'Datu Puti',       'condiments', 0,   'bottle', 30,  300,  60.00, NULL,                                                'consumed'),
+    ('patis',     'Fish Sauce (Patis) 385ml',    'Rufina',          'condiments', 0,   'bottle', 45,  300,  35.00, NULL,                                                'consumed'),
+    ('ketchup',   'Banana Ketchup 320g',         'Jufran',          'condiments', 0,   'bottle', 40,  200,  40.00, NULL,                                                'consumed')
+  ) AS i(k, product_name, brand, category, quantity, unit, age_days, due_days, price, notes, status);
+
+  -- What was used up, all inside the last week so "Recently consumed" is
+  -- populated. The keys match the inventory rows above.
+  INSERT INTO public.inventory_consumption (id, user_id, inventory_item_id, quantity, unit, consumed_at)
+  SELECT ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || 'c' || c.k), 1, 12))::uuid,
+         v_uid,
+         ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || c.k), 1, 12))::uuid,
+         c.quantity, c.unit, NOW() - make_interval(days => c.days_ago)
+  FROM (VALUES
+    ('patis',   1, 'bottle', 3),
+    ('soy',     1, 'bottle', 2),
+    ('vinegar', 1, 'bottle', 2),
+    ('ketchup', 1, 'bottle', 1)
+  ) AS c(k, quantity, unit, days_ago);
+
+  -- What was thrown out, so the waste banner and analytics have a real number.
+  INSERT INTO public.food_waste (id, user_id, inventory_item_id, quantity, unit, reason, estimated_value, wasted_at)
+  SELECT ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || 'w' || w.k), 1, 12))::uuid,
+         v_uid,
+         ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || w.k), 1, 12))::uuid,
+         w.quantity, w.unit, w.reason, w.estimated_value,
+         NOW() - make_interval(days => w.days_ago)
+  FROM (VALUES
+    ('lettuce', 1, 'head', 'Forgot it at the back of the crisper drawer',                75.00, 3),
+    ('cream',   1, 'tub',  'Went past its expiry while we were away for the weekend',   130.00, 2)
+  ) AS w(k, quantity, unit, reason, estimated_value, days_ago);
+
+  -- A shopping list, including the four things that just ran out.
+  INSERT INTO public.grocery_lists (id, user_id, name, created_at, updated_at)
+  VALUES (v_list, v_uid, 'Weekly Restock', NOW() - INTERVAL '2 days', NOW());
+
+  INSERT INTO public.grocery_items (id, grocery_list_id, name, category, quantity, unit, estimated_price, purchased, created_at)
+  SELECT ('5eed0000-0000-4000-8000-' || substr(md5(v_uid::text || 'g' || g.k), 1, 12))::uuid,
+         v_list, g.name, g.category, g.quantity, g.unit, g.estimated_price, g.purchased,
+         NOW() - INTERVAL '2 days'
+  FROM (VALUES
+    ('soysauce', 'Soy Sauce 1L',          'condiments', 1, 'bottle', 42.00, false),
+    ('vinegar',  'White Vinegar 1L',      'condiments', 1, 'bottle', 60.00, false),
+    ('patis',    'Fish Sauce (Patis)',    'condiments', 1, 'bottle', 35.00, false),
+    ('ketchup',  'Banana Ketchup 320g',   'condiments', 1, 'bottle', 40.00, false),
+    ('sardines', 'Canned Sardines 155g',  'canned',     3, 'can',    35.00, true),
+    ('bouillon', 'Chicken Bouillon Cubes','canned',     1, 'box',    28.00, false)
+  ) AS g(k, name, category, quantity, unit, estimated_price, purchased);
+
+  RAISE NOTICE 'Seeded demo data for % (%)', v_email, v_uid;
+END $$;

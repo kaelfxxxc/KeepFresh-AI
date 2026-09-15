@@ -19,6 +19,7 @@ import { router } from 'expo-router';
 import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
+import { categoryIcon } from '../utils/categoryIcons';
 
 type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral';
@@ -366,21 +367,16 @@ export function AvatarCircle({ uri, initials, size = 42, onPress }: {
 }
 
 /* ------------------------------------------------- Product thumbnail */
-export function categoryEmoji(category?: string | null): string {
-  switch (category) {
-    case 'dairy': return '🥛';
-    case 'produce': return '🥬';
-    case 'meat': return '🥩';
-    case 'seafood': return '🍤';
-    case 'beverages': return '🥤';
-    case 'snacks': return '🍪';
-    case 'frozen': return '🧊';
-    default: return '📦';
-  }
-}
-
-// Shows the product photo when one is stored (image_url) and falls back to the
-// category emoji tile otherwise. Used for inventory rows and detail heroes.
+/**
+ * Shows the product photo when one is stored (image_url) and falls back to the
+ * category's icon otherwise. Used for inventory rows and detail heroes.
+ *
+ * The fallback is a stroked icon rather than an emoji so it matches the stroke
+ * weight and colour of every other icon in the app, and so it stays legible
+ * inside the 24px empty-state circle as well as the 108px detail hero. The
+ * category is resolved through `resolveCategory`, which tolerates the several
+ * spellings that exist in stored data — see src/utils/categoryIcons.ts.
+ */
 export function ItemImage({ uri, category, size = 52, radius = RADII.image, style }: {
   uri?: string | null;
   category?: string | null;
@@ -400,6 +396,7 @@ export function ItemImage({ uri, category, size = 52, radius = RADII.image, styl
       />
     );
   }
+  const Icon = categoryIcon(category);
   return (
     <View
       style={[
@@ -410,7 +407,7 @@ export function ItemImage({ uri, category, size = 52, radius = RADII.image, styl
         style,
       ]}
     >
-      <Text style={{ fontSize: Math.round(size * 0.42) }}>{categoryEmoji(category)}</Text>
+      <Icon size={Math.round(size * 0.46)} color={COLORS.primary} strokeWidth={1.8} />
     </View>
   );
 }

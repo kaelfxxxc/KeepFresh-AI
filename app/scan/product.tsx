@@ -7,6 +7,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII } from '../../src/theme';
 import { Sparkles, ScanBarcode, PencilLine, PackagePlus } from 'lucide-react-native';
 import { NavHeader, PillButton, StatusBadge } from '../../src/components/ui';
+import { categoryIcon, categoryLabel } from '../../src/utils/categoryIcons';
 import type { ReviewInfo } from '../../src/services/barcodeService';
 
 type ScanSource = 'photo' | 'lookup' | 'inventory';
@@ -23,6 +24,18 @@ const EMPTY: ReviewInfo = {
   description: '',
   ingredients: '',
 };
+
+/**
+ * Whether an image URL is worth storing on the row.
+ *
+ * A photo scan carries the picked file's own `file://` path, which is a location
+ * on this one device: it would render as a broken image for anyone else in the
+ * household, and stop resolving here as soon as the picker's cache is cleared.
+ * The photo's job is to identify the item, and the category icon is what the
+ * inventory row shows afterwards, so only remote URLs are persisted.
+ */
+const persistableImageUrl = (url?: string | null): string | null =>
+  url && /^https?:\/\//i.test(url) ? url : null;
 
 const row = (label: string, value: string) => (
   <View style={styles.attrRow}>
@@ -109,7 +122,7 @@ export default function ProductInfoScreen() {
         quantity: Number(info.quantity) || 1,
         unit: info.unit || 'pcs',
         barcode: info.barcode || params.barcode || null,
-        image_url: info.image_url || null,
+        image_url: persistableImageUrl(info.image_url),
         notes,
       });
       if (error) {
@@ -126,14 +139,10 @@ export default function ProductInfoScreen() {
     }
   };
 
-  const emoji = info.category === 'dairy' ? '🥛'
-    : info.category === 'produce' ? '🥬'
-    : info.category === 'meat' ? '🥩'
-    : info.category === 'seafood' ? '🍤'
-    : info.category === 'beverages' ? '🥤'
-    : info.category === 'snacks' ? '🍪'
-    : info.category === 'frozen' ? '🧊'
-    : '📦';
+  // The photo scan's local file path is a real image, so the hero shows it; a
+  // barcode lookup's image is remote. Either way the fallback is the category's
+  // own icon rather than a generic box.
+  const HeroIcon = categoryIcon(info.category);
 
   const showImage = !!info.image_url && !imgBroken;
   const autoFilled = source === 'lookup' || source === 'inventory';
@@ -153,7 +162,7 @@ export default function ProductInfoScreen() {
               onError={() => setImgBroken(true)}
             />
           ) : (
-            <Text style={styles.heroEmoji}>{emoji}</Text>
+            <HeroIcon size={68} color={COLORS.primary} strokeWidth={1.5} />
           )}
           <View style={styles.aiBadge}>
             {source === 'photo' ? (
@@ -170,7 +179,7 @@ export default function ProductInfoScreen() {
         <View style={styles.card}>
           <Text style={styles.itemName}>{info.product_name || 'Unidentified product'}</Text>
           {row('Brand', info.brand || '—')}
-          {row('Category', info.category ? info.category.charAt(0).toUpperCase() + info.category.slice(1) : '—')}
+          {row('Category', info.category ? categoryLabel(info.category) : '—')}
           {row('Expiration Date', info.expiration_date ? new Date(info.expiration_date).toLocaleDateString() : 'Not set')}
           {row('Quantity', `${info.quantity} ${info.unit || 'pcs'}`)}
           {row('Barcode', info.barcode || params.barcode || '—')}
@@ -242,7 +251,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   heroImage: { width: '100%', height: '100%' },
-  heroEmoji: { fontSize: 72 },
   aiBadge: {
     position: 'absolute', top: 12, left: 12,
     flexDirection: 'row', alignItems: 'center', gap: 5,

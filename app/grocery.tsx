@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
-  KeyboardAvoidingView, Platform, TextInput, Share,
+  KeyboardAvoidingView, Platform, TextInput, Share, useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -11,8 +11,18 @@ import { COLORS, SPACING, RADII } from '../src/theme';
 import { GroceryList, GroceryItem } from '../src/types';
 import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle, ScanBarcode } from 'lucide-react-native';
 import { NavHeader, EmptyState } from '../src/components/ui';
+import { categoryIcon, categoryLabel, resolveCategory } from '../src/utils/categoryIcons';
 
 const peso = (n: number) => `₱${n.toFixed(2)}`;
+
+/** The name given to the list that is created on demand. */
+const DEFAULT_LIST_NAME = 'My Grocery List';
+
+/**
+ * Two lists are the same to the user when they read the same — case and
+ * surrounding space do not make them distinct.
+ */
+const listKey = (name: string) => name.trim().toLowerCase();
 
 export default function GroceryListScreen() {
   const insets = useSafeAreaInsets();
@@ -22,6 +32,40 @@ export default function GroceryListScreen() {
   const [items, setItems] = useState<GroceryItem[]>([]);
   const [draft, setDraft] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const { width } = useWindowDimensions();
+
+  /**
+   * What the chip row shows: one entry per distinct name.
+   *
+   * Accounts in the wild already hold duplicates from the unconditional insert
+   * this screen used to do, and a duplicate row is invisible to the user as a
+   * row — it only ever looks like the same list printed twice. Collapsing by
+   * name on the way to the screen fixes that for those accounts without
+   * deleting anything, and keeps the current selection valid because the
+   * surviving entry is the same record the user was already on.
+   */
+  const visibleLists = useMemo(() => {
+    const seen = new Set<string>();
+    return lists.filter((l) => {
+      const key = listKey(l.name ?? '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [lists]);
+
+  // A chip stays a chip: wide enough for a name, never wide enough to become
+  // the whole row. Proportional so it holds up from a small phone upward.
+  const chipMaxWidth = Math.min(200, Math.round(width * 0.45));
+
+  // If the selected list was one of the collapsed duplicates, move to the entry
+  // that survived rather than leaving the screen pointed at a row the chip row
+  // no longer shows.
+  useEffect(() => {
+    if (visibleLists.length === 0) return;
+    if (currentList && visibleLists.some((l) => l.id === currentList.id)) return;
+    setCurrentList(visibleLists[0]);
+  }, [visibleLists, currentList]);
 
   const fetchLists = useCallback(async () => {
     if (!profile) return;
@@ -62,10 +106,25 @@ export default function GroceryListScreen() {
     }, [fetchLists, fetchItems, currentList?.id])
   );
 
+  /**
+   * Get the default list, creating it only if it is genuinely missing.
+   *
+   * This used to insert unconditionally, so every press of "New" (and every
+   * scanner launch) added another row called "My Grocery List". Three taps left
+   * three identical lists that the screen rendered as three identical cards.
+   * Reusing the existing row makes the call idempotent, which is what the
+   * scanner needs anyway — it wants "a list to add to", not "a new list".
+   */
   const createList = async (): Promise<GroceryList | null> => {
+    const existing = lists.find((l) => l.name === DEFAULT_LIST_NAME);
+    if (existing) {
+      setCurrentList(existing);
+      return existing;
+    }
+
     const { data, error } = await supabase
       .from('grocery_lists')
-      .insert({ name: 'My Grocery List', user_id: profile?.id })
+      .insert({ name: DEFAULT_LIST_NAME, user_id: profile?.id })
       .select()
       .single();
     if (error) return null;
@@ -132,10 +191,14 @@ export default function GroceryListScreen() {
   };
 
   // Group by category, unpurchased first.
+  //
+  // Rows are bucketed by the *resolved* category rather than the raw stored
+  // string, so the old Title Case rows and the canonical keys the scanner now
+  // writes land in the same group instead of splitting one aisle into two.
   const grouped: { category: string; rows: GroceryItem[] }[] = [];
   const byCat = new Map<string, { pending: GroceryItem[]; done: GroceryItem[] }>();
   items.forEach((i) => {
-    const cat = i.category || 'Other';
+    const cat = resolveCategory(i.category);
     if (!byCat.has(cat)) byCat.set(cat, { pending: [], done: [] });
     const bucket = byCat.get(cat)!;
     (i.purchased ? bucket.done : bucket.pending).push(i);
@@ -189,15 +252,36 @@ export default function GroceryListScreen() {
         }
       />
 
-      {lists.length > 1 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.listChips}>
-          {lists.map((l) => (
-            <Pressable key={l.id} style={[styles.listChip, currentList?.id === l.id && styles.listChipActive]} onPress={() => { setCurrentList(l); }}>
-              <Text style={[styles.listChipText, currentList?.id === l.id && styles.listChipTextActive]} numberOfLines={1}>
-                {l.name}
-              </Text>
-            </Pressable>
-          ))}
+      {/* List switcher. Only worth a row when there is genuinely more than one
+          list to switch between, and only ever one chip per name. */}
+      {visibleLists.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.listChipsRow}
+          contentContainerStyle={styles.listChips}
+          keyboardShouldPersistTaps="handled"
+        >
+          {visibleLists.map((l) => {
+            const active = currentList?.id === l.id;
+            return (
+              <Pressable
+                key={l.id}
+                onPress={() => setCurrentList(l)}
+                style={[styles.listChip, { maxWidth: chipMaxWidth }, active && styles.listChipActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text
+                  style={[styles.listChipText, active && styles.listChipTextActive]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {l.name}
+                </Text>
+              </Pressable>
+            );
+          })}
           <Pressable style={styles.listChipGhost} onPress={createList} hitSlop={6}>
             <Plus size={14} color={COLORS.primary} strokeWidth={2.5} />
             <Text style={styles.listChipGhostText}>New</Text>
@@ -242,14 +326,20 @@ export default function GroceryListScreen() {
               contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl }}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchLists(); fetchItems(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
             >
-              {grouped.map((g) => (
-                <View key={g.category} style={{ marginTop: SPACING.md }}>
-                  <Text style={styles.groupLabel} numberOfLines={1}>{g.category}</Text>
-                  <View style={styles.card}>
-                    {g.rows.map(renderRow)}
+              {grouped.map((g) => {
+                const GroupIcon = categoryIcon(g.category);
+                return (
+                  <View key={g.category} style={{ marginTop: SPACING.md }}>
+                    <View style={styles.groupHead}>
+                      <GroupIcon size={13} color={COLORS.secondaryText} strokeWidth={2.4} />
+                      <Text style={styles.groupLabel} numberOfLines={1}>{categoryLabel(g.category)}</Text>
+                    </View>
+                    <View style={styles.card}>
+                      {g.rows.map(renderRow)}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
               <Pressable style={styles.clearBtn} onPress={clearAll}>
                 <Text style={styles.clearBtnText}>Clear all items</Text>
               </Pressable>
@@ -293,15 +383,43 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
   headerScan: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  listChips: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, paddingBottom: SPACING.sm },
+  // `flexGrow: 0` is the whole fix for the bloated look: a horizontal ScrollView
+  // is a direct child of this screen's flex column, and with no height of its
+  // own it is free to stretch vertically. Left unconstrained it pushed the
+  // summary card and the list down the screen.
+  listChipsRow: { flexGrow: 0, flexShrink: 0 },
+  listChips: {
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    paddingBottom: SPACING.sm,
+    alignItems: 'center',
+  },
   listChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 50, backgroundColor: COLORS.white,
-    borderWidth: 1, borderColor: COLORS.divider, maxWidth: 160,
+    // Chips sit on one line and keep their own width; the row scrolls instead
+    // of the chips stretching to fill it.
+    flexShrink: 0,
+    justifyContent: 'center',
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: RADII.pill,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.divider,
   },
   listChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   listChipText: { fontSize: 13, color: COLORS.secondaryText, fontWeight: '600' },
   listChipTextActive: { color: COLORS.white },
-  listChipGhost: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 50, backgroundColor: COLORS.primaryLight },
+  listChipGhost: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: RADII.pill,
+    backgroundColor: COLORS.primaryLight,
+  },
   listChipGhostText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
   summaryCard: {
     marginHorizontal: SPACING.lg, marginTop: SPACING.xs, marginBottom: SPACING.sm,
@@ -324,9 +442,10 @@ const styles = StyleSheet.create({
   summaryDone: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
   budgetAmount: { fontSize: 20, fontWeight: '800', color: COLORS.primaryDark },
   budgetLabel: { fontSize: 11, color: COLORS.secondaryText, textTransform: 'uppercase', letterSpacing: 0.3 },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6, marginTop: SPACING.sm },
   groupLabel: {
     fontSize: 12, fontWeight: '700', color: COLORS.secondaryText, textTransform: 'uppercase',
-    letterSpacing: 0.4, marginBottom: 6, marginTop: SPACING.sm,
+    letterSpacing: 0.4, flexShrink: 1,
   },
   card: { backgroundColor: COLORS.white, borderRadius: RADII.card, paddingHorizontal: SPACING.md, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },

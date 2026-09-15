@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl, ScrollView,
+  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
 } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { inventoryService } from '../../src/services/inventoryService';
@@ -32,6 +32,10 @@ export default function InventoryScreen() {
   const { profile } = useAuth();
   const { gates } = useSubscription();
   const insets = useSafeAreaInsets();
+  // Deep links from elsewhere in the app open a specific chip — the dashboard's
+  // "Need to Buy" shortcut lands here already filtered, rather than on "All" and
+  // leaving the user to find the chip themselves.
+  const { filter: filterParam } = useLocalSearchParams<{ filter?: Filter }>();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [areas, setAreas] = useState<StorageArea[]>([]);
   const [search, setSearch] = useState('');
@@ -108,6 +112,12 @@ export default function InventoryScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchInventory(); fetchAreas(); };
 
+  // Applied on every change, not just on mount: arriving here already on this
+  // screen with a new filter param should still move the chip.
+  useEffect(() => {
+    if (FILTERS.some((f) => f.key === filterParam)) setFilter(filterParam as Filter);
+  }, [filterParam]);
+
   /**
    * The ± control.
    *
@@ -164,6 +174,32 @@ export default function InventoryScreen() {
   }, [items]);
 
   const showAreaRow = areas.length > 0 && (areas.length > 1 || areaCounts.unassigned > 0);
+
+  /**
+   * The location cards: "All areas", then one per storage area, then
+   * "Unassigned" when some items have no home. Built as data so the grid below
+   * stays a single uniform card rather than four near-identical blocks of JSX.
+   */
+  const areaCards = useMemo(() => {
+    const cards = [
+      { key: 'all' as AreaFilter, emoji: '🧺', name: 'All areas', count: areaCounts.all },
+      ...areas.map((area) => ({
+        key: area.id as AreaFilter,
+        emoji: storageEmoji(area),
+        name: area.name,
+        count: areaCounts[area.id] ?? 0,
+      })),
+    ];
+    if (areaCounts.unassigned > 0) {
+      cards.push({
+        key: 'unassigned' as AreaFilter,
+        emoji: '📥',
+        name: 'Unassigned',
+        count: areaCounts.unassigned,
+      });
+    }
+    return cards;
+  }, [areas, areaCounts]);
 
   const handleDelete = (item: InventoryItem) => {
     Alert.alert('Delete Item', `Are you sure you want to remove "${item.product_name}"?`, [
@@ -321,37 +357,44 @@ export default function InventoryScreen() {
         ))}
       </View>
 
+      {/* Location cards. Three to a row, each the same size, and they wrap
+          instead of scrolling sideways — a horizontal strip could not give the
+          cards equal widths without measuring the screen, and it hid whichever
+          areas did not fit. */}
       {showAreaRow && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.areaRow}
-        >
-          <Chip
-            label="All areas"
-            active={areaFilter === 'all'}
-            onPress={() => setAreaFilter('all')}
-            count={areaCounts.all}
-          />
-          {areas.map((area) => (
-            <Chip
-              key={area.id}
-              label={`${storageEmoji(area)} ${area.name}`}
-              active={areaFilter === area.id}
-              onPress={() => setAreaFilter(area.id)}
-              count={areaCounts[area.id] ?? 0}
-            />
-          ))}
-          {areaCounts.unassigned > 0 && (
-            <Chip
-              label="Unassigned"
-              active={areaFilter === 'unassigned'}
-              onPress={() => setAreaFilter('unassigned')}
-              count={areaCounts.unassigned}
-            />
-          )}
-          <Chip label="Manage areas" active={false} onPress={() => router.push('/storage-areas')} />
-        </ScrollView>
+        <View style={styles.areaGrid}>
+          {areaCards.map((card) => {
+            const active = areaFilter === card.key;
+            return (
+              <Pressable
+                key={card.key}
+                style={[styles.areaCard, active && styles.areaCardActive]}
+                onPress={() => setAreaFilter(card.key)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+              >
+                <Text style={styles.areaCardEmoji}>{card.emoji}</Text>
+                <Text style={[styles.areaCardName, active && styles.areaCardTextActive]} numberOfLines={1}>
+                  {card.name}
+                </Text>
+                <Text style={[styles.areaCardCount, active && styles.areaCardTextActive]}>
+                  {card.count} {card.count === 1 ? 'item' : 'items'}
+                </Text>
+              </Pressable>
+            );
+          })}
+
+          <Pressable
+            style={[styles.areaCard, styles.areaCardManage]}
+            onPress={() => router.push('/storage-areas')}
+            accessibilityRole="button"
+            accessibilityLabel="Manage storage areas"
+          >
+            <Text style={styles.areaCardEmoji}>⚙️</Text>
+            <Text style={[styles.areaCardName, styles.areaCardMuted]} numberOfLines={1}>Manage</Text>
+            <Text style={[styles.areaCardCount, styles.areaCardMuted]}>areas</Text>
+          </Pressable>
+        </View>
       )}
 
       {/* A reached product limit is surfaced here rather than at the moment the
@@ -444,7 +487,48 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
   },
   chipRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
-  areaRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  areaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+    // Makes every card on a line exactly as tall as the tallest on that line.
+    // With one line of name and one of count in each card, every card in the
+    // grid ends up the same height rather than only the ones side by side.
+    alignItems: 'stretch',
+  },
+  areaCard: {
+    // Three to a row. A 30% base plus `flexShrink: 0` is what keeps the widths
+    // identical: nothing can be squeezed narrower than its share, and three of
+    // them always fit because 3 × 30% + two gaps is under 100% at any screen
+    // width. `flexGrow` then shares out what is left so the row ends flush, and
+    // `maxWidth` keeps a final card that wrapped on its own from stretching
+    // across the whole screen.
+    flexBasis: '30%',
+    flexGrow: 1,
+    flexShrink: 0,
+    maxWidth: '33%',
+    minHeight: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: RADII.card,
+    borderWidth: 1,
+    borderColor: COLORS.divider,
+    backgroundColor: COLORS.white,
+  },
+  areaCardActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  areaCardManage: { borderStyle: 'dashed', backgroundColor: 'transparent' },
+  // Explicit line heights on all three lines: emoji metrics differ between iOS
+  // and Android, and without this the cards in a row grew to different heights.
+  areaCardEmoji: { fontSize: 20, lineHeight: 24 },
+  areaCardName: { fontSize: 12.5, lineHeight: 16, fontWeight: '700', color: COLORS.text, maxWidth: '100%' },
+  areaCardCount: { fontSize: 11, lineHeight: 14, color: COLORS.secondaryText },
+  areaCardTextActive: { color: COLORS.white },
+  areaCardMuted: { color: COLORS.secondaryText },
   notice: { marginHorizontal: SPACING.lg, marginBottom: SPACING.md },
   offlineHint: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

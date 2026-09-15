@@ -9,8 +9,10 @@ import { storageAreaService, storageEmoji } from '../../../src/services/storageA
 import { describeEntitlementError, type GateResult } from '../../../src/services/entitlementService';
 import { COLORS, SPACING, RADII } from '../../../src/theme';
 import { EXPIRATION_ALERT_OPTIONS, ExpirationAlertDays, StorageArea } from '../../../src/types';
-import { Tag, CalendarDays, PackagePlus, PencilLine, Bell, Boxes } from 'lucide-react-native';
+import { Tag, CalendarDays, PackagePlus, PencilLine, Bell, Boxes, ChevronDown } from 'lucide-react-native';
 import { NavHeader, Field, PillButton, UpgradeNotice } from '../../../src/components/ui';
+import { DatePickerModal } from '../../../src/components/DatePicker';
+import { addDaysKey } from '../../../src/utils/dateKey';
 import {
   CATEGORY_KEYS,
   CATEGORY_LABELS,
@@ -30,6 +32,7 @@ export default function AddItemScreen() {
   const [storageAreaId, setStorageAreaId] = useState<string | null>(null);
   const [alertDays, setAlertDays] = useState<ExpirationAlertDays>(3);
   const [upgrade, setUpgrade] = useState<GateResult | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // The form holds a canonical category key, not a label: the key is what gets
   // stored and what the icon resolver reads back, so nothing has to translate
@@ -74,9 +77,11 @@ export default function AddItemScreen() {
       setForm((prev) => ({ ...prev, expiration_date: '' }));
       return;
     }
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    setForm((prev) => ({ ...prev, expiration_date: d.toISOString().split('T')[0] }));
+    // Recomputed from today in the app's timezone rather than by adding to the
+    // date already in the field, so tapping "Today" after "+2 weeks" gives today
+    // and not a fortnight from today. `addDaysKey` also keeps this off the UTC
+    // clock, which in a +8 zone is still yesterday until 08:00 local.
+    setForm((prev) => ({ ...prev, expiration_date: addDaysKey(days) }));
   };
 
   const handleSave = async () => {
@@ -195,14 +200,26 @@ export default function AddItemScreen() {
         </View>
 
         <Text style={styles.label}>Expiration Date</Text>
-        <View style={styles.dateBox}>
-          <CalendarDays size={18} color={COLORS.secondaryText} strokeWidth={2} />
-          <Text style={form.expiration_date ? styles.dateText : styles.datePlaceholder}>
+        {/* The box itself opens the calendar: it reads as the field it is, and
+            the chips below stay as shortcuts for the dates people actually pick. */}
+        <Pressable
+          style={({ pressed }) => [styles.dateBox, pressed && styles.dateBoxPressed]}
+          onPress={() => setPickerOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={
+            form.expiration_date
+              ? `Expiration date, ${new Date(form.expiration_date + 'T00:00:00').toLocaleDateString()}. Change`
+              : 'Set an expiration date'
+          }
+        >
+          <CalendarDays size={18} color={COLORS.primary} strokeWidth={2} />
+          <Text style={[form.expiration_date ? styles.dateText : styles.datePlaceholder, { flex: 1 }]}>
             {form.expiration_date
               ? new Date(form.expiration_date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
               : 'No expiration date set'}
           </Text>
-        </View>
+          <ChevronDown size={17} color={COLORS.secondaryText} strokeWidth={2.2} />
+        </Pressable>
         <View style={styles.dateChips}>
           {[{ label: 'Today', d: 0 }, { label: '+3 days', d: 3 }, { label: '+1 week', d: 7 }, { label: '+2 weeks', d: 14 }, { label: 'Clear', d: -9999 }].map((o) => (
             <Pressable
@@ -286,6 +303,16 @@ export default function AddItemScreen() {
           disabled={atProductLimit}
         />
       </View>
+
+      <DatePickerModal
+        visible={pickerOpen}
+        value={form.expiration_date || null}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={(date) => {
+          setForm((prev) => ({ ...prev, expiration_date: date ?? '' }));
+          setPickerOpen(false);
+        }}
+      />
     </View>
   );
 }
@@ -317,6 +344,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
     borderRadius: RADII.input, paddingHorizontal: 14, minHeight: 50, marginBottom: SPACING.sm,
   },
+  dateBoxPressed: { opacity: 0.7 },
   dateText: { fontSize: 15, color: COLORS.text, fontWeight: '500' },
   datePlaceholder: { fontSize: 15, color: COLORS.secondaryText },
   dateChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.lg },

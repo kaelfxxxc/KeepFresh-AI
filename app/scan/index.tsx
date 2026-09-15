@@ -10,7 +10,7 @@ import { COLORS, SPACING } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { lookupBarcode, toReviewProduct, ReviewInfo } from '../../src/services/barcodeService';
 import { recognizeFood } from '../../src/services/foodVisionService';
-import { ScanBarcode, Camera as CameraIcon, Images, PenLine, Settings, X, Sparkles } from 'lucide-react-native';
+import { ScanBarcode, Images, PenLine, Settings, X, Sparkles } from 'lucide-react-native';
 
 /**
  * How a photo is picked. `quality` is the only size lever available —
@@ -421,20 +421,33 @@ export default function ScanScreen() {
               </View>
             </Pressable>
 
+            {/* Two shortcuts beside the shutter: pull a picture in from the
+                gallery, or skip recognition entirely and type the details.
+                There is deliberately no "Take Photo" button here — the shutter
+                above is already that control, and two ways to do one thing just
+                made the sheet busier. */}
             <View style={styles.actionRow}>
-              <Pressable style={styles.modeBtn} onPress={() => pickAndRecognize('camera')} disabled={loading}>
-                <CameraIcon size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
-                <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Take Photo</Text>
-              </Pressable>
-              <Pressable style={styles.modeBtn} onPress={() => pickAndRecognize('library')} disabled={loading}>
+              <Pressable
+                style={styles.modeBtn}
+                onPress={() => pickAndRecognize('library')}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Upload a photo from the gallery"
+              >
                 <Images size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
                 <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Upload Photo</Text>
               </Pressable>
+              <Pressable
+                style={styles.modeBtn}
+                onPress={() => router.push('/inventory/add')}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Enter the product details manually"
+              >
+                <PenLine size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
+                <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Edit Manually</Text>
+              </Pressable>
             </View>
-
-            <Pressable style={styles.textBtn} onPress={() => router.push('/inventory/add')} hitSlop={8} disabled={loading}>
-              <Text style={styles.textBtnLabel}>Enter the details manually</Text>
-            </Pressable>
           </View>
         </>
       )}

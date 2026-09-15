@@ -13,7 +13,7 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem, StorageArea } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
-import { Search, Plus, SlidersHorizontal, Package, ScanLine, WifiOff } from 'lucide-react-native';
+import { Search, Plus, SlidersHorizontal, Package, ScanLine, WifiOff, Heart } from 'lucide-react-native';
 import {
   Chip, StatusBadge, EmptyState, ItemImage, QuantityPrompt, QuantityStepper, UpgradeNotice,
 } from '../../src/components/ui';
@@ -118,6 +118,14 @@ export default function InventoryScreen() {
     if (FILTERS.some((f) => f.key === filterParam)) setFilter(filterParam as Filter);
   }, [filterParam]);
 
+  // The location cards are hidden under Need to Buy — a location describes where
+  // food *is*, and these rows are things that ran out or that the user means to
+  // re-buy. A location left selected from before would then be filtering the list
+  // from a control that is no longer on screen, so clear it on the way in.
+  useEffect(() => {
+    if (filter === 'need_to_buy') setAreaFilter('all');
+  }, [filter]);
+
   /**
    * The ± control.
    *
@@ -155,23 +163,74 @@ export default function InventoryScreen() {
   );
 
   /**
-   * How many live items sit in each area. Counted from the rows we already hold
-   * rather than a second round-trip, so the chips can never disagree with the
-   * list they filter.
+   * The heart: flag the item as something to buy more of, or clear the flag.
+   *
+   * Optimistic like the ± control, and for the same reason — it is a single
+   * boolean, so waiting on the round trip would only make the tap feel broken.
+   * The row is put back exactly as it was if the write fails.
+   */
+  const toggleNeedToBuy = useCallback(async (item: InventoryItem) => {
+    const next = !item.need_to_buy;
+
+    setItems((prev) =>
+      prev.map((row) => (row.id === item.id ? { ...row, need_to_buy: next } : row))
+    );
+
+    try {
+      const updated = await inventoryService.setNeedToBuy(item.id, next);
+      setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+    } catch (error: any) {
+      setItems((prev) => prev.map((row) => (row.id === item.id ? item : row)));
+      Alert.alert(
+        'Could not update Need to Buy',
+        error?.message ?? 'Check your connection and try again.'
+      );
+    }
+  }, []);
+
+  /**
+   * The chip's predicate. Kept separate from the location filter so the cards
+   * below can be counted with it rather than in spite of it.
+   */
+  const matchesFilter = useCallback((item: InventoryItem) => {
+    if (filter === 'available') return item.status === 'available';
+    // The two ways an item ends up under Need to Buy: it ran out, or the user
+    // hearted it to say they want more. The flag is what makes an item that is
+    // still in stock show up here.
+    if (filter === 'need_to_buy') {
+      return item.status === 'consumed' || item.status === 'wasted' || item.need_to_buy;
+    }
+    return true;
+  }, [filter]);
+
+  const matchesSearch = useCallback((item: InventoryItem) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return item.product_name.toLowerCase().includes(q)
+      || (item.brand || '').toLowerCase().includes(q)
+      || (item.category || '').toLowerCase().includes(q);
+  }, [search]);
+
+  /**
+   * How many items sit in each area. Counted from the rows we already hold
+   * rather than a second round-trip, and counted *through the same predicates as
+   * the list* — that is what stops a card advertising items the list below it
+   * will not show. Changing the chip or the search moves the numbers with it.
    */
   const areaCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0, unassigned: 0 };
-    items.forEach((item) => {
-      if (item.status === 'consumed' || item.status === 'wasted') return;
-      counts.all += 1;
-      if (item.storage_area_id) {
-        counts[item.storage_area_id] = (counts[item.storage_area_id] ?? 0) + 1;
-      } else {
-        counts.unassigned += 1;
-      }
-    });
+    items
+      .filter((item) => matchesFilter(item) && matchesSearch(item))
+      .forEach((item) => {
+        counts.all += 1;
+        if (item.storage_area_id) {
+          counts[item.storage_area_id] = (counts[item.storage_area_id] ?? 0) + 1;
+        } else {
+          counts.unassigned += 1;
+        }
+      });
     return counts;
-  }, [items]);
+  }, [items, matchesFilter, matchesSearch]);
 
   const showAreaRow = areas.length > 0 && (areas.length > 1 || areaCounts.unassigned > 0);
 
@@ -234,12 +293,6 @@ export default function InventoryScreen() {
   };
 
   const filteredItems = items.filter((item) => {
-    const q = search.trim().toLowerCase();
-    const matchesSearch = !q ||
-      item.product_name.toLowerCase().includes(q) ||
-      (item.brand || '').toLowerCase().includes(q) ||
-      (item.category || '').toLowerCase().includes(q);
-
     const matchesArea =
       areaFilter === 'all'
         ? true
@@ -247,15 +300,16 @@ export default function InventoryScreen() {
           ? !item.storage_area_id
           : item.storage_area_id === areaFilter;
 
-    if (!matchesArea) return false;
-    if (filter === 'available') return matchesSearch && item.status === 'available';
-    if (filter === 'need_to_buy') return matchesSearch && (item.status === 'consumed' || item.status === 'wasted');
-    return matchesSearch;
+    return matchesArea && matchesFilter(item) && matchesSearch(item);
   });
 
   const statusOf = (item: InventoryItem) => {
     if (item.status === 'consumed') return { label: 'Consumed', tone: 'neutral' as const };
     if (item.status === 'wasted') return { label: 'Wasted', tone: 'danger' as const };
+    // The user's own flag outranks the freshness reading: they hearted this to
+    // remember to buy more, and that is the reason it is on this screen. The
+    // expiry line under the name still carries the date, so nothing is lost.
+    if (item.need_to_buy) return { label: 'To Buy', tone: 'primary' as const };
     const exp = getExpirationStatus(item.expiration_date);
     if (exp === 'expired') return { label: 'Expired', tone: 'danger' as const };
     if (exp === 'today') return { label: 'Today', tone: 'danger' as const };
@@ -307,6 +361,27 @@ export default function InventoryScreen() {
         )}
 
         <View style={styles.rowActions}>
+          {/* The same heart, in the same colours, as the one on the item
+              screen — one control, two places to reach it from. */}
+          <Pressable
+            style={styles.rowHeart}
+            onPress={() => toggleNeedToBuy(item)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: item.need_to_buy }}
+            accessibilityLabel={
+              item.need_to_buy
+                ? `Remove ${item.product_name} from Need to Buy`
+                : `Add ${item.product_name} to Need to Buy`
+            }
+          >
+            <Heart
+              size={15}
+              strokeWidth={2.4}
+              color={item.need_to_buy ? COLORS.danger : COLORS.secondaryText}
+              fill={item.need_to_buy ? COLORS.danger : 'transparent'}
+            />
+          </Pressable>
           <Pressable style={styles.rowAction} onPress={() => handleConsume(item)}>
             <Text style={styles.rowActionText}>✓ Use</Text>
           </Pressable>
@@ -360,8 +435,9 @@ export default function InventoryScreen() {
       {/* Location cards. Three to a row, each the same size, and they wrap
           instead of scrolling sideways — a horizontal strip could not give the
           cards equal widths without measuring the screen, and it hid whichever
-          areas did not fit. */}
-      {showAreaRow && (
+          areas did not fit. Hidden under Need to Buy: nothing there is in a
+          fridge. */}
+      {showAreaRow && filter !== 'need_to_buy' && (
         <View style={styles.areaGrid}>
           {areaCards.map((card) => {
             const active = areaFilter === card.key;
@@ -425,7 +501,16 @@ export default function InventoryScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           !loading ? (
-            search || filter !== 'all' ? (
+            filter === 'need_to_buy' && !search ? (
+              // Empty on this chip is not a failed search — it is the normal
+              // starting state, so the hint explains the two ways in rather than
+              // telling the user to adjust a filter that is working correctly.
+              <EmptyState
+                icon={Heart}
+                title="Nothing to buy right now"
+                hint="Heart an item to say you want more of it, or use one up — either way it turns up here."
+              />
+            ) : search || filter !== 'all' ? (
               <EmptyState
                 icon={Search}
                 title="No matching items"
@@ -553,6 +638,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm, paddingTop: SPACING.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
   },
   rowAction: { paddingHorizontal: 4 },
+  rowHeart: { paddingHorizontal: 4, paddingVertical: 2 },
   rowActionText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
 });
 

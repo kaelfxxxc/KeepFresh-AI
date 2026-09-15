@@ -22,13 +22,16 @@ import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
 
 type IconComp = React.ComponentType<LucideProps>;
-type Tone = 'success' | 'warning' | 'danger' | 'neutral';
+type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
 
 const toneMap: Record<Tone, { bg: string; fg: string }> = {
   success: { bg: COLORS.successBg, fg: COLORS.successText },
   warning: { bg: COLORS.warningBg, fg: COLORS.warningText },
   danger: { bg: COLORS.dangerBg, fg: COLORS.dangerText },
   neutral: { bg: COLORS.neutralBg, fg: COLORS.neutralText },
+  // Brand green, for a badge that states something the user asked for rather
+  // than something the app is warning them about — "To Buy" on a flagged item.
+  primary: { bg: COLORS.primaryLight, fg: COLORS.primary },
 };
 
 /* ------------------------------------------------------------------ Card */

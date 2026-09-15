@@ -82,8 +82,9 @@ export default function InventoryDetailsScreen() {
     }, [fetchItem, fetchHistory])
   );
 
-  // Whether this product is already on the grocery list. Re-read on focus so
-  // the heart stays honest after the user edits the list on the Grocery tab.
+  // Whether this product is already on the grocery list. Re-read on focus so a
+  // row added before the `need_to_buy` flag existed still fills the heart, and
+  // so removing it on the Grocery tab is reflected here.
   // Read-only: merely opening an item must not create a list.
   const syncGroceryState = useCallback(async () => {
     if (!profile || !item) return;
@@ -100,20 +101,27 @@ export default function InventoryDetailsScreen() {
 
   useFocusEffect(useCallback(() => { syncGroceryState(); }, [syncGroceryState]));
 
-  // Heart toggle. Adds the product to the grocery list so it shows up under
-  // "to buy", or removes it if it's already there.
-  const toggleGroceryList = async () => {
+  /**
+   * The heart: this is something to buy more of.
+   *
+   * Two writes, because there are two places that answer "what do I need to
+   * buy?" — the flag on the item, which is what puts it under the Inventory
+   * tab's Need to Buy chip, and the grocery list, which is the shopping list
+   * itself. Doing only the second is what made hearting look like it did
+   * nothing: the Inventory tab never saw it.
+   */
+  const toggleNeedToBuy = async () => {
     if (!item || !profile || savingList) return;
+    const next = !(item.need_to_buy || onGroceryList);
     setSavingList(true);
     try {
+      setItem(await inventoryService.setNeedToBuy(item.id, next));
+
       const list = (await groceryService.getCurrentGroceryList(profile.id))
         ?? (await groceryService.createGroceryList(profile.id));
       const existing = await groceryService.findGroceryItemByName(list.id, item.product_name);
 
-      if (existing) {
-        await groceryService.deleteGroceryItem(existing.id);
-        setOnGroceryList(false);
-      } else {
+      if (next && !existing) {
         await groceryService.addGroceryItem(list.id, {
           name: item.product_name,
           category: item.category,
@@ -122,10 +130,15 @@ export default function InventoryDetailsScreen() {
           estimated_price: item.price,
           purchased: false,
         });
-        setOnGroceryList(true);
+      } else if (!next && existing) {
+        await groceryService.deleteGroceryItem(existing.id);
       }
+      setOnGroceryList(next);
     } catch (error: any) {
-      Alert.alert('Could not update grocery list', error?.message ?? 'Please try again.');
+      Alert.alert('Could not update Need to Buy', error?.message ?? 'Please try again.');
+      // The two writes can part company if the second one fails, so re-read the
+      // item rather than guessing which half landed.
+      await fetchItem();
     } finally {
       setSavingList(false);
     }
@@ -239,6 +252,9 @@ export default function InventoryDetailsScreen() {
   }
 
   const exp = getExpirationStatus(item.expiration_date);
+  // The item's own flag is the truth; the grocery row is a fallback for items
+  // hearted before the flag existed, so an older list still reads as set.
+  const onNeedToBuy = !!item.need_to_buy || onGroceryList;
   const expBadge = {
     expired: { label: 'Expired', tone: 'danger' as const },
     today: { label: 'Expires today', tone: 'danger' as const },
@@ -262,12 +278,13 @@ export default function InventoryDetailsScreen() {
         title="Item Details"
         right={
           <Pressable
-            onPress={toggleGroceryList}
+            onPress={toggleNeedToBuy}
             disabled={savingList}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={onGroceryList ? 'Remove from grocery list' : 'Add to grocery list'}
-            style={[styles.headerIcon, onGroceryList && styles.headerIconActive]}
+            accessibilityState={{ selected: onNeedToBuy }}
+            accessibilityLabel={onNeedToBuy ? 'Remove from Need to Buy' : 'Add to Need to Buy'}
+            style={[styles.headerIcon, onNeedToBuy && styles.headerIconActive]}
           >
             {savingList ? (
               <ActivityIndicator size="small" color={COLORS.danger} />
@@ -275,8 +292,8 @@ export default function InventoryDetailsScreen() {
               <Heart
                 size={20}
                 strokeWidth={2.2}
-                color={onGroceryList ? COLORS.danger : COLORS.secondaryText}
-                fill={onGroceryList ? COLORS.danger : 'transparent'}
+                color={onNeedToBuy ? COLORS.danger : COLORS.secondaryText}
+                fill={onNeedToBuy ? COLORS.danger : 'transparent'}
               />
             )}
           </Pressable>

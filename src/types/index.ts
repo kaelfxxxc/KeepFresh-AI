@@ -27,6 +27,12 @@ export interface InventoryItem {
   image_url: string | null;
   notes: string | null;
   status: 'available' | 'consumed' | 'wasted' | 'expired';
+  /**
+   * The user flagged this as something to buy more of — the heart on the item
+   * screen. Independent of `status`: the item can still be in stock. Need to Buy
+   * shows `status IN ('consumed','wasted')` *or* this flag.
+   */
+  need_to_buy: boolean;
   // Added by 20260914120000_subscriptions_entitlements.sql
   storage_area_id: string | null;
   organization_id: string | null;

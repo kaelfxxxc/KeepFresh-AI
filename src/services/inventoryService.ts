@@ -131,6 +131,17 @@ export const inventoryService = {
     return this.updateInventoryItem(itemId, { storage_area_id: storageAreaId });
   },
 
+  /**
+   * The heart: flag this item as something to buy more of.
+   *
+   * A plain column write — `need_to_buy` is independent of status, so an item
+   * that is still in stock can carry it. The database clears the flag on its own
+   * when the quantity goes up, so restocking needs no call from here.
+   */
+  async setNeedToBuy(itemId: string, needToBuy: boolean): Promise<InventoryItem> {
+    return this.updateInventoryItem(itemId, { need_to_buy: needToBuy });
+  },
+
   async searchInventory(userId: string, query: string): Promise<InventoryItem[]> {
     const { data, error } = await supabase
       .from('inventory_items')

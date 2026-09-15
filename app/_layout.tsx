@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { SubscriptionProvider } from '../src/context/SubscriptionContext';
 import { supabaseConfig } from '../src/lib/supabase';
 import AnimatedSplash from '../src/components/AnimatedSplash';
+import { TrialExpiryNotice } from '../src/components/TrialExpiryNotice';
 import { notificationService } from '../src/services/notificationService';
 import { useNotificationTaps } from '../src/hooks/useNotificationTaps';
 
@@ -113,6 +114,11 @@ function RootNavigator() {
         <Stack.Screen name="(auth)/forgot-password" />
         <Stack.Screen name="(auth)/reset-password" />
       </Stack>
+
+      {/* Renders nothing — watches for a trial that has just ended and raises a
+          one-time alert. Mounted here so it covers every route, including the
+          post-signup screens inside the auth flow. */}
+      <TrialExpiryNotice />
 
       {renderOverlay && (
         <Animated.View style={[styles.cover, { opacity: coverOpacity }]}>

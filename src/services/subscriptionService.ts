@@ -197,6 +197,29 @@ export const subscriptionService = {
   },
 
   /**
+   * Bring this user's own subscription row up to date, then read the
+   * entitlements back.
+   *
+   * The database derives expiry from NOW() on every read, so `getEntitlements`
+   * already answers correctly on its own — a user is locked out the moment their
+   * trial ends whether or not anything has run. What this adds is a row that
+   * agrees with reality: the status column is flipped to 'expired', which is
+   * what the "your trial ended" notice keys off and what support reads.
+   *
+   * Falls back to a plain read when the RPC is not deployed, so the app keeps
+   * working against a database that has not had trial_expiration.sql applied —
+   * a real case here, because SQL is applied by hand in this project.
+   */
+  async syncMySubscription(): Promise<Entitlements | null> {
+    const { data, error } = await supabase.rpc('sync_my_subscription');
+    if (error) {
+      if (isMissingFunction(error)) return entitlementService.get();
+      throw error;
+    }
+    return (data as Entitlements) ?? null;
+  },
+
+  /**
    * Turn off renewal. Access continues until `current_period_end` — the plan
    * does not end early and no inventory is touched.
    */
@@ -218,6 +241,19 @@ function firstOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
+/**
+ * True when PostgREST or Postgres is telling us the function does not exist.
+ *
+ * PGRST202 is PostgREST's "no such function in the schema cache"; 42883 is
+ * Postgres' undefined_function. Both mean the same thing to us: this migration
+ * has not been applied to this database yet.
+ */
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST202' || error.code === '42883') return true;
+  return /could not find the function|function .+ does not exist/i.test(error.message ?? '');
+}
+
 /* -------------------------------------------------------------- pure helpers */
 
 /** Whole days until the period ends. Negative once it has lapsed. */
@@ -226,6 +262,61 @@ export function daysRemaining(periodEnd: string | null | undefined): number {
   const end = new Date(periodEnd).getTime();
   if (Number.isNaN(end)) return 0;
   return Math.ceil((end - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+/* ------------------------------------------------------------ trial helpers */
+
+/** The plan ids that represent a free trial, one per audience. */
+export const TRIAL_PLAN_IDS = new Set(['household_trial', 'establishment_trial']);
+
+/**
+ * Whether the account is on a free trial right now.
+ *
+ * Prefers the server's own `is_trialing`, falling back to the older signal for a
+ * database without trial_expiration.sql.
+ */
+export function isTrialPlan(entitlements: Entitlements | null): boolean {
+  if (!entitlements) return false;
+  if (typeof entitlements.is_trialing === 'boolean') return entitlements.is_trialing;
+  return entitlements.status === 'trialing' && entitlements.billing_period === 'trial';
+}
+
+/**
+ * Whole days left on the current period, preferring the server's figure.
+ *
+ * `days_remaining` is computed in the database from a TIMESTAMPTZ against the
+ * server clock, so it is immune to a device with the wrong date or a travelling
+ * timezone. The fallback recomputes locally, which is what the screen did before
+ * that field existed.
+ */
+export function periodDaysRemaining(entitlements: Entitlements | null): number {
+  if (!entitlements) return 0;
+  if (typeof entitlements.days_remaining === 'number') {
+    return Math.max(entitlements.days_remaining, 0);
+  }
+  return Math.max(daysRemaining(entitlements.current_period_end), 0);
+}
+
+/**
+ * Whether this account's free trial has ended.
+ *
+ * Keyed on `subscription_plan_id` — the subscription row's own plan — because
+ * that is the only field that still says "this was a trial" once the fallback to
+ * the free tier has happened. `tier` cannot be used: after a plan lapses, `tier`
+ * reports 'free_trial' for a lapsed Premium account too, so keying on it would
+ * tell a former Premium subscriber that a trial they never had had ended.
+ *
+ * Returns false — "show nothing" — when the database has not been migrated and
+ * the field is missing, rather than guessing from `status`. A false negative
+ * just means the old behaviour; a false positive means telling someone something
+ * untrue about their own account.
+ */
+export function trialHasEnded(entitlements: Entitlements | null): boolean {
+  if (!entitlements) return false;
+  if (entitlements.is_active) return false;
+  const planId = entitlements.subscription_plan_id;
+  if (!planId) return false;
+  return TRIAL_PLAN_IDS.has(planId);
 }
 
 /**
@@ -239,7 +330,9 @@ export function describeStatus(entitlements: Entitlements | null): {
 } {
   if (!entitlements) return { label: 'Loading', tone: 'neutral' };
 
-  const days = daysRemaining(entitlements.current_period_end);
+  // The server's figure where it exists, so the badge cannot disagree with the
+  // subscription screen or drift on a device with the wrong clock.
+  const days = periodDaysRemaining(entitlements);
 
   switch (entitlements.status) {
     case 'trialing':

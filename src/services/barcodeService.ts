@@ -56,13 +56,48 @@ async function failureCode(error: unknown): Promise<string | null> {
 }
 
 /**
- * Shared transport for every scan function.
+ * The result of calling an edge function, before anyone has decided what the
+ * payload means.
  *
- * `barcode-lookup` and `food-vision` are two ways of asking the same question —
- * "what is this item?" — and they answer in the same envelope, fail with the same
- * codes, and are metered against the same allowance. Keeping the call here means
- * the photo scanner inherits the barcode scanner's behaviour exactly, including
- * the failure handling, rather than reimplementing it and drifting.
+ * `code` is the `error` string from the function's own JSON body — `null` when
+ * the call never got that far (not deployed, network down, or an older
+ * supabase-js that threw instead of returning).
+ */
+export type FunctionOutcome<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: string | null };
+
+/**
+ * Shared transport for every edge function the app calls.
+ *
+ * `barcode-lookup`, `food-vision` and `recipe-suggestions` answer in the same
+ * envelope and fail with the same codes, so the call itself lives here once and
+ * each caller reads its own payload out of the result. That is what keeps the
+ * photo scanner — and now recipe generation — inheriting the barcode scanner's
+ * failure handling rather than reimplementing it and drifting.
+ *
+ * Never throws.
+ */
+export async function invokeFunction<T>(
+  fn: string,
+  body: Record<string, unknown>,
+): Promise<FunctionOutcome<T>> {
+  try {
+    const { data, error } = await supabase.functions.invoke(fn, { body });
+    if (error) return { ok: false, code: await failureCode(error) };
+    return { ok: true, data: data as T };
+  } catch (err) {
+    // Older supabase-js threw directly; treat both failure kinds the same.
+    if (err instanceof FunctionsHttpError || err instanceof FunctionsFetchError) {
+      return { ok: false, code: null };
+    }
+    console.error(`${fn} error:`, err);
+    return { ok: false, code: null };
+  }
+}
+
+/**
+ * A scan, read as the three-state answer the scan screens already branch on.
  *
  * Never throws — degrades to `unavailable` on any failure (including the function
  * not being deployed yet) so callers can fall back to manual entry.
@@ -71,26 +106,22 @@ export async function invokeScanFunction(
   fn: string,
   body: Record<string, unknown>,
 ): Promise<LookupResult> {
-  try {
-    const { data, error } = await supabase.functions.invoke(fn, { body });
-    if (error) {
-      if ((await failureCode(error)) === 'ai_scan_limit_reached') {
-        return { status: 'limit_reached' };
-      }
-      return { status: 'unavailable' };
-    }
-    const d = data as { ok?: boolean; found?: boolean; product?: BarcodeProduct } | null;
-    if (d && d.ok && d.found && d.product) return { status: 'found', product: d.product };
-    if (d && d.ok) return { status: 'not_found' };
-    return { status: 'unavailable' };
-  } catch (err) {
-    // Older supabase-js threw directly; treat both failure kinds the same.
-    if (err instanceof FunctionsHttpError || err instanceof FunctionsFetchError) {
-      return { status: 'unavailable' };
-    }
-    console.error(`${fn} error:`, err);
-    return { status: 'unavailable' };
+  const outcome = await invokeFunction<{
+    ok?: boolean;
+    found?: boolean;
+    product?: BarcodeProduct;
+  } | null>(fn, body);
+
+  if (!outcome.ok) {
+    return outcome.code === 'ai_scan_limit_reached'
+      ? { status: 'limit_reached' }
+      : { status: 'unavailable' };
   }
+
+  const d = outcome.data;
+  if (d && d.ok && d.found && d.product) return { status: 'found', product: d.product };
+  if (d && d.ok) return { status: 'not_found' };
+  return { status: 'unavailable' };
 }
 
 /**

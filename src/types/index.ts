@@ -74,6 +74,21 @@ export interface Recipe {
   servings: number;
   instructions: string[];
   created_at: string;
+  // Added by ai_recipes.sql
+  /**
+   * `null` for the shared catalog seeded by seed.sql. Set on recipes the
+   * recipe-suggestions function generated for one user — and the app only ever
+   * selects those, so the catalog is out of the runtime path.
+   */
+  user_id: string | null;
+  /** Time on the heat, kept apart from the hands-on `prep_time`. */
+  cook_time: number | null;
+  /** 0–100. Share of non-optional ingredients found in inventory when generated. */
+  match_percent: number | null;
+  /** The dish phrase the image search ran with. */
+  image_query: string | null;
+  source: 'catalog' | 'ai';
+  generated_at: string | null;
 }
 
 export interface RecipeIngredient {
@@ -83,6 +98,23 @@ export interface RecipeIngredient {
   quantity: number | null;
   unit: string | null;
   optional: boolean;
+  // Added by ai_recipes.sql
+  /**
+   * Whether the ingredient was in the user's inventory when the recipe was
+   * generated. The detail screen's "you have" / "you need" split is derived from
+   * this one column, so the two lists cannot disagree.
+   */
+  available: boolean;
+}
+
+/**
+ * A recipe as the list screen renders it: the row plus a rollup of its
+ * ingredients, so the card can show coverage without a second query per item.
+ */
+export interface RecipeWithIngredients extends Recipe {
+  ingredient_names: string[];
+  available_count: number;
+  total_count: number;
 }
 
 export interface FavoriteRecipe {

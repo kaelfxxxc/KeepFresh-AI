@@ -49,7 +49,9 @@ import {
 import {
   subscriptionService,
   describeStatus,
-  daysRemaining,
+  periodDaysRemaining,
+  isTrialPlan,
+  trialHasEnded,
   yearlySavingPercent,
   isPurchasable,
   storeProductId,
@@ -105,7 +107,10 @@ export default function SubscriptionScreen() {
   }, [entitlements?.billing_period]);
 
   const status = describeStatus(entitlements);
-  const daysLeft = daysRemaining(entitlements?.current_period_end);
+  // Server-computed, so it is right regardless of the device clock or timezone.
+  const daysLeft = periodDaysRemaining(entitlements);
+  const onTrial = isTrialPlan(entitlements);
+  const trialOver = trialHasEnded(entitlements);
 
   const currentPlanId = entitlements?.plan_id ?? null;
   const currentTier = entitlements?.tier ?? null;
@@ -274,11 +279,16 @@ export default function SubscriptionScreen() {
             <View style={styles.renewRow}>
               <CalendarClock size={15} color={COLORS.secondaryText} strokeWidth={2} />
               <Text style={styles.renewText}>
-                {entitlements.cancel_at_period_end
-                  ? `Access ends ${formatDate(entitlements.current_period_end)}`
-                  : entitlements.status === 'trialing'
-                    ? `Trial ends ${formatDate(entitlements.current_period_end)} · ${Math.max(daysLeft, 0)} days left`
-                    : `Renews ${formatDate(entitlements.current_period_end)} · ${Math.max(daysLeft, 0)} days left`}
+                {/* `is_active` first: a lapsed plan used to fall through to the
+                    "Renews …" wording below, which told an expired user their
+                    plan was about to renew. */}
+                {entitlements.is_active === false
+                  ? `Ended ${formatDate(entitlements.current_period_end)}`
+                  : entitlements.cancel_at_period_end
+                    ? `Access ends ${formatDate(entitlements.current_period_end)}`
+                    : onTrial
+                      ? `Trial ends ${formatDate(entitlements.current_period_end)} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`
+                      : `Renews ${formatDate(entitlements.current_period_end)} · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
               </Text>
             </View>
           )}
@@ -287,8 +297,13 @@ export default function SubscriptionScreen() {
             <View style={styles.lapsed}>
               <Info size={15} color={COLORS.warningText} strokeWidth={2.2} />
               <Text style={styles.lapsedText}>
-                Your plan has ended, so premium features are paused. Nothing was deleted — your
-                inventory, storage areas and history are all still here.
+                {trialOver
+                  ? `Your free trial${
+                      entitlements.trial_ends_at
+                        ? ` ended on ${formatDate(entitlements.trial_ends_at)}`
+                        : ' has ended'
+                    }. Your account is back on the free plan, so premium features are paused. Nothing was deleted — your inventory, storage areas and history are all still here.`
+                  : 'Your plan has ended, so premium features are paused. Nothing was deleted — your inventory, storage areas and history are all still here.'}
               </Text>
             </View>
           )}

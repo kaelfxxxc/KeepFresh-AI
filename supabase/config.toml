@@ -11,6 +11,11 @@ project_id = "keepfresh-ai"
 [functions.expiration-notifier]
 verify_jwt = false
 
+# Generates recipes from the caller's own inventory and writes them to `recipes`.
+# Requires a JWT: the inventory it reads and the rows it writes both belong to one
+# user, and one AI scan is metered against that user's plan per generation.
+# Holds GEMINI_API_KEY, which never reaches the app. Photographs come from
+# TheMealDB (no key) and, when configured, PEXELS_API_KEY.
 [functions.recipe-suggestions]
 verify_jwt = true
 

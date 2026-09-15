@@ -102,6 +102,30 @@ export interface Entitlements {
   ai_scans_used: number;
   usage_period_start: string;
   features: Record<string, FeatureEntitlement>;
+
+  // --- Trial metadata -------------------------------------------------------
+  // Added by supabase/migrations/trial_expiration.sql. Deliberately optional:
+  // a database that has not had that file pasted into it returns none of these,
+  // and the app is expected to degrade to its previous behaviour rather than
+  // crash. Every read must carry a fallback.
+
+  /**
+   * The subscription ROW's plan id, which stops matching `plan_id` the moment a
+   * plan lapses — `plan_id` becomes the free-tier floor, while this keeps naming
+   * what the user actually had. This is what distinguishes "your free trial
+   * ended" from "your Premium plan ended"; `tier` cannot, because both report
+   * 'free_trial' once the fallback applies.
+   */
+  subscription_plan_id?: string | null;
+  /** When the trial began. Set only when the resolved row is a trial plan. */
+  trial_started_at?: string | null;
+  /** When the trial ends, or ended. Also set for an already-lapsed trial. */
+  trial_ends_at?: string | null;
+  /** True only while a trial is running and unexpired. */
+  is_trialing?: boolean;
+  /** Whole days until `current_period_end`, floored at 0. Server-computed, so
+   *  it does not depend on the device clock or timezone. */
+  days_remaining?: number;
 }
 
 export interface SubscriptionUsage {

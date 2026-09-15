@@ -15,14 +15,16 @@ import {
   ExpirationAlertDays,
 } from '../../../src/types';
 import { getExpirationStatus } from '../../../src/utils/expiration';
+import { addDaysKey } from '../../../src/utils/dateKey';
 import { COLORS, SPACING, RADII } from '../../../src/theme';
 import {
   CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote,
-  Heart, Bell, Boxes, History,
+  Heart, Bell, Boxes, History, ChevronDown,
 } from 'lucide-react-native';
 import {
   NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt, Chip,
 } from '../../../src/components/ui';
+import { DatePickerModal } from '../../../src/components/DatePicker';
 
 /** Canned offsets offered beside the expiration date. */
 const DATE_CHIPS: { label: string; days: number }[] = [
@@ -40,6 +42,7 @@ export default function InventoryDetailsScreen() {
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [onGroceryList, setOnGroceryList] = useState(false);
   const [savingList, setSavingList] = useState(false);
@@ -149,23 +152,16 @@ export default function InventoryDetailsScreen() {
   /**
    * Edit the expiry date and/or how many days ahead to warn.
    *
+   * `date` is the resolved value — null clears it — and every caller resolves to
+   * one before calling, rather than passing an offset and having this function
+   * guess which kind of number it was handed.
+   *
    * Written straight through to the row the reminder job reads, so changing
    * "3 days before" to "7 days before" takes effect on the next sweep rather
    * than only in this screen's memory.
    */
-  const saveExpiration = async (days: number | null, alertDays?: ExpirationAlertDays) => {
+  const commitExpiration = async (date: string | null, alertDays?: ExpirationAlertDays) => {
     if (!item) return;
-
-    let date: string | null = item.expiration_date;
-    if (days !== null) {
-      if (days === -1) {
-        date = null;
-      } else {
-        const d = new Date();
-        d.setDate(d.getDate() + days);
-        date = d.toISOString().split('T')[0];
-      }
-    }
 
     setBusy(true);
     try {
@@ -178,6 +174,17 @@ export default function InventoryDetailsScreen() {
       setBusy(false);
     }
   };
+
+  /**
+   * A shortcut chip: an offset from today, or null to clear.
+   *
+   * `addDaysKey` counts in the app's timezone. The `toISOString()` this used to
+   * do was the date at UTC, which in a +8 zone is still yesterday until 08:00
+   * local — so "Today" stored yesterday's date for the first eight hours of the
+   * day, and the item read as expiring a day early.
+   */
+  const saveExpiration = (days: number | null, alertDays?: ExpirationAlertDays) =>
+    commitExpiration(days === null ? null : addDaysKey(days), alertDays);
 
   const moveToArea = async (areaId: string | null) => {
     if (!item) return;
@@ -326,7 +333,24 @@ export default function InventoryDetailsScreen() {
             <Text style={styles.cardTitle}>Expiration & alerts</Text>
             {busy && <ActivityIndicator size="small" color={COLORS.primary} />}
           </View>
-          <Text style={styles.cardValue}>{date(item.expiration_date)}</Text>
+          {/* The date itself is the control, exactly as on Add Item: tap it to
+              open the calendar. The chips below stay as the shortcuts for the
+              dates people actually pick, so the common case is still one tap. */}
+          <Pressable
+            style={({ pressed }) => [styles.dateRow, pressed && styles.dateRowPressed]}
+            onPress={() => setPickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              item.expiration_date
+                ? `Expiration date, ${date(item.expiration_date)}. Change`
+                : 'Set an expiration date'
+            }
+          >
+            <Text style={[styles.cardValue, styles.dateRowText]}>
+              {date(item.expiration_date)}
+            </Text>
+            <ChevronDown size={17} color={COLORS.secondaryText} strokeWidth={2.2} />
+          </Pressable>
 
           <View style={styles.chipWrap}>
             {DATE_CHIPS.map((option) => (
@@ -338,7 +362,7 @@ export default function InventoryDetailsScreen() {
               />
             ))}
             {!!item.expiration_date && (
-              <Chip label="Clear date" active={false} onPress={() => saveExpiration(-1)} />
+              <Chip label="Clear date" active={false} onPress={() => saveExpiration(null)} />
             )}
           </View>
 
@@ -354,7 +378,9 @@ export default function InventoryDetailsScreen() {
                     key={option.value}
                     label={option.label}
                     active={item.expiration_alert_days === option.value}
-                    onPress={() => saveExpiration(null, option.value)}
+                    // The date is passed back unchanged — this chip only moves
+                    // the lead time, and `commitExpiration` writes both columns.
+                    onPress={() => commitExpiration(item.expiration_date, option.value)}
                   />
                 ))}
               </View>
@@ -451,6 +477,21 @@ export default function InventoryDetailsScreen() {
         onCancel={() => setPromptOpen(false)}
         onConfirm={confirmConsume}
       />
+
+      {/* Same calendar the Add Item screen uses, and the same floor: it opens on
+          the month holding the current date, but no day before today can be
+          picked. An item that has already expired is the normal case here, so
+          that date still shows as the selection and Clear is always available —
+          it just cannot be moved to another day in the past. */}
+      <DatePickerModal
+        visible={pickerOpen}
+        value={item.expiration_date}
+        onCancel={() => setPickerOpen(false)}
+        onConfirm={(key) => {
+          setPickerOpen(false);
+          commitExpiration(key);
+        }}
+      />
     </View>
   );
 }
@@ -485,6 +526,11 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13 },
   cardTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.text },
   cardValue: { fontSize: 14, color: COLORS.secondaryText, marginTop: 4, marginBottom: SPACING.sm },
+  // The date and its chevron are one tappable row, so the vertical spacing moves
+  // off the text and onto the row that now spans the card.
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: SPACING.sm },
+  dateRowPressed: { opacity: 0.7 },
+  dateRowText: { flex: 1, marginTop: 0, marginBottom: 0 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingBottom: 13 },
   historyRow: {
     paddingVertical: 10,

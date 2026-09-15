@@ -124,8 +124,11 @@ export type Database = {
       inventory_items: Omit<InventoryItem, 'created_at' | 'updated_at'> & { created_at: string; updated_at: string };
       inventory_consumption: Omit<Consumption, 'consumed_at'> & { consumed_at: string };
       food_waste: Omit<FoodWaste, 'wasted_at'> & { wasted_at: string };
-      recipes: Omit<Recipe, 'created_at'> & { created_at: string };
-      recipe_ingredients: Omit<RecipeIngredient, 'optional'> & { optional: boolean };
+      // Recipe rows carry `created_at` / `generated_at` as strings straight off
+      // the wire, which is already what `Recipe` declares — the Omit-and-re-add
+      // these used to go through resolved to the same type.
+      recipes: Recipe;
+      recipe_ingredients: RecipeIngredient;
       favorite_recipes: Omit<FavoriteRecipe, 'created_at'> & { created_at: string };
       grocery_lists: Omit<GroceryList, 'created_at' | 'updated_at'> & { created_at: string; updated_at: string };
       grocery_items: Omit<GroceryItem, 'created_at'> & { created_at: string };

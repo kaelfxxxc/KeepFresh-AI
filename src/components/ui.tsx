@@ -150,11 +150,20 @@ export function Chip({ label, active, onPress, count }: {
 }
 
 /* ------------------------------------------------- Count bubble (bell) */
+/**
+ * The number on a bell.
+ *
+ * Clamped at 99+ rather than 9+: this now carries the dashboard's whole
+ * notification count — expiring items *and* items running low — which for an
+ * establishment-sized inventory is routinely into double figures, and "9+" would
+ * stop answering the only question the bubble exists to answer. The clamp stays
+ * because the badge has no room to grow without limit.
+ */
 export function CountBadge({ count }: { count: number }) {
   if (!count) return null;
   return (
     <View style={styles.countBadge}>
-      <Text style={styles.countBadgeText}>{count > 9 ? '9+' : count}</Text>
+      <Text style={styles.countBadgeText}>{count > 99 ? '99+' : count}</Text>
     </View>
   );
 }

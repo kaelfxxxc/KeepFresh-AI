@@ -10,7 +10,7 @@ import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
 import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
 import {
-  AlertTriangle, Bell, ChevronRight, Clock3, Crown, History, Package,
+  Bell, ChevronRight, Crown, History, Package,
   PieChart, ShoppingBasket, ShoppingCart, TrendingDown,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
@@ -210,7 +210,18 @@ export default function HomeScreen() {
   const maxTrend = Math.max(1, ...(stats?.trend.map((t) => t.value) ?? [1]));
 
   const consumed = stats?.recentlyConsumed ?? [];
-  const lowStockCount = stats?.lowStock ?? 0;
+
+  /**
+   * Everything the bell counts.
+   *
+   * The Running Low and Expiration Alerts strips that used to sit lower down
+   * this screen are behind the bell now, so the badge has to carry both: a
+   * number that counted only expirations would disagree with the list its own
+   * tap opens. Alerts renders both sections, and the low-stock figure here comes
+   * from the same `status = 'available'` rows and the same threshold that
+   * screen filters by, so the two cannot drift apart.
+   */
+  const alertCount = (stats?.expirationAlerts ?? 0) + (stats?.lowStock ?? 0);
 
   /**
    * The two screens that have no tab of their own.
@@ -243,11 +254,6 @@ export default function HomeScreen() {
     borderRadius: Math.round(iconBoxSize * 0.35),
   };
   const iconGlyphSize = Math.round(iconBoxSize * 0.52);
-
-  // Amber while it is a nudge, red once there is enough of it to be a problem.
-  const lowTone = lowStockCount >= 4
-    ? { bg: COLORS.dangerBg, fg: COLORS.dangerText }
-    : { bg: COLORS.warningBg, fg: COLORS.warningText };
 
   // 'trialing' gets called out because a trial quietly turning into a charge is
   // the thing users most want warning about; a lapsed plan is flagged so the
@@ -311,24 +317,24 @@ export default function HomeScreen() {
                 strokeWidth={2.3}
               />
             </Pressable>
-            {/* The bell goes to the Alerts tab. It used to be a plain View, so
-                the badge counted expiring items and then nothing happened when
-                you tapped it — the two actions either side of it both led
-                somewhere. With nothing expiring the badge is hidden and the tab
-                still opens, which is where "you're all caught up" lives. */}
+            {/* The bell is the screen's one place for anything needing attention:
+                the Running Low and Expiration Alerts strips that used to sit
+                further down have moved behind it, and Alerts lists both. With
+                nothing outstanding the badge is hidden and the tab still opens,
+                which is where "you're all caught up" lives. */}
             <Pressable
               onPress={() => router.push('/alerts')}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={
-                stats?.expirationAlerts
-                  ? `Alerts, ${stats.expirationAlerts} expiring soon`
+                alertCount > 0
+                  ? `Alerts, ${alertCount} notification${alertCount === 1 ? '' : 's'}`
                   : 'Alerts'
               }
               style={({ pressed }) => [styles.bellWrap, pressed && { opacity: 0.7 }]}
             >
               <Bell size={22} color={COLORS.text} strokeWidth={2} />
-              <CountBadge count={stats?.expirationAlerts ?? 0} />
+              <CountBadge count={alertCount} />
             </Pressable>
             <AvatarCircle uri={profile.avatar_url} initials={profile.full_name} onPress={() => router.push('/profile')} />
           </View>
@@ -408,41 +414,6 @@ export default function HomeScreen() {
             );
           })}
         </View>
-
-        {/* Low stock strip. Sits above the expiration strip because it is the one
-            the user can act on with a shopping trip — it is also the count that
-            drives the low-stock notifications. */}
-        {lowStockCount > 0 && (
-          <Pressable
-            style={[styles.alertStrip, { backgroundColor: lowTone.bg }]}
-            onPress={() => router.push('/inventory')}
-          >
-            <View style={styles.alertIconWrap}>
-              <AlertTriangle size={20} color={lowTone.fg} strokeWidth={2.1} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[styles.alertTitle, { color: lowTone.fg }]}>Running Low</Text>
-              <Text style={[styles.alertSub, { color: lowTone.fg }]} numberOfLines={2}>
-                {lowStockCount} item{lowStockCount === 1 ? '' : 's'} at {LOW_STOCK_THRESHOLD} or fewer left
-              </Text>
-            </View>
-            <ChevronRight size={20} color={lowTone.fg} />
-          </Pressable>
-        )}
-
-        {/* Expiration alert strip */}
-        <Pressable style={styles.alertStrip} onPress={() => router.push('/alerts')}>
-          <View style={styles.alertIconWrap}>
-            <Clock3 size={20} color={COLORS.warningText} strokeWidth={2.1} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.alertTitle}>Expiration Alerts</Text>
-            <Text style={styles.alertSub} numberOfLines={2}>
-              {stats?.expirationAlerts ?? 0} item{(stats?.expirationAlerts ?? 0) === 1 ? '' : 's'} expiring soon
-            </Text>
-          </View>
-          <ChevronRight size={20} color={COLORS.warningText} />
-        </Pressable>
 
         {/* Recently consumed — what has actually left the pantry lately. The
             category icon comes from the same resolver the inventory rows use, so
@@ -598,19 +569,6 @@ const styles = StyleSheet.create({
   consumeRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider },
   consumeName: { fontSize: 14.5, fontWeight: '600', color: COLORS.text },
   consumeMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
-  alertStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    backgroundColor: COLORS.warningBg,
-    borderRadius: RADII.card,
-    padding: SPACING.md,
-  },
-  alertIconWrap: { width: 40, height: 40, borderRadius: RADII.icon, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center' },
-  alertTitle: { fontSize: 15, fontWeight: '700', color: COLORS.warningText },
-  alertSub: { fontSize: 12, color: COLORS.warningText, marginTop: 1 },
   chartCard: {
     marginHorizontal: SPACING.lg,
     marginTop: SPACING.md,

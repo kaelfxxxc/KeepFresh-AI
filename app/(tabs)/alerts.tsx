@@ -7,8 +7,9 @@ import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
-import { ChevronRight, CalendarClock, CheckCircle2 } from 'lucide-react-native';
+import { AlertTriangle, ChevronRight, CalendarClock, CheckCircle2 } from 'lucide-react-native';
 import { Segmented, StatusBadge, EmptyState } from '../../src/components/ui';
+import { LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
 
 type Horizon = 'today' | 'week' | 'month';
 
@@ -70,6 +71,25 @@ export default function AlertsScreen() {
     month: `Expiring this month · ${groups.month.length} item${groups.month.length === 1 ? '' : 's'}`,
   } as const;
 
+  /**
+   * Still on the shelf, but nearly gone.
+   *
+   * Deliberately not one of the expiry buckets: "expires on Friday" and "only
+   * one left" are different questions, and an item can honestly be both.
+   *
+   * The predicate is the dashboard bell's, term for term — the same
+   * `status = 'available'` rows against the same threshold — because that badge
+   * counts exactly these items, and two different answers in two places would
+   * discredit both. Something already written off is waste to report rather than
+   * stock to replace, so it is not counted here either way.
+   */
+  const lowStockItems = items.filter(
+    (it) => it.status === 'available' && Number(it.quantity ?? 0) <= LOW_STOCK_THRESHOLD
+  );
+
+  const expiringTotal = groups.today.length + groups.week.length + groups.month.length;
+  const nothingAtAll = expiringTotal === 0 && lowStockItems.length === 0;
+
   const badgeFor = (item: InventoryItem) => {
     const exp = getExpirationStatus(item.expiration_date);
     const d = daysUntil(item.expiration_date);
@@ -79,8 +99,34 @@ export default function AlertsScreen() {
     return { label: `${d}d left`, tone: 'success' as const };
   };
 
-  const renderItem = ({ item }: { item: InventoryItem }) => {
-    const badge = badgeFor(item);
+  /**
+   * One alert row, shared by both lists so the two cannot drift apart.
+   *
+   * A plain function rather than a component: a component declared in the render
+   * body is a brand new type on every pass, which remounts every row.
+   */
+  const renderRow = (
+    item: InventoryItem,
+    icon: React.ReactNode,
+    meta: string,
+    badge: { label: string; tone: 'success' | 'warning' | 'danger' }
+  ) => (
+    <Pressable
+      key={item.id}
+      style={({ pressed }) => [styles.rowCard, pressed && { opacity: 0.9 }]}
+      onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}
+    >
+      <View style={styles.rowIcon}>{icon}</View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.rowName} numberOfLines={1}>{item.product_name}</Text>
+        <Text style={styles.rowMeta} numberOfLines={2}>{meta}</Text>
+      </View>
+      <StatusBadge label={badge.label} tone={badge.tone} />
+      <ChevronRight size={18} color={COLORS.secondaryText} />
+    </Pressable>
+  );
+
+  const renderExpiring = ({ item }: { item: InventoryItem }) => {
     const d = daysUntil(item.expiration_date);
     const expiryText =
       d === 0 ? 'Expires today'
@@ -88,59 +134,87 @@ export default function AlertsScreen() {
         : d < 0 ? `Expired ${Math.abs(d)} day${Math.abs(d) === 1 ? '' : 's'} ago`
         : `Expires in ${d} days · ${item.expiration_date ? new Date(item.expiration_date).toLocaleDateString() : ''}`;
 
-    return (
-      <Pressable
-        style={({ pressed }) => [styles.rowCard, pressed && { opacity: 0.9 }]}
-        onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}
-      >
-        <View style={styles.rowIcon}>
-          <CalendarClock size={22} color={d <= 0 ? COLORS.dangerText : d <= 7 ? COLORS.warningText : COLORS.successText} strokeWidth={2} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.rowName} numberOfLines={1}>{item.product_name}</Text>
-          <Text style={styles.rowMeta}>{item.quantity} {item.unit} · {expiryText}</Text>
-        </View>
-        <StatusBadge label={badge.label} tone={badge.tone} />
-        <ChevronRight size={18} color={COLORS.secondaryText} />
-      </Pressable>
+    return renderRow(
+      item,
+      <CalendarClock
+        size={22}
+        color={d <= 0 ? COLORS.dangerText : d <= 7 ? COLORS.warningText : COLORS.successText}
+        strokeWidth={2}
+      />,
+      `${item.quantity} ${item.unit} · ${expiryText}`,
+      badgeFor(item)
     );
   };
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Expiration Alerts</Text>
-        <Text style={styles.subtitle}>Items nearing their expiry date</Text>
-      </View>
+  /**
+   * Running low, the horizon picker and the section heading all scroll with the
+   * list.
+   *
+   * The picker used to be pinned above it, which stops working the moment
+   * Running Low is a section of its own: the segments would sit over a block
+   * they do not govern and read as though they filtered it.
+   */
+  const header = (
+    <View style={{ gap: SPACING.md }}>
+      {lowStockItems.length > 0 && (
+        <View style={{ gap: SPACING.sm }}>
+          <View style={styles.blockHeadingRow}>
+            <AlertTriangle size={14} color={COLORS.warningText} strokeWidth={2.4} />
+            <Text style={styles.blockHeading}>
+              Running low · {lowStockItems.length} item{lowStockItems.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+          {lowStockItems.map((item) =>
+            renderRow(
+              item,
+              <AlertTriangle size={22} color={COLORS.warningText} strokeWidth={2} />,
+              `${item.quantity} ${item.unit} left · restock soon`,
+              { label: 'Low', tone: 'warning' }
+            )
+          )}
+        </View>
+      )}
 
-      <View style={{ paddingHorizontal: SPACING.lg, marginBottom: SPACING.md }}>
-        <Segmented
-          value={horizon}
-          onChange={setHorizon}
-          options={[
-            { label: 'Today', value: 'today', count: groups.today.length },
-            { label: 'Next 7 Days', value: 'week', count: groups.week.length },
-            { label: 'This Month', value: 'month', count: groups.month.length },
-          ]}
-        />
-      </View>
+      <Segmented
+        value={horizon}
+        onChange={setHorizon}
+        options={[
+          { label: 'Today', value: 'today', count: groups.today.length },
+          { label: 'Next 7 Days', value: 'week', count: groups.week.length },
+          { label: 'This Month', value: 'month', count: groups.month.length },
+        ]}
+      />
 
       {!loading && list.length > 0 && (
         <Text style={styles.sectionHeading}>{HEADINGS[horizon]}</Text>
       )}
+    </View>
+  );
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Alerts</Text>
+        <Text style={styles.subtitle}>Running low and nearing expiry, in one place</Text>
+      </View>
 
       <FlatList
         data={list}
         keyExtractor={(item) => item.id}
-        renderItem={renderItem}
+        renderItem={renderExpiring}
+        ListHeaderComponent={header}
         contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAlerts(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           loading ? null : (
             <EmptyState
               icon={CheckCircle2}
-              title={groups.today.length + groups.week.length + groups.month.length === 0 ? "You're all caught up!" : `Nothing expiring${horizon === 'today' ? ' today' : horizon === 'week' ? ' in the next 7 days' : ' this month'}`}
-              hint="Items in this window will show up here as their dates approach."
+              title={nothingAtAll ? "You're all caught up!" : `Nothing expiring${horizon === 'today' ? ' today' : horizon === 'week' ? ' in the next 7 days' : ' this month'}`}
+              hint={
+                nothingAtAll
+                  ? 'Nothing is running low and nothing is nearing its date.'
+                  : 'Items in this window will show up here as their dates approach.'
+              }
             />
           )
         }
@@ -154,9 +228,16 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
   title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  // No horizontal padding: this now renders inside the list, whose content
+  // container already insets the page.
   sectionHeading: {
     fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm, textTransform: 'uppercase', letterSpacing: 0.4,
+    textTransform: 'uppercase', letterSpacing: 0.4,
+  },
+  blockHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  blockHeading: {
+    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
+    textTransform: 'uppercase', letterSpacing: 0.4,
   },
   rowCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

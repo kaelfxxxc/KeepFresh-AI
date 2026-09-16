@@ -20,6 +20,7 @@ import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight } f
 import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
+import { directImageUri, resolveItemImageUri } from '../services/inventoryImageService';
 
 type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'wasted';
@@ -469,12 +470,35 @@ export function ItemImage({ uri, category, size = 52, radius = RADII.image, styl
   style?: any;
 }) {
   const [broken, setBroken] = useState(false);
-  useEffect(() => { setBroken(false); }, [uri]);
-  if (uri && !broken) {
+  // A stored photo is a path inside a private bucket and has to be signed before
+  // <Image> can fetch it. A remote URL or a just-picked local file is renderable
+  // as it stands, and is answered without a promise so it never flashes the
+  // fallback icon while one resolves.
+  const [signed, setSigned] = useState<string | null>(null);
+  const immediate = directImageUri(uri);
+
+  useEffect(() => {
+    setBroken(false);
+    setSigned(null);
+    if (!uri || immediate) return;
+    let live = true;
+    resolveItemImageUri(uri).then((next) => {
+      if (live) setSigned(next);
+    });
+    // A row recycled onto another item must not take the previous item's photo.
+    return () => { live = false; };
+  }, [uri, immediate]);
+
+  const source = immediate ?? signed;
+  if (source && !broken) {
     return (
       <Image
-        source={{ uri }}
-        style={{ width: size, height: size, borderRadius: radius }}
+        source={{ uri: source }}
+        // `style` belongs here as much as on the fallback below: callers use it
+        // for margins, and until stored photos resolved this branch was rarely
+        // reached, so a hero that shifted when its photo finished loading went
+        // unnoticed.
+        style={[{ width: size, height: size, borderRadius: radius }, style]}
         resizeMode="cover"
         onError={() => setBroken(true)}
       />

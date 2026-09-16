@@ -1,7 +1,8 @@
 import { Tabs } from 'expo-router';
 import { StyleSheet } from 'react-native';
 import { Home, Package, ChefHat, Bell, User } from 'lucide-react-native';
-import { COLORS } from '../../src/theme';
+import { COLORS, RADII, SHADOW } from '../../src/theme';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 
 // 5-tab bottom navigation per the v2 UI reference. Grocery & Analytics are
 // full-screen routes under app/ (opened from Home / Profile) - not tabs.
@@ -18,6 +19,8 @@ const TABS = [
 const NON_TAB_ROUTES = ['inventory/add', 'inventory/details'] as const;
 
 export default function TabLayout() {
+  const { compact, height, barWidth, barLeft, bottomOffset } = useFloatingTabBar();
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -27,8 +30,13 @@ export default function TabLayout() {
         tabBarStyle:
           route.name.startsWith('inventory/')
             ? { display: 'none' } // full-screen add/details forms
-            : styles.tabBar,
-        tabBarLabelStyle: styles.tabBarLabel,
+            : [
+                styles.tabBar,
+                // Geometry last, so the device-dependent parts of the float are
+                // applied together and nothing can half-override them.
+                { width: barWidth, left: barLeft, bottom: bottomOffset, height },
+              ],
+        tabBarLabelStyle: compact ? [styles.tabBarLabel, styles.tabBarLabelCompact] : styles.tabBarLabel,
         tabBarItemStyle: styles.tabBarItem,
       })}
     >
@@ -56,22 +64,38 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * The floating bar. `position: absolute` lifts it out of the layout flow so
+   * the screen scrolls underneath it, and the rounding plus the shadow are what
+   * make it read as a card resting on the screen rather than a strip welded to
+   * the bottom edge.
+   *
+   * Width, `left`, `bottom` and `height` are not here — they depend on the
+   * device and come from `useFloatingTabBar`, which the tab screens also read so
+   * they can keep their last row clear of the bar.
+   */
   tabBar: {
+    position: 'absolute',
     backgroundColor: COLORS.white,
-    borderTopColor: COLORS.divider,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    height: 62,
-    paddingTop: 7,
+    borderRadius: RADII.pill,
+    borderTopWidth: 0,
+    // Both paddings are set explicitly because react-navigation otherwise
+    // injects its own: it adds the home-indicator inset as `paddingBottom`,
+    // which inside a fixed 64px bar would squeeze the icons and clip the labels.
+    // The inset is spent as the gap *below* the bar instead.
+    paddingTop: 8,
     paddingBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 8,
+    paddingHorizontal: 4,
+    ...SHADOW.card,
   },
   tabBarLabel: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  // Five labels in a bar that is inset from both edges: at 320pt "Inventory" is
+  // the widest thing in the row and 11pt pushes the items into each other.
+  tabBarLabelCompact: {
+    fontSize: 10,
   },
   tabBarItem: {
     paddingVertical: 2,

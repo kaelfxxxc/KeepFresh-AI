@@ -18,6 +18,7 @@ import { AvatarCircle, ItemImage, SectionLabel, StatusBadge } from '../../src/co
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
 import { timeAgo } from '../../src/utils/timeAgo';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 
 /** One row of the "Recently consumed" list. */
 interface ConsumedEntry {
@@ -57,6 +58,9 @@ export default function HomeScreen() {
   const { entitlements, refresh: refreshEntitlements } = useSubscription();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // The bottom nav floats over this screen, so the scroll content has to end
+  // above it rather than behind it.
+  const { contentInset } = useFloatingTabBar();
   // Only for sizing the two icon boxes below — the layout itself is all flex, so
   // this is a measurement, not a breakpoint.
   const { width: screenWidth } = useWindowDimensions();
@@ -273,7 +277,7 @@ export default function HomeScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: SPACING.xl }}
+        contentContainerStyle={{ paddingBottom: contentInset }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refreshEntitlements(); fetchDashboard(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />
         }
@@ -398,9 +402,38 @@ export default function HomeScreen() {
           })}
         </View>
 
+        {/* Waste trend */}
+        <View style={styles.chartCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.chartTitle}>Food Waste Trend</Text>
+            <StatusBadge label="Apr–Aug" tone="success" />
+          </View>
+          <View style={styles.chart}>
+            {(stats?.trend ?? []).map((pt, i) => (
+              <View key={i} style={styles.chartCol}>
+                <Text style={styles.chartValue}>{pt.value}</Text>
+                <View style={[styles.chartBarTrack, { height: 74 }]}>
+                  <View
+                    style={[
+                      styles.chartBar,
+                      { height: Math.max(4, (pt.value / maxTrend) * 74) },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.chartLabel}>{pt.month}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
         {/* Recently consumed — what has actually left the pantry lately. The
             category icon comes from the same resolver the inventory rows use, so
-            the same food looks the same in both places. */}
+            the same food looks the same in both places.
+
+            Sits under the trend rather than above it: the chart is the summary of
+            the month, and the rows below it are the detail behind that summary —
+            read the other way round, the detail arrived before the point it was
+            supporting. */}
         {consumed.length > 0 && (
           <View style={styles.section}>
             <SectionLabel
@@ -428,30 +461,6 @@ export default function HomeScreen() {
             </View>
           </View>
         )}
-
-        {/* Waste trend */}
-        <View style={styles.chartCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.chartTitle}>Food Waste Trend</Text>
-            <StatusBadge label="Apr–Aug" tone="success" />
-          </View>
-          <View style={styles.chart}>
-            {(stats?.trend ?? []).map((pt, i) => (
-              <View key={i} style={styles.chartCol}>
-                <Text style={styles.chartValue}>{pt.value}</Text>
-                <View style={[styles.chartBarTrack, { height: 74 }]}>
-                  <View
-                    style={[
-                      styles.chartBar,
-                      { height: Math.max(4, (pt.value / maxTrend) * 74) },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.chartLabel}>{pt.month}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
       </ScrollView>
     </View>
   );

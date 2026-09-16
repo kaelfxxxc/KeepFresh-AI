@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { AlertTriangle, ChevronRight, CalendarClock, CheckCircle2 } from 'lucide-react-native';
@@ -16,6 +17,8 @@ type Horizon = 'today' | 'week' | 'month';
 export default function AlertsScreen() {
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
+  // The bottom nav floats over this screen, so the list has to end above it.
+  const { contentInset } = useFloatingTabBar();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [horizon, setHorizon] = useState<Horizon>('week');
   const [loading, setLoading] = useState(true);
@@ -203,7 +206,7 @@ export default function AlertsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderExpiring}
         ListHeaderComponent={header}
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: SPACING.lg, paddingBottom: contentInset, gap: SPACING.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAlerts(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           loading ? null : (

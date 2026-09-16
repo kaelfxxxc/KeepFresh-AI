@@ -1,24 +1,26 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { inventoryService } from '../../src/services/inventoryService';
-import { storageAreaService, storageEmoji } from '../../src/services/storageAreaService';
-import { subscribeToTables, applyRealtimeEvent, type RealtimeStatus } from '../../src/lib/realtime';
+import { storageAreaService } from '../../src/services/storageAreaService';
+import { subscribeToTables, applyRealtimeEvent } from '../../src/lib/realtime';
 import { useAuth } from '../../src/context/AuthContext';
 import { useSubscription } from '../../src/context/SubscriptionContext';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
 import { InventoryItem, StorageArea } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
+import { useContentLayout } from '../../src/hooks/useContentLayout';
+// The one icon left on this screen. Scanning has no word that reads as a
+// scanning action at a glance, so it keeps its glyph and its label together.
+import { Plus, ScanLine } from 'lucide-react-native';
 import {
-  Search, Plus, Package, ScanLine, WifiOff, Heart, MoreHorizontal, Trash2,
-  AlertTriangle, Clock, CheckCircle2, Check, History, X,
-} from 'lucide-react-native';
-import {
-  Chip, StatusBadge, EmptyState, ItemImage, QuantityPrompt, QuantityStepper,
+  StatusBadge, EmptyState, ItemImage, QuantityPrompt, QuantityStepper,
   UpgradeNotice, ActionMenu,
 } from '../../src/components/ui';
 
@@ -40,16 +42,185 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: 'history', label: 'History' },
 ];
 
-/** Filters that describe nothing physical, so the location cards are hidden. */
-const AREALESS: Filter[] = ['need_to_buy', 'history'];
-
-/** `'all'` and `'unassigned'` are buckets; anything else is a storage area id. */
+/**
+ * `'all'` and `'unassigned'` are buckets; anything else is a storage area id.
+ */
 type AreaFilter = 'all' | 'unassigned' | string;
+
+/**
+ * Which rows belong under a given tab.
+ *
+ * Takes the tab as an argument rather than reading the active one, because the
+ * count beside each tab has to be worked out over *every* tab, not just the
+ * selected one. Kept out of the component so both callers share one definition
+ * of what each tab means.
+ *
+ * `history` is answered first and returns on its own, so no path below can leak
+ * a consumed or wasted row into the shelf views.
+ */
+function matchesFilterKey(key: Filter, item: InventoryItem): boolean {
+  // History is the only view that *wants* the consumed and wasted rows.
+  if (key === 'history') return item.status !== 'available';
+
+  // Need to Buy is answered before the "still on the shelf" guard below,
+  // because the flag is a statement about the future rather than about stock.
+  // Flagging something already used up is exactly how a user says they want it
+  // again, so that row has to stay reachable from the tab that flag feeds.
+  if (key === 'need_to_buy') {
+    if (item.need_to_buy) return true;
+    // "It ran out" only means something for an item still on the shelf: the
+    // ± control floors at zero without flipping the status, so an empty packet
+    // is still `available`. Consumed and wasted rows are not counted here —
+    // they are gone, and every one of them would otherwise qualify.
+    return item.status === 'available' && Number(item.quantity ?? 0) <= 0;
+  }
+
+  // All and Expiring describe stock in hand, so nothing historical reaches them.
+  if (item.status !== 'available') return false;
+
+  if (key === 'expiring') {
+    const exp = getExpirationStatus(item.expiration_date);
+    return exp === 'expired' || exp === 'today' || exp === 'expiring_soon';
+  }
+
+  return true;
+}
+
+/**
+ * The filter tabs: one word per view, each with the number of items behind it.
+ *
+ * Plain text with an underline rather than filled chips. The row is a set of
+ * views onto one list rather than a set of independent controls, and reading as
+ * a tab bar is what makes that obvious — the filled pills also cost a line of
+ * height that the list itself can use.
+ *
+ * The count comes from the caller because each tab's number is worked out over
+ * the searched set without that tab applied, so the tab never advertises items
+ * the search has already excluded.
+ */
+function FilterTabs({ active, counts, onChange, gutter }: {
+  active: Filter;
+  counts: Record<Filter, number>;
+  onChange: (key: Filter) => void;
+  gutter: number;
+}) {
+  return (
+    <View style={[styles.tabRow, { paddingHorizontal: gutter }]}>
+      {FILTERS.map((f) => {
+        const selected = active === f.key;
+        const count = counts[f.key] ?? 0;
+        return (
+          <Pressable
+            key={f.key}
+            onPress={() => onChange(f.key)}
+            style={({ pressed }) => [styles.tab, selected && styles.tabActive, pressed && { opacity: 0.6 }]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            // Spoken as one phrase: a screen reader reading "Expiring" and then
+            // a bare "3" makes the number sound like a separate element.
+            accessibilityLabel={`${f.label}, ${count} item${count === 1 ? '' : 's'}`}
+          >
+            <Text
+              style={[styles.tabLabel, selected && styles.tabLabelActive]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.3}
+            >
+              {f.label}
+            </Text>
+            <View style={[styles.tabCount, selected && styles.tabCountActive]}>
+              <Text
+                style={[styles.tabCountText, selected && styles.tabCountTextActive]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.2}
+              >
+                {count}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * The storage-area filter: one chip per area, in a row that scrolls sideways.
+ *
+ * Scrolls rather than wraps because the number of areas is the user's to
+ * decide. Wrapping turned a long list of areas into a block that pushed the
+ * inventory itself down the screen; sideways, this row costs one line whatever
+ * is in it, and the areas are a secondary filter that should not outgrow the
+ * tabs above them.
+ *
+ * Text only — no emoji, no glyphs. The name of the area is the whole label.
+ */
+function AreaFilterRow({ chips, active, onChange, gutter }: {
+  chips: { key: AreaFilter; name: string }[];
+  active: AreaFilter;
+  onChange: (key: AreaFilter) => void;
+  gutter: number;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      // `flexGrow: 0` keeps the row at its own height. Without it the ScrollView
+      // is a flex child that will happily expand and eat the list's space.
+      style={styles.areaRowScroll}
+      contentContainerStyle={[styles.areaRow, { paddingHorizontal: gutter }]}
+    >
+      {chips.map((chip) => {
+        const selected = active === chip.key;
+        return (
+          <Pressable
+            key={chip.key}
+            onPress={() => onChange(chip.key)}
+            hitSlop={3}
+            style={({ pressed }) => [
+              styles.areaChip,
+              selected && styles.areaChipActive,
+              pressed && { opacity: 0.6 },
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+          >
+            <Text
+              style={[styles.areaChipText, selected && styles.areaChipTextActive]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.3}
+            >
+              {chip.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
 
 export default function InventoryScreen() {
   const { profile } = useAuth();
   const { gates } = useSubscription();
   const insets = useSafeAreaInsets();
+
+  // Everything below sizes off the width the content actually gets, not off the
+  // raw screen. On a phone the outer gutter is just the usual margin; past
+  // `CONTENT_MAX_WIDTH` it grows to keep the content column centred at its cap,
+  // so a tablet gets a readable column instead of cards stretched edge to edge.
+  // Doing it with padding rather than a wrapper View means this screen has one
+  // layout container, and every row is padded to the same measure.
+  //
+  // The rule itself lives in the hook, shared with the Add Item form: the two
+  // screens are one tap apart, and a half-inch difference in the left margin
+  // between them reads as a bug.
+  const { compact, contentWidth, gutter } = useContentLayout();
+  // Two columns of cards once there is room for them. A single column stretched
+  // across a 10" tablet is a line of text with a lot of empty space beside it.
+  const listColumns = contentWidth >= 640 ? 2 : 1;
+  // The bottom nav floats over this screen, so the list has to end above it.
+  const { contentInset } = useFloatingTabBar();
+
   // Deep links from elsewhere in the app open a specific chip — the dashboard's
   // "Need to Buy" shortcut lands here already filtered, rather than on "All" and
   // leaving the user to find the chip themselves.
@@ -65,7 +236,6 @@ export default function InventoryScreen() {
   const [menuTarget, setMenuTarget] = useState<InventoryItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [steppingId, setSteppingId] = useState<string | null>(null);
-  const [liveStatus, setLiveStatus] = useState<RealtimeStatus | null>(null);
   const [upgradeDismissed, setUpgradeDismissed] = useState(false);
 
   const fetchInventory = useCallback(async () => {
@@ -125,26 +295,17 @@ export default function InventoryScreen() {
         if (steppingId && (event.new as InventoryItem)?.id === steppingId) return;
         setItems((prev) => applyRealtimeEvent(prev, event));
       },
-      { userId: profile.id, onStatus: setLiveStatus }
+      { userId: profile.id }
     );
   }, [profile, fetchAreas, steppingId]);
 
   const onRefresh = () => { setRefreshing(true); fetchInventory(); fetchAreas(); };
 
   // Applied on every change, not just on mount: arriving here already on this
-  // screen with a new filter param should still move the chip.
+  // screen with a new filter param should still move the active tab.
   useEffect(() => {
     if (FILTERS.some((f) => f.key === filterParam)) setFilter(filterParam as Filter);
   }, [filterParam]);
-
-  // The location cards are hidden under Need to Buy and History — a location
-  // describes where food *is*, and one of those chips is things to re-buy while
-  // the other is things already gone. A location left selected from before would
-  // then be filtering the list from a control that is no longer on screen, so
-  // clear it on the way in.
-  useEffect(() => {
-    if (AREALESS.includes(filter)) setAreaFilter('all');
-  }, [filter]);
 
   /**
    * The ± control.
@@ -213,40 +374,10 @@ export default function InventoryScreen() {
     }
   }, []);
 
-  /**
-   * The chip's predicate. Kept separate from the location filter so the cards
-   * below can be counted with it rather than in spite of it.
-   *
-   * `history` is answered first and returns on its own, so no path below can
-   * leak a consumed or wasted row into the shelf views.
-   */
-  const matchesFilter = useCallback((item: InventoryItem) => {
-    // History is the only view that *wants* the consumed and wasted rows.
-    if (filter === 'history') return item.status !== 'available';
-
-    // Need to Buy is answered before the "still on the shelf" guard below,
-    // because the flag is a statement about the future rather than about stock.
-    // Hearting something already used up is exactly how a user says they want it
-    // again, so that row has to stay reachable from the chip the heart feeds.
-    if (filter === 'need_to_buy') {
-      if (item.need_to_buy) return true;
-      // "It ran out" only means something for an item still on the shelf: the
-      // ± control floors at zero without flipping the status, so an empty packet
-      // is still `available`. Consumed and wasted rows are not counted here —
-      // they are gone, and every one of them would otherwise qualify.
-      return item.status === 'available' && Number(item.quantity ?? 0) <= 0;
-    }
-
-    // All and Expiring describe stock in hand, so nothing historical reaches them.
-    if (item.status !== 'available') return false;
-
-    if (filter === 'expiring') {
-      const exp = getExpirationStatus(item.expiration_date);
-      return exp === 'expired' || exp === 'today' || exp === 'expiring_soon';
-    }
-
-    return true;
-  }, [filter]);
+  const matchesFilter = useCallback(
+    (item: InventoryItem) => matchesFilterKey(filter, item),
+    [filter]
+  );
 
   const matchesSearch = useCallback((item: InventoryItem) => {
     const q = search.trim().toLowerCase();
@@ -257,56 +388,63 @@ export default function InventoryScreen() {
   }, [search]);
 
   /**
-   * How many items sit in each area. Counted from the rows we already hold
-   * rather than a second round-trip, and counted *through the same predicates as
-   * the list* — that is what stops a card advertising items the list below it
-   * will not show. Changing the chip or the search moves the numbers with it.
+   * The storage-area chips: "All areas", one per area, then "Unassigned" when
+   * something on the shelf has no home.
+   *
+   * Built from `items` rather than from the filtered set, so the row does not
+   * grow and shrink as the tabs and the search move — a filter whose options
+   * depend on the current filter is a filter the user cannot aim.
    */
-  const areaCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0, unassigned: 0 };
-    items
-      .filter((item) => matchesFilter(item) && matchesSearch(item))
-      .forEach((item) => {
-        counts.all += 1;
-        if (item.storage_area_id) {
-          counts[item.storage_area_id] = (counts[item.storage_area_id] ?? 0) + 1;
-        } else {
-          counts.unassigned += 1;
-        }
-      });
-    return counts;
-  }, [items, matchesFilter, matchesSearch]);
-
-  const showAreaRow =
-    !AREALESS.includes(filter) &&
-    areas.length > 0 &&
-    (areas.length > 1 || areaCounts.unassigned > 0);
+  const areaChips = useMemo(() => {
+    const chips = [{ key: 'all' as AreaFilter, name: 'All areas' }];
+    areas.forEach((area) => chips.push({ key: area.id, name: area.name }));
+    if (items.some((item) => !item.storage_area_id)) {
+      chips.push({ key: 'unassigned' as AreaFilter, name: 'Unassigned' });
+    }
+    return chips;
+  }, [areas, items]);
 
   /**
-   * The location cards: "All areas", then one per storage area, then
-   * "Unassigned" when some items have no home. Built as data so the grid below
-   * stays a single uniform card rather than four near-identical blocks of JSX.
+   * The area filter, with a guard for a selection that is no longer on the row.
+   *
+   * An area can be deleted from the manage screen while it is the active filter,
+   * and the row would then have no chip marked active while the list stayed
+   * filtered to nothing — an empty screen with no visible cause. Falling back to
+   * "All areas" makes the list and the row agree again.
    */
-  const areaCards = useMemo(() => {
-    const cards = [
-      { key: 'all' as AreaFilter, emoji: '🧺', name: 'All areas', count: areaCounts.all },
-      ...areas.map((area) => ({
-        key: area.id as AreaFilter,
-        emoji: storageEmoji(area),
-        name: area.name,
-        count: areaCounts[area.id] ?? 0,
-      })),
-    ];
-    if (areaCounts.unassigned > 0) {
-      cards.push({
-        key: 'unassigned' as AreaFilter,
-        emoji: '📥',
-        name: 'Unassigned',
-        count: areaCounts.unassigned,
-      });
-    }
-    return cards;
-  }, [areas, areaCounts]);
+  const areaActive: AreaFilter = areaChips.some((c) => c.key === areaFilter)
+    ? areaFilter
+    : 'all';
+
+  const matchesArea = useCallback((item: InventoryItem) => {
+    if (areaActive === 'all') return true;
+    if (areaActive === 'unassigned') return !item.storage_area_id;
+    return item.storage_area_id === areaActive;
+  }, [areaActive]);
+
+  /**
+   * How many items sit behind each tab.
+   *
+   * Counted from the rows already in hand rather than a second round-trip, over
+   * the search and the selected area but *not* through the tab's own filter — a
+   * number computed with its own filter applied would just echo the list length
+   * on the active tab and mean something different on every other one. The
+   * question the mark answers is "how much is in there", so every tab is counted
+   * over the same scoped set.
+   *
+   * The area is included because it scopes the list the tabs are counting: on
+   * "Pantry", a tab reading 12 above a list of 4 is simply wrong. That does mean
+   * the marks move when the area does, which is the honest reading — they are
+   * counts within the area you are looking at.
+   */
+  const filterCounts = useMemo(() => {
+    const scoped = items.filter((item) => matchesArea(item) && matchesSearch(item));
+    const counts = {} as Record<Filter, number>;
+    FILTERS.forEach((f) => {
+      counts[f.key] = scoped.filter((item) => matchesFilterKey(f.key, item)).length;
+    });
+    return counts;
+  }, [items, matchesArea, matchesSearch]);
 
   /**
    * Permanently remove an item.
@@ -392,79 +530,46 @@ export default function InventoryScreen() {
     }
   };
 
-  const filteredItems = items.filter((item) => {
-    const matchesArea =
-      areaFilter === 'all'
-        ? true
-        : areaFilter === 'unassigned'
-          ? !item.storage_area_id
-          : item.storage_area_id === areaFilter;
+  const filteredItems = items.filter(
+    (item) => matchesArea(item) && matchesFilter(item) && matchesSearch(item)
+  );
 
-    return matchesArea && matchesFilter(item) && matchesSearch(item);
-  });
-
-  /**
-   * The line above the list: what is being shown, and how much of it.
-   *
-   * The chips and the location cards each mark themselves active, but neither
-   * says what the *combination* means — and the two really do stack, which is
-   * not obvious from two independent rows of controls. Spelling it out as a
-   * sentence, and offering one control that clears all of it, is what makes the
-   * filters read as additive rather than as one resetting the other.
-   */
-  const areaLabel = areaFilter === 'all'
-    ? null
-    : areaFilter === 'unassigned'
-      ? 'Unassigned'
-      : areas.find((a) => a.id === areaFilter)?.name ?? null;
-
-  const appliedFilters = [
-    FILTERS.find((f) => f.key === filter)?.label ?? 'All',
-    areaLabel,
-  ].filter(Boolean).join(' · ');
-
-  const filtersActive = filter !== 'all' || areaFilter !== 'all' || search.trim().length > 0;
-
-  const clearFilters = () => {
-    setFilter('all');
-    setAreaFilter('all');
-    setSearch('');
-  };
+  const searchActive = search.trim().length > 0;
 
   const stockCount = items.filter((item) => item.status === 'available').length;
 
   const statusOf = (item: InventoryItem) => {
     if (item.status === 'consumed') {
-      return { label: 'Consumed', tone: 'neutral' as const, icon: Check };
+      return { label: 'Consumed', tone: 'neutral' as const };
     }
     // Wasted is the only state here that describes something already over, and
     // it used to share the danger red with Expired and Today — the two states
     // that still want action now. It gets its own colour so a glance can tell
-    // "act on this" from "this is done", and every badge carries an icon as well
-    // as a label, so the state never rests on hue alone.
+    // "act on this" from "this is done". The badge is text-only now, so the
+    // label is what carries the state; the tint only reinforces it.
     if (item.status === 'wasted') {
-      return { label: 'Wasted', tone: 'wasted' as const, icon: Trash2 };
+      return { label: 'Wasted', tone: 'wasted' as const };
     }
     // The user's own flag outranks the freshness reading: they hearted this to
     // remember to buy more, and that is the reason it is on this screen. An item
     // the ± control has taken to zero reads the same way, because an empty
     // packet is not "fresh" in any sense the user cares about.
     if (item.need_to_buy || Number(item.quantity ?? 0) <= 0) {
-      return { label: 'To Buy', tone: 'primary' as const, icon: Heart };
+      return { label: 'To Buy', tone: 'primary' as const };
     }
     const exp = getExpirationStatus(item.expiration_date);
     if (exp === 'expired') {
-      return { label: 'Expired', tone: 'danger' as const, icon: AlertTriangle };
+      return { label: 'Expired', tone: 'danger' as const };
     }
     if (exp === 'today') {
-      return { label: 'Today', tone: 'danger' as const, icon: Clock };
+      return { label: 'Today', tone: 'danger' as const };
     }
     if (exp === 'expiring_soon') {
-      return { label: 'Expiring Soon', tone: 'warning' as const, icon: Clock };
+      return { label: 'Expiring Soon', tone: 'warning' as const };
     }
     // "Fresh" is the item's condition; the chip above stays "All" because it
     // means "everything still on the shelf", which is a different question.
-    return { label: 'Fresh', tone: 'success' as const, icon: CheckCircle2 };
+    return { label: 'Fresh', tone: 'success' as const };
   };
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
@@ -478,25 +583,25 @@ export default function InventoryScreen() {
     const quantity = Number(item.quantity ?? 0);
 
     return (
-      <View style={styles.rowCard}>
+      <View style={[styles.rowCard, listColumns > 1 && styles.rowCardColumn]}>
         <Pressable style={styles.rowMain} onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}>
           <ItemImage uri={item.image_url} category={item.category} size={52} radius={RADII.image} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.itemName} numberOfLines={1}>{item.product_name}</Text>
-            <Text style={styles.itemMeta} numberOfLines={1}>
+            <Text style={styles.itemName} numberOfLines={1} maxFontSizeMultiplier={1.3}>{item.product_name}</Text>
+            <Text style={styles.itemMeta} numberOfLines={1} maxFontSizeMultiplier={1.4}>
               {quantity} {item.unit}
               {area ? ` · ${area.name}` : ''}
               {item.brand ? ` · ${item.brand}` : ''}
             </Text>
             {/* The date only. Urgency is the badge's job, and printing it on both
                 lines said the same thing twice in a row. */}
-            <Text style={styles.itemExpiry} numberOfLines={1}>
+            <Text style={styles.itemExpiry} numberOfLines={1} maxFontSizeMultiplier={1.4}>
               {item.expiration_date
                 ? `Best before ${formatDayMonth(item.expiration_date)}`
                 : 'No expiration date'}
             </Text>
           </View>
-          <StatusBadge label={badge.label} tone={badge.tone} icon={badge.icon} />
+          <StatusBadge label={badge.label} tone={badge.tone} />
         </Pressable>
 
         {/* One row, not two: the stepper and the actions answer the same
@@ -516,13 +621,19 @@ export default function InventoryScreen() {
           )}
 
           <View style={styles.rowActions}>
-            {/* The same heart, in the same colours, as the one on the item
-                screen — one control, two places to reach it from. It stays on
+            {/* The same flag, worded the same way, as the control on the item
+                screen — one action, two places to reach it from. It stays on
                 the card rather than moving into the menu: it is the only way
                 into the Need to Buy chip, and burying the input to a whole
-                filter behind an overflow would make that chip look broken. */}
+                filter behind an overflow would make that chip look broken.
+                It reads as a labelled button now rather than a heart, which is
+                also what a screen reader was already being told. */}
             <Pressable
-              style={({ pressed }) => [styles.rowIconBtn, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [
+                styles.textBtn,
+                item.need_to_buy && styles.textBtnActive,
+                pressed && { opacity: 0.6 },
+              ]}
               onPress={() => toggleNeedToBuy(item)}
               hitSlop={2}
               accessibilityRole="button"
@@ -533,12 +644,13 @@ export default function InventoryScreen() {
                   : `Add ${item.product_name} to Need to Buy`
               }
             >
-              <Heart
-                size={19}
-                strokeWidth={2.4}
-                color={item.need_to_buy ? COLORS.danger : COLORS.secondaryText}
-                fill={item.need_to_buy ? COLORS.danger : 'transparent'}
-              />
+              <Text
+                style={[styles.textBtnLabel, item.need_to_buy && styles.textBtnLabelActive]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
+              >
+                {item.need_to_buy ? 'On the list' : 'Need more'}
+              </Text>
             </Pressable>
 
             {canStep && (
@@ -549,8 +661,7 @@ export default function InventoryScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Use ${item.product_name}`}
               >
-                <CheckCircle2 size={15} color={COLORS.white} strokeWidth={2.6} />
-                <Text style={styles.useBtnText}>Use</Text>
+                <Text style={styles.useBtnText} maxFontSizeMultiplier={1.3}>Use</Text>
               </Pressable>
             )}
 
@@ -558,13 +669,15 @@ export default function InventoryScreen() {
                 are irreversible from this screen, and the card face is where a
                 thumb rests while scrolling. */}
             <Pressable
-              style={({ pressed }) => [styles.rowIconBtn, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [styles.textBtn, pressed && { opacity: 0.6 }]}
               onPress={() => setMenuTarget(item)}
               hitSlop={2}
               accessibilityRole="button"
               accessibilityLabel={`More actions for ${item.product_name}`}
             >
-              <MoreHorizontal size={20} color={COLORS.secondaryText} strokeWidth={2.2} />
+              <Text style={styles.textBtnLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+                More
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -582,12 +695,11 @@ export default function InventoryScreen() {
    */
   const emptyState = () => {
     if (search.trim()) {
-      return <EmptyState icon={Search} title="No matching items" hint="Try a different search or filter." />;
+      return <EmptyState title="No matching items" hint="Try a different search or filter." />;
     }
     if (filter === 'history') {
       return (
         <EmptyState
-          icon={History}
           title="Nothing in your history yet"
           hint="Items you use up or throw away are recorded here, so you can look back at what went to waste."
         />
@@ -596,33 +708,32 @@ export default function InventoryScreen() {
     if (filter === 'need_to_buy') {
       return (
         <EmptyState
-          icon={Heart}
           title="Nothing to buy right now"
-          hint="Heart an item to say you want more of it. Anything the − control has taken to zero shows up here too."
+          hint="Flag an item as “Need more” to say you want more of it. Anything the − control has taken to zero shows up here too."
         />
       );
     }
     if (filter === 'expiring') {
       return (
         <EmptyState
-          icon={CheckCircle2}
           title="Nothing expiring soon"
           hint="Nothing on the shelf needs using in the next week."
         />
       );
     }
-    if (areaFilter !== 'all') {
+    // Only claimed on the All tab: under Expiring or Need to Buy the area may
+    // well hold items, and it is the tab that has nothing to show — so those
+    // keep their own message rather than blaming the area.
+    if (areaActive !== 'all' && filter === 'all') {
       return (
         <EmptyState
-          icon={Package}
           title="Nothing in this area"
-          hint="Try another location, or clear the filter."
+          hint="Try another area, or pick All areas."
         />
       );
     }
     return (
       <EmptyState
-        icon={Package}
         title="Your inventory is empty"
         hint="Scan a product or add items manually to start tracking freshness."
         actionLabel="Add your first item"
@@ -633,26 +744,51 @@ export default function InventoryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>My Inventory</Text>
+      <View style={[styles.header, { paddingHorizontal: gutter }]}>
+        <View style={styles.headerTitleBlock}>
+          <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+            My Inventory
+          </Text>
           {/* Stock on the shelf, not every row ever written. Counting consumed
               and wasted items here made the headline disagree with the list
               underneath it, which shows none of them by default. */}
-          <Text style={styles.subtitle}>{stockCount} item{stockCount === 1 ? '' : 's'} in stock</Text>
+          <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.4}>
+            {stockCount} item{stockCount === 1 ? '' : 's'} in stock
+          </Text>
         </View>
-        <Pressable style={styles.scanFab} onPress={() => router.push('/scan')}>
-          <ScanLine size={20} color={COLORS.primary} strokeWidth={2.3} />
-        </Pressable>
-        <Pressable style={styles.addFab} onPress={() => router.push('/inventory/add')}>
-          <Plus size={20} color={COLORS.white} strokeWidth={2.6} />
-          <Text style={styles.addFabText}>Add Item</Text>
-        </Pressable>
+        {/* The two actions are grouped so that when the header wraps on a narrow
+            screen they move down together as one row, instead of the Add button
+            orphaning itself onto a line below Scan. */}
+        <View style={styles.headerActions}>
+          <Pressable
+            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.6 }]}
+            onPress={() => router.push('/scan')}
+            accessibilityRole="button"
+            accessibilityLabel="Scan a product"
+          >
+            <ScanLine size={17} color={COLORS.primary} strokeWidth={2.3} />
+            <Text style={styles.scanBtnText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              Scan
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.addFab, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push('/inventory/add')}
+            accessibilityRole="button"
+            accessibilityLabel="Add an item"
+          >
+            <Plus size={17} color={COLORS.white} strokeWidth={2.8} />
+            <Text style={styles.addFabText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+              Add Item
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
-      <View style={styles.searchRow}>
+      <View style={[styles.searchRow, { paddingHorizontal: gutter }]}>
         <View style={styles.searchBox}>
-          <Search size={18} color={COLORS.secondaryText} strokeWidth={2} />
+          {/* The magnifier that used to sit here is gone with the rest of the
+              icons — the placeholder already says what the field is for. */}
           <TextInput
             style={styles.searchInput}
             value={search}
@@ -663,74 +799,38 @@ export default function InventoryScreen() {
           />
         </View>
         {/* The sliders button that used to sit here toggled the list between
-            "All" and "Available" — the same state as the first two chips, a few
+            "All" and "Available" — the same state as the first two tabs, a few
             pixels below it, with no way to tell from the icon what it did. */}
       </View>
 
-      <View style={styles.chipRow}>
-        {FILTERS.map((f) => (
-          <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => setFilter(f.key)} />
-        ))}
-      </View>
+      <FilterTabs active={filter} counts={filterCounts} onChange={setFilter} gutter={gutter} />
 
-      {/* What the active combination adds up to. Shown always, because the count
-          alone is useful, but the Clear control only appears once there is
-          something to clear. */}
-      <View style={styles.filterStatusRow}>
-        <Text style={styles.filterStatusText} numberOfLines={1}>
-          {appliedFilters} · {filteredItems.length} item{filteredItems.length === 1 ? '' : 's'}
-        </Text>
-        {filtersActive && (
+      {/* Storage areas, under the tabs they narrow. Hidden when the only chip
+          would be "All areas" — a filter row with one option is not a filter. */}
+      {areaChips.length > 1 && (
+        <AreaFilterRow
+          chips={areaChips}
+          active={areaActive}
+          onChange={setAreaFilter}
+          gutter={gutter}
+        />
+      )}
+
+      {/* The "12 items available" line that used to sit here is gone: every tab
+          carries its own number, and those marks are counted over the current
+          search and area, so a total underneath them only repeated whichever tab
+          was already selected. What is left of the row is the way out of a
+          search — shown only while one is narrowing the list. */}
+      {searchActive && (
+        <View style={[styles.clearRow, { paddingHorizontal: gutter }]}>
           <Pressable
-            onPress={clearFilters}
+            onPress={() => setSearch('')}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Clear all filters and search"
+            accessibilityLabel="Clear the search"
             style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.6 }]}
           >
-            <X size={13} color={COLORS.primary} strokeWidth={2.8} />
-            <Text style={styles.clearBtnText}>Clear</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {/* Location cards. Three to a row, each the same size, and they wrap
-          instead of scrolling sideways — a horizontal strip could not give the
-          cards equal widths without measuring the screen, and it hid whichever
-          areas did not fit. Hidden under Need to Buy and History: one is things
-          to re-buy, the other things already gone, and neither is in a fridge. */}
-      {showAreaRow && (
-        <View style={styles.areaGrid}>
-          {areaCards.map((card) => {
-            const active = areaFilter === card.key;
-            return (
-              <Pressable
-                key={card.key}
-                style={[styles.areaCard, active && styles.areaCardActive]}
-                onPress={() => setAreaFilter(card.key)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-              >
-                <Text style={styles.areaCardEmoji}>{card.emoji}</Text>
-                <Text style={[styles.areaCardName, active && styles.areaCardTextActive]} numberOfLines={1}>
-                  {card.name}
-                </Text>
-                <Text style={[styles.areaCardCount, active && styles.areaCardTextActive]}>
-                  {card.count} {card.count === 1 ? 'item' : 'items'}
-                </Text>
-              </Pressable>
-            );
-          })}
-
-          <Pressable
-            style={[styles.areaCard, styles.areaCardManage]}
-            onPress={() => router.push('/storage-areas')}
-            accessibilityRole="button"
-            accessibilityLabel="Manage storage areas"
-          >
-            <Text style={styles.areaCardEmoji}>⚙️</Text>
-            <Text style={[styles.areaCardName, styles.areaCardMuted]} numberOfLines={1}>Manage</Text>
-            <Text style={[styles.areaCardCount, styles.areaCardMuted]}>areas</Text>
+            <Text style={styles.clearBtnText} maxFontSizeMultiplier={1.4}>Clear search</Text>
           </Pressable>
         </View>
       )}
@@ -743,22 +843,25 @@ export default function InventoryScreen() {
           message={gates.addProduct.message}
           onPress={() => router.push('/subscription')}
           onDismiss={() => setUpgradeDismissed(true)}
-          style={styles.notice}
+          style={[styles.notice, { marginHorizontal: gutter }]}
         />
       )}
 
-      {liveStatus !== null && liveStatus !== 'SUBSCRIBED' && (
-        <View style={styles.offlineHint}>
-          <WifiOff size={13} color={COLORS.secondaryText} strokeWidth={2} />
-          <Text style={styles.offlineHintText}>Live sync paused — pull down to refresh.</Text>
-        </View>
-      )}
-
       <FlatList
+        // `numColumns` cannot change on a mounted list, so changing it remounts
+        // the list through the key. That only happens on a rotation or a split
+        // screen, where a fresh mount is cheap and a half-relaid-out list is not.
+        key={`inventory-${listColumns}`}
         data={filteredItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
+        numColumns={listColumns}
+        columnWrapperStyle={listColumns > 1 ? { gap: SPACING.sm } : undefined}
+        contentContainerStyle={{
+          paddingHorizontal: gutter,
+          paddingBottom: contentInset,
+          gap: SPACING.sm,
+        }}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={!loading ? emptyState() : null}
@@ -775,14 +878,12 @@ export default function InventoryScreen() {
                 ...(menuTarget.status === 'available'
                   ? [{
                       label: 'Mark as Waste',
-                      icon: Trash2,
                       danger: true,
                       onPress: () => handleMarkWaste(menuTarget),
                     }]
                   : []),
                 {
                   label: 'Delete Item',
-                  icon: Trash2,
                   danger: true,
                   onPress: () => handleDelete(menuTarget),
                 },
@@ -808,99 +909,111 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
+  // Wraps rather than shrinks: on a narrow screen the two buttons drop to a
+  // second line together, which costs a few pixels of height to buy a
+  // full-width title instead of an ellipsised one.
+  header: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+    gap: SPACING.sm, paddingBottom: SPACING.md,
+  },
+  headerTitleBlock: { flexGrow: 1, flexShrink: 1, minWidth: 150 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
   addFab: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 44,
     backgroundColor: COLORS.primary, paddingHorizontal: SPACING.md, paddingVertical: 10,
     borderRadius: RADII.pill,
   },
   addFabText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
-  scanFab: {
-    width: 46, height: 46, borderRadius: RADII.pill,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+  // Outlined, not filled: Scan is the secondary of the two, and it carries a
+  // word as well as the glyph so the two actions are told apart by more than
+  // colour and position.
+  scanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 44,
+    paddingHorizontal: SPACING.md, paddingVertical: 10,
+    borderRadius: RADII.pill,
+    backgroundColor: COLORS.primaryLight,
     borderWidth: 1.5, borderColor: COLORS.primary,
   },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md },
+  scanBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: COLORS.white, borderRadius: RADII.input,
     borderWidth: 1, borderColor: COLORS.divider, paddingHorizontal: 14, height: 46,
   },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
-  // Four chips no longer fit on one line at 375pt ("Need to Buy" is a wide
-  // label), so they wrap rather than scroll. Wrapping keeps every chip visible
+  // Four tabs no longer fit on one line at 375pt ("Need to Buy" is a wide
+  // label), so they wrap rather than scroll. Wrapping keeps every tab visible
   // and costs nothing to lay out; a sideways strip would hide whichever filter
   // did not fit, which is the one thing a filter row must not do.
-  chipRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm,
+  tabRow: {
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch',
+    gap: SPACING.md, marginBottom: SPACING.xs,
   },
-  filterStatusRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md,
+  // The underline is drawn on the tab itself rather than as a separate rule
+  // under the row, so it sits under the tab that is active wherever the row has
+  // wrapped to. Transparent when inactive keeps every tab the same height, which
+  // is what stops the row shifting by 2px when the selection moves.
+  tab: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    // Refuses to be squeezed narrower than its label: a tab that cannot fit
+    // pushes the row onto a second line instead of ellipsising "Need to Buy".
+    flexShrink: 0,
+    minHeight: 44,
+    borderBottomWidth: 2.5,
+    borderBottomColor: 'transparent',
   },
-  filterStatusText: { flex: 1, fontSize: 12, color: COLORS.secondaryText, fontWeight: '600' },
+  tabActive: { borderBottomColor: COLORS.primary },
+  tabLabel: { fontSize: 14.5, fontWeight: '600', color: COLORS.secondaryText },
+  tabLabelActive: { color: COLORS.primary, fontWeight: '800' },
+  tabCount: {
+    minWidth: 22, height: 20, paddingHorizontal: 6, borderRadius: 10,
+    backgroundColor: COLORS.mutedBg,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tabCountActive: { backgroundColor: COLORS.primaryLight },
+  tabCountText: { fontSize: 11.5, fontWeight: '700', color: COLORS.secondaryText },
+  tabCountTextActive: { color: COLORS.primary },
+  // One line tall, and explicitly not a flex child that grows: a horizontal
+  // ScrollView will otherwise stretch and take the space the list needs.
+  areaRowScroll: { flexGrow: 0 },
+  areaRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingVertical: 2 },
+  // 38 drawn + hitSlop 3 on each side clears the 44 touch minimum without the
+  // row standing taller than the tabs it sits under.
+  areaChip: {
+    minHeight: 38, paddingHorizontal: 14, borderRadius: RADII.pill,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    borderWidth: 1, borderColor: COLORS.divider,
+  },
+  areaChipActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
+  areaChipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  areaChipTextActive: { color: COLORS.primary, fontWeight: '700' },
+  // Right-aligned, because the count it used to sit opposite is gone and the
+  // control reads as an action on the search box above it.
+  clearRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
+    marginBottom: SPACING.sm,
+  },
   // Padded to a 44-high touch area even though it reads as a small text link —
-  // it is the escape hatch out of a filtered list, so it is worth the room.
+  // it is the way back out of a search that found nothing, so it is worth the room.
   clearBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 10, minHeight: 44,
   },
   clearBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.primary },
-  areaGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-    // Makes every card on a line exactly as tall as the tallest on that line.
-    // With one line of name and one of count in each card, every card in the
-    // grid ends up the same height rather than only the ones side by side.
-    alignItems: 'stretch',
-  },
-  areaCard: {
-    // Three to a row. A 30% base plus `flexShrink: 0` is what keeps the widths
-    // identical: nothing can be squeezed narrower than its share, and three of
-    // them always fit because 3 × 30% + two gaps is under 100% at any screen
-    // width. `flexGrow` then shares out what is left so the row ends flush, and
-    // `maxWidth` keeps a final card that wrapped on its own from stretching
-    // across the whole screen.
-    flexBasis: '30%',
-    flexGrow: 1,
-    flexShrink: 0,
-    maxWidth: '33%',
-    minHeight: 84,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: RADII.card,
-    borderWidth: 1,
-    borderColor: COLORS.divider,
-    backgroundColor: COLORS.white,
-  },
-  areaCardActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  areaCardManage: { borderStyle: 'dashed', backgroundColor: 'transparent' },
-  // Explicit line heights on all three lines: emoji metrics differ between iOS
-  // and Android, and without this the cards in a row grew to different heights.
-  areaCardEmoji: { fontSize: 20, lineHeight: 24 },
-  areaCardName: { fontSize: 12.5, lineHeight: 16, fontWeight: '700', color: COLORS.text, maxWidth: '100%' },
-  areaCardCount: { fontSize: 11, lineHeight: 14, color: COLORS.secondaryText },
-  areaCardTextActive: { color: COLORS.white },
-  areaCardMuted: { color: COLORS.secondaryText },
-  notice: { marginHorizontal: SPACING.lg, marginBottom: SPACING.md },
-  offlineHint: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: SPACING.lg, paddingBottom: SPACING.sm,
-  },
-  offlineHintText: { fontSize: 11.5, color: COLORS.secondaryText },
+  notice: { marginBottom: SPACING.md },
   rowCard: {
     backgroundColor: COLORS.white, borderRadius: RADII.card,
     padding: SPACING.md, ...SHADOW.card,
   },
+  // In the two-column list every cell in a row has to claim an equal share, or
+  // the last card on an odd-length row sits at half width.
+  rowCardColumn: { flex: 1 },
   rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   itemName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
   itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
@@ -913,15 +1026,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between', gap: SPACING.sm, marginTop: SPACING.sm,
   },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginLeft: 'auto' },
-  // 40 drawn + hitSlop 2 on each side = the 44 minimum, without the visual
-  // weight of a 44px square for what is a secondary icon action.
-  rowIconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  // A word where a glyph used to be. 44 high clears the touch minimum on its
+  // own, so these no longer need the hitSlop the 40pt icon squares relied on.
+  textBtn: {
+    minHeight: 44, paddingHorizontal: 8, borderRadius: RADII.pill,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.divider,
+  },
+  textBtnActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
+  textBtnLabel: { fontSize: 12.5, fontWeight: '700', color: COLORS.secondaryText },
+  textBtnLabelActive: { color: COLORS.primary },
   useBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    minHeight: 40, paddingHorizontal: 14, borderRadius: RADII.pill,
+    alignItems: 'center', justifyContent: 'center',
+    minHeight: 44, paddingHorizontal: 14, borderRadius: RADII.pill,
     backgroundColor: COLORS.primary,
   },
-  useBtnText: { fontSize: 13.5, fontWeight: '700', color: COLORS.white },
+  useBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.white },
 });
 
 /**

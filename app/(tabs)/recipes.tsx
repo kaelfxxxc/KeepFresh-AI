@@ -7,6 +7,7 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { recipeService } from '../../src/services/recipeService';
 import { RecipeImage, prefetchRecipeImages, matchTone } from '../../src/components/RecipeImage';
 import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import type { RecipeWithIngredients } from '../../src/types';
 import { ChefHat, Clock3, Users, Sparkles } from 'lucide-react-native';
 import { Chip, EmptyState, StatusBadge, UpgradeNotice } from '../../src/components/ui';
@@ -43,6 +44,8 @@ export default function RecipesScreen() {
   const { profile } = useAuth();
   const { gates, refresh: refreshEntitlements } = useSubscription();
   const insets = useSafeAreaInsets();
+  // The bottom nav floats over this screen, so the list has to end above it.
+  const { contentInset } = useFloatingTabBar();
   const [recipes, setRecipes] = useState<RecipeWithIngredients[]>([]);
   const [category, setCategory] = useState<string>('All');
   const [loading, setLoading] = useState(true);
@@ -259,7 +262,7 @@ export default function RecipesScreen() {
         data={visible}
         keyExtractor={(item) => item.id}
         renderItem={renderRecipe}
-        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
+        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: contentInset, gap: SPACING.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRecipes(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           loading || generating ? null : (

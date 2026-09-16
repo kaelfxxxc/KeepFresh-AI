@@ -6,6 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/lib/supabase';
 import { COLORS, SPACING, RADII } from '../../src/theme';
+import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
   Home, Store, Crown, Refrigerator, Tag, Users, Boxes,
@@ -35,6 +36,10 @@ export default function ProfileScreen() {
   const { profile, signOut, updateProfile } = useAuth();
   const { entitlements, gates } = useSubscription();
   const insets = useSafeAreaInsets();
+  // The bottom nav floats over this screen. This screen used to pad a flat 120
+  // to clear the old fixed bar; the bar's real height and offset are the only
+  // thing that can say how much room it actually needs.
+  const { contentInset } = useFloatingTabBar();
   const [avatarUri, setAvatarUri] = useState<string | null>(profile?.avatar_url || null);
 
   const isEstablishment = profile?.account_type === 'establishment';
@@ -118,7 +123,7 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{ paddingBottom: contentInset }}
       >
         <Text style={styles.title}>Profile</Text>
 

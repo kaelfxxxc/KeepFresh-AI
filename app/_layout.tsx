@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { View, Text, StyleSheet, Animated, Easing, ActivityIndicator, ScrollView } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../src/context/AuthContext';
 import { SubscriptionProvider } from '../src/context/SubscriptionContext';
 import { supabaseConfig } from '../src/lib/supabase';
@@ -166,14 +167,16 @@ export default function Layout() {
   }
 
   return (
-    <AuthProvider>
-      {/* Entitlements sit inside Auth so the provider can re-read them whenever
-          the signed-in user changes, and outside the navigator so every screen
-          — including the auth flow's post-signup screens — can read the plan. */}
-      <SubscriptionProvider>
-        <RootNavigator />
-      </SubscriptionProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        {/* Entitlements sit inside Auth so the provider can re-read them whenever
+            the signed-in user changes, and outside the navigator so every screen
+            — including the auth flow's post-signup screens — can read the plan. */}
+        <SubscriptionProvider>
+          <RootNavigator />
+        </SubscriptionProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 

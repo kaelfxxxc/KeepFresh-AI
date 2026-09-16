@@ -169,6 +169,21 @@ export interface NotificationLog {
   title: string | null;
   body: string | null;
   sent_at: string;
+  // Added by notification_center.sql
+  /**
+   * When this notification is (or was) due.
+   *
+   * Not the same thing as `sent_at`, which is NOW() on both write paths and so
+   * cannot tell a reminder queued for next Tuesday from one announced a second
+   * ago. The bell's list reads `deliver_at <= now`, so a queued reminder stays
+   * out of it until its time comes.
+   *
+   * Absent on a database that has not had that migration pasted, and NULL on
+   * rows written before it — so reads of it are nullish-guarded.
+   */
+  deliver_at: string | null;
+  /** NULL means unread. Written only by the mark-read RPCs, never by the client. */
+  read_at: string | null;
 }
 
 export interface UserPreference {

@@ -19,6 +19,8 @@ DECLARE
     'public.adjust_inventory_quantity(uuid, numeric)',
     -- Notifications and self-service subscription actions
     'public.log_notification(uuid, text, text, uuid, text, text)',
+    'public.mark_notification_read(uuid)',
+    'public.mark_all_notifications_read()',
     'public.cancel_my_subscription(boolean)',
     'public.expire_stale_subscriptions()',
     -- Organisation helpers (also used inside RLS policies, which run as the
@@ -112,6 +114,7 @@ BEGIN
       'can_use_price_tracking', 'can_use_waste_report', 'can_use_multiple_storage',
       'can_use_staff_management', 'can_use_bulk_inventory', 'storage_area_limit',
       'consume_ai_scan', 'adjust_inventory_quantity', 'log_notification',
+      'mark_notification_read', 'mark_all_notifications_read',
       'cancel_my_subscription', 'expire_stale_subscriptions',
       'is_org_member', 'org_role', 'can_manage_org', 'shares_org_with',
       'create_organization', 'add_org_member_by_email',

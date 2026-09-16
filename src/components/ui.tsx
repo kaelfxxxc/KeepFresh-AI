@@ -153,11 +153,15 @@ export function Chip({ label, active, onPress, count }: {
 /**
  * The number on a bell.
  *
- * Clamped at 99+ rather than 9+: this now carries the dashboard's whole
- * notification count — expiring items *and* items running low — which for an
- * establishment-sized inventory is routinely into double figures, and "9+" would
- * stop answering the only question the bubble exists to answer. The clamp stays
- * because the badge has no room to grow without limit.
+ * Clamped at 99+ rather than 9+: this carries the notification bell's real
+ * unread count, which for an establishment-sized inventory is routinely into
+ * double figures, and "9+" would stop answering the only question the bubble
+ * exists to answer. The clamp stays because the badge has no room to grow
+ * without limit.
+ *
+ * Renders nothing at zero, which is what makes "hide the badge when there is
+ * nothing unread" the caller's default rather than a condition it has to
+ * remember.
  */
 export function CountBadge({ count }: { count: number }) {
   if (!count) return null;

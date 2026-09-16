@@ -10,12 +10,14 @@ import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
 import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
 import {
-  Bell, ChevronRight, Crown, History, Package,
+  ChevronRight, Crown, History, Package,
   PieChart, ShoppingBasket, ShoppingCart, TrendingDown,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
-import { AvatarCircle, CountBadge, ItemImage, SectionLabel, StatusBadge } from '../../src/components/ui';
+import { AvatarCircle, ItemImage, SectionLabel, StatusBadge } from '../../src/components/ui';
+import { NotificationBell } from '../../src/components/NotificationBell';
 import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
+import { timeAgo } from '../../src/utils/timeAgo';
 
 /** One row of the "Recently consumed" list. */
 interface ConsumedEntry {
@@ -212,18 +214,6 @@ export default function HomeScreen() {
   const consumed = stats?.recentlyConsumed ?? [];
 
   /**
-   * Everything the bell counts.
-   *
-   * The Running Low and Expiration Alerts strips that used to sit lower down
-   * this screen are behind the bell now, so the badge has to carry both: a
-   * number that counted only expirations would disagree with the list its own
-   * tap opens. Alerts renders both sections, and the low-stock figure here comes
-   * from the same `status = 'available'` rows and the same threshold that
-   * screen filters by, so the two cannot drift apart.
-   */
-  const alertCount = (stats?.expirationAlerts ?? 0) + (stats?.lowStock ?? 0);
-
-  /**
    * The two screens that have no tab of their own.
    *
    * This row used to hold Scanner, Inventory and Need to Buy — all three already
@@ -317,25 +307,11 @@ export default function HomeScreen() {
                 strokeWidth={2.3}
               />
             </Pressable>
-            {/* The bell is the screen's one place for anything needing attention:
-                the Running Low and Expiration Alerts strips that used to sit
-                further down have moved behind it, and Alerts lists both. With
-                nothing outstanding the badge is hidden and the tab still opens,
-                which is where "you're all caught up" lives. */}
-            <Pressable
-              onPress={() => router.push('/alerts')}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={
-                alertCount > 0
-                  ? `Alerts, ${alertCount} notification${alertCount === 1 ? '' : 's'}`
-                  : 'Alerts'
-              }
-              style={({ pressed }) => [styles.bellWrap, pressed && { opacity: 0.7 }]}
-            >
-              <Bell size={22} color={COLORS.text} strokeWidth={2} />
-              <CountBadge count={alertCount} />
-            </Pressable>
+            {/* The screen's one place for anything needing attention. Its badge
+                is the real unread count from the notification log, and tapping
+                it opens a dropdown here rather than navigating away — so the
+                count describes exactly the list the tap reveals. */}
+            <NotificationBell />
             <AvatarCircle uri={profile.avatar_url} initials={profile.full_name} onPress={() => router.push('/profile')} />
           </View>
         </View>
@@ -504,7 +480,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     ...SHADOW.faint,
   },
-  bellWrap: { width: 42, height: 42, borderRadius: RADII.icon, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', ...SHADOW.faint, position: 'relative' },
   banner: {
     marginHorizontal: SPACING.lg,
     borderRadius: RADII.card,
@@ -585,25 +560,3 @@ const styles = StyleSheet.create({
   chartBar: { width: '100%', backgroundColor: COLORS.secondary, borderTopLeftRadius: 9, borderTopRightRadius: 9 },
   chartLabel: { fontSize: 11, color: COLORS.secondaryText, marginTop: 6, fontWeight: '600' },
 });
-
-/**
- * How long ago something was consumed, at the resolution that matters on a
- * dashboard: minutes and hours for the same day, days for the rest of the week,
- * then the date itself.
- */
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-
-  const minutes = Math.floor((Date.now() - then) / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-
-  return new Date(iso).toLocaleDateString();
-}

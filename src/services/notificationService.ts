@@ -67,6 +67,19 @@ export interface NotificationTarget {
   params?: Record<string, string>;
 }
 
+/** One row of the bell's dropdown, already resolved into display shape. */
+export interface NotificationEntry {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  /** ISO. What the row's relative time is measured from. */
+  at: string;
+  read: boolean;
+  /** The item this notification is about, when it names one. */
+  itemId: string | null;
+}
+
 /**
  * The screen a notification is about, given its payload.
  *
@@ -591,23 +604,151 @@ export const notificationService = {
   },
 
   /**
-   * Record a scheduled reminder. The result is intentionally ignored — the log
-   * is a history here, not a gate, because `deliver` has already guaranteed a
-   * single queued copy per key.
+   * Record a scheduled reminder.
+   *
+   * The history row is keyed by the plan's own dedupe key, so there is exactly
+   * one per occasion. Two reasons that matters, and both are load-bearing:
+   *
+   *   * `runSweep` runs on every visit to Home, and the same future reminder is
+   *     re-planned each time. Without the key the unique index cannot fire —
+   *     Postgres keeps NULLs distinct — so the bell's list filled with the same
+   *     "expires in 3 days" row over and over and the unread badge inflated
+   *     without bound;
+   *   * it is the only record that a reminder was ever queued. When the OS
+   *     fires a scheduled notification the app is usually closed, so nothing
+   *     else writes a row for that occasion.
+   *
+   * The insert is deliberately *not* a gate. `deliver()`'s future branch stays
+   * free of the database, because a reinstall empties the OS queue and the
+   * cancel-and-reschedule there is what restores it — a database log saying
+   * "already logged" would instead silence the reminder for good.
    */
   async record(userId: string, plan: PlannedNotification): Promise<void> {
     try {
-      await supabase.from('notification_logs').insert({
-        user_id: userId,
-        notification_type: plan.kind,
-        inventory_item_id: plan.itemId ?? null,
-        title: plan.title,
-        body: plan.body,
-        sent_at: new Date().toISOString(),
-      });
+      await supabase.from('notification_logs').upsert(
+        {
+          user_id: userId,
+          notification_type: plan.kind,
+          dedupe_key: plan.dedupeKey,
+          inventory_item_id: plan.itemId ?? null,
+          title: plan.title,
+          body: plan.body,
+          deliver_at: plan.at.toISOString(),
+          sent_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,dedupe_key', ignoreDuplicates: true }
+      );
     } catch {
       // A missing history row must never break the sweep.
     }
+  },
+
+  // ---- The bell's list ------------------------------------------------------
+
+  /**
+   * Everything already announced, newest first.
+   *
+   * Only `deliver_at <= now`. Reminders queued for the future live in this same
+   * table — `record()` writes them at schedule time, because that is the only
+   * moment the app knows they exist — but they have not been announced to
+   * anyone yet, and listing them would report something that has not happened.
+   */
+  async listNotifications(userId: string, limit = 30): Promise<NotificationEntry[]> {
+    const base =
+      'id, notification_type, title, body, sent_at, inventory_item_id, inventory_items(product_name)';
+
+    const { data, error } = await supabase
+      .from('notification_logs')
+      .select(`${base}, deliver_at, read_at`)
+      .eq('user_id', userId)
+      .lte('deliver_at', new Date().toISOString())
+      .order('deliver_at', { ascending: false })
+      .limit(limit);
+    if (!error) return (data ?? []).map((row: any) => toEntry(row, true));
+
+    // Not migrated yet. Fall back to the columns that have always existed, so
+    // the bell lists history rather than showing an error — SQL is applied by
+    // hand in this project, so "the migration is not pasted yet" is a real
+    // state the app has to survive.
+    if (!isMissingColumn(error, 'deliver_at')) throw error;
+    const { data: fallback, error: fallbackError } = await supabase
+      .from('notification_logs')
+      .select(base)
+      .eq('user_id', userId)
+      .order('sent_at', { ascending: false })
+      .limit(limit);
+    if (fallbackError) throw fallbackError;
+    return (fallback ?? []).map((row: any) => toEntry(row, false));
+  },
+
+  /**
+   * How many notifications are waiting to be read.
+   *
+   * A `head: true` count rather than the length of the fetched page, so the
+   * number is the real one and not one clipped at the list's limit.
+   */
+  async unreadCount(userId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('notification_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('read_at', null)
+      .lte('deliver_at', new Date().toISOString());
+    if (error) {
+      // Before the migration there is no read state at all, so nothing can be
+      // unread — and `listNotifications` marks every row read to match.
+      if (isMissingColumn(error, 'read_at')) return 0;
+      throw error;
+    }
+    return count ?? 0;
+  },
+
+  /**
+   * Mark one notification read.
+   *
+   * Answers whether this call is what changed it. A row already read answers
+   * false rather than failing, which is the honest answer to a repeat tap.
+   */
+  async markRead(id: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('mark_notification_read', { p_id: id });
+    if (error) {
+      if (isMissingFunction(error)) return false;
+      throw error;
+    }
+    return data === true;
+  },
+
+  /** Mark everything the list could have shown. Returns how many changed. */
+  async markAllRead(): Promise<number> {
+    const { data, error } = await supabase.rpc('mark_all_notifications_read');
+    if (error) {
+      if (isMissingFunction(error)) return 0;
+      throw error;
+    }
+    return typeof data === 'number' ? data : 0;
+  },
+
+  /**
+   * Where a tap on a listed notification should go.
+   *
+   * Rebuilds the push payload the row was logged from and hands it to the same
+   * mapping a tapped push uses, so a notification opens the same screen however
+   * it was reached.
+   */
+  targetForRow(row: {
+    notification_type?: string | null;
+    inventory_item_id?: string | null;
+    dedupe_key?: string | null;
+  }): NotificationTarget {
+    const kind = row.notification_type as NotificationKind | null | undefined;
+    if (!kind) return { pathname: '/(tabs)/alerts' };
+
+    return targetForNotification({
+      app: APP_TAG,
+      kind,
+      dedupeKey: row.dedupe_key ?? '',
+      itemId: row.inventory_item_id ?? null,
+    });
   },
 
   /**
@@ -640,6 +781,12 @@ export const notificationService = {
         user_id: userId,
         inventory_item_id: itemId,
         notification_type: 'expiration',
+        title,
+        body: message,
+        // Stamped explicitly: the migration only backfills rows that existed
+        // when it ran, so a row written after it with a NULL deliver_at would
+        // be filtered out of the bell's list entirely.
+        deliver_at: new Date().toISOString(),
         sent_at: new Date().toISOString(),
       });
 
@@ -678,3 +825,84 @@ export const notificationService = {
     if (error) throw error;
   },
 };
+
+/* --------------------------------------------------------- list helpers */
+
+/**
+ * The heading a logged row falls back to when it has no title of its own.
+ *
+ * `record()` has always written one, but the seeded demo rows in seed.sql and
+ * the legacy `scheduleExpirationNotification` path carry neither title nor body
+ * — they were written as bare history. Rendering `title` raw would leave those
+ * rows as blank lines in the bell.
+ */
+const KIND_LABELS: Record<string, string> = {
+  expiration: 'Expiring soon',
+  expired: 'Expired',
+  low_inventory: 'Running low',
+  grocery_reminder: 'Shopping list',
+  subscription_renewal: 'Subscription',
+  ai_usage: 'AI scans',
+  inventory_limit: 'Capacity',
+};
+
+/**
+ * A logged row as the dropdown renders it.
+ *
+ * `readStateKnown` is false against a database without notification_center.sql,
+ * where there is no `read_at` at all. Everything then reports read, so the list
+ * cannot claim unread notifications that the badge — which has no column to
+ * count — would never agree with.
+ */
+function toEntry(row: any, readStateKnown: boolean): NotificationEntry {
+  const kind = String(row.notification_type ?? '');
+  const itemName: string | null = row.inventory_items?.product_name ?? null;
+
+  return {
+    id: row.id,
+    kind,
+    title: row.title || KIND_LABELS[kind] || 'Notification',
+    body:
+      row.body ||
+      (itemName
+        ? `${itemName} — open the app to see the details.`
+        : 'Open the app to see the details.'),
+    // `deliver_at` is the honest time for a row that has one; the backfill in
+    // the migration gives it to every older row, and this falls back to the
+    // write time only where the column is absent entirely.
+    at: row.deliver_at ?? row.sent_at,
+    read: readStateKnown ? row.read_at != null : true,
+    itemId: row.inventory_item_id ?? null,
+  };
+}
+
+/**
+ * True when PostgREST or Postgres is telling us a column does not exist.
+ *
+ * 42703 is Postgres' undefined_column. Both mean the same thing to us as
+ * `isMissingFunction` means for an RPC: notification_center.sql has not been
+ * applied to this database yet.
+ */
+function isMissingColumn(
+  error: { code?: string; message?: string } | null,
+  column: string
+): boolean {
+  if (!error) return false;
+  if (error.code === '42703') return true;
+  return new RegExp(`column .*${column}.* does not exist`, 'i').test(error.message ?? '');
+}
+
+/**
+ * True when PostgREST or Postgres is telling us the function does not exist.
+ *
+ * PGRST202 is PostgREST's "no such function in the schema cache"; 42883 is
+ * Postgres' undefined_function. Both mean the same thing to us: the migration
+ * that defines this RPC has not been applied yet, and SQL is applied by hand in
+ * this project, so that is a state the app has to run through rather than crash
+ * in. The same helper exists in subscriptionService for its own RPCs.
+ */
+function isMissingFunction(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST202' || error.code === '42883') return true;
+  return /could not find the function|function .+ does not exist/i.test(error.message ?? '');
+}

@@ -203,19 +203,28 @@ export default function AlertsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderExpiring}
         ListHeaderComponent={header}
-        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl, gap: SPACING.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAlerts(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         ListEmptyComponent={
           loading ? null : (
-            <EmptyState
-              icon={CheckCircle2}
-              title={nothingAtAll ? "You're all caught up!" : `Nothing expiring${horizon === 'today' ? ' today' : horizon === 'week' ? ' in the next 7 days' : ' this month'}`}
-              hint={
-                nothingAtAll
-                  ? 'Nothing is running low and nothing is nearing its date.'
-                  : 'Items in this window will show up here as their dates approach.'
-              }
-            />
+            // Held in the space left under the header so the message sits in the
+            // middle of the empty screen rather than directly beneath the
+            // segmented control with everything below it blank. `flexGrow` and
+            // not `flex`: the block keeps its natural height and only the
+            // leftover room is distributed, so nothing is squashed on a short
+            // screen. The content container needs its own `flexGrow` for there
+            // to be any leftover room to take.
+            <View style={styles.emptyFill}>
+              <EmptyState
+                icon={CheckCircle2}
+                title={nothingAtAll ? "You're all caught up!" : `Nothing expiring${horizon === 'today' ? ' today' : horizon === 'week' ? ' in the next 7 days' : ' this month'}`}
+                hint={
+                  nothingAtAll
+                    ? 'Nothing is running low and nothing is nearing its date.'
+                    : 'Items in this window will show up here as their dates approach.'
+                }
+              />
+            </View>
           )
         }
       />
@@ -244,6 +253,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderRadius: RADII.card,
     padding: SPACING.md, ...SHADOW.card,
   },
+  // Takes the room the header left behind and centres the message in it. The
+  // horizontal centring is still EmptyState's own.
+  emptyFill: { flexGrow: 1, justifyContent: 'center' },
   rowIcon: {
     width: 42, height: 42, borderRadius: RADII.icon,
     backgroundColor: COLORS.mutedBg, alignItems: 'center', justifyContent: 'center',

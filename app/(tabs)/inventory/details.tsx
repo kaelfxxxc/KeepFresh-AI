@@ -311,7 +311,17 @@ export default function InventoryDetailsScreen() {
         <View style={styles.hero}>
           <ItemImage uri={item.image_url} category={item.category} size={108} radius={30} style={{ marginBottom: SPACING.md }} />
           <Text style={styles.name}>{item.product_name}</Text>
-          <StatusBadge label={item.status === 'available' ? expBadge.label : item.status === 'consumed' ? 'Consumed' : 'Wasted'} tone={item.status !== 'available' ? 'neutral' : expBadge.tone} />
+          <StatusBadge
+            label={item.status === 'available' ? expBadge.label : item.status === 'consumed' ? 'Consumed' : 'Wasted'}
+            // Wasted keeps its own violet here as well as on the list. These two
+            // screens describe the same row, so a colour that meant "gone" on
+            // one and "consumed" on the other would be worse than either.
+            tone={
+              item.status === 'consumed' ? 'neutral'
+                : item.status === 'wasted' ? 'wasted'
+                  : expBadge.tone
+            }
+          />
         </View>
 
         <View style={styles.card}>

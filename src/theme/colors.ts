@@ -33,6 +33,13 @@ export const COLORS = {
   dangerText: '#721C24',
   neutralBg: '#E9ECEF',
   neutralText: '#495057',
+  // Food that was thrown away. Violet rather than the danger red, because red on
+  // this screen has to mean "act on this now" (expired, or expiring today).
+  // Wasted is the opposite: a record of something already finished, and it sat
+  // in the same red as the two live states, so all three read as one badge.
+  // Contrast against this background is 8.3:1 — AAA for body text.
+  wastedBg: '#E7DBF5',
+  wastedText: '#4B2A7B',
 
   // Misc
   overlay: 'rgba(0, 0, 0, 0.35)',

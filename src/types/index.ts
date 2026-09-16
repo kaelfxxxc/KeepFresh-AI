@@ -217,6 +217,14 @@ export interface AnalyticsData {
   estimatedSavings: number;
 }
 
-export type FilterType = 'all' | 'available' | 'need_to_buy' | 'expiring_soon' | 'expired';
+/**
+ * The Inventory tab's chips. Mirrors the `Filter` union in
+ * app/(tabs)/inventory.tsx — kept in step by hand, since the screen keeps its
+ * own copy to avoid importing a type from the barrel it already sits beside.
+ *
+ * It previously listed `available`/`expiring_soon`/`expired`, none of which have
+ * been filter values on that screen for some time.
+ */
+export type FilterType = 'all' | 'expiring' | 'need_to_buy' | 'history';
 export type TimeFilter = 'week' | 'month' | 'year';
 export type RecipeCategory = 'all' | 'meals' | 'desserts' | 'snacks' | 'beverages';

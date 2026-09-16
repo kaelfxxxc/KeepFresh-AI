@@ -32,12 +32,13 @@ interface ConsumedEntry {
 interface HomeStats {
   totalItems: number;
   /**
-   * Everything worth buying: `status IN ('consumed','wasted')` — it ran out —
-   * or `need_to_buy`, the flag the heart sets for "still have some, want more".
+   * Everything worth buying: `need_to_buy` — the flag the heart sets for "want
+   * more of this" — or an item still on the shelf with no quantity left.
    *
    * Deliberately the same predicate the Inventory tab's Need to Buy chip uses.
    * It previously counted unpurchased `grocery_items`, which is a different
-   * question with a different answer, so the tile and the tab disagreed.
+   * question with a different answer, so the tile and the tab disagreed; then it
+   * counted consumed and wasted rows, which that tab now files under History.
    */
   needToBuy: number;
   /** Still on the shelf, but at or below `LOW_STOCK_THRESHOLD`. */
@@ -87,11 +88,17 @@ export default function HomeScreen() {
       }).length;
 
       // Need to Buy is derived, not stored, and from the same two things the
-      // Inventory tab's chip uses: the item ran out, or the user hearted it to
-      // say they want more. Nothing is copied, so the tile and the tab cannot
-      // show different numbers.
+      // Inventory tab's chip uses: the user hearted it to say they want more, or
+      // the item is still on the shelf with nothing left in it. Nothing is
+      // copied, so the tile and the tab cannot show different numbers.
+      //
+      // It used to count `status IN ('consumed','wasted')` as "it ran out", but
+      // those rows are history now and the Inventory tab files them there — so
+      // counting them here would have advertised rows the chip below no longer
+      // shows. "Ran out" is a quantity question: the ± control floors at zero
+      // without flipping the status, so an empty packet is still `available`.
       const needToBuy = all.filter(
-        (i) => i.status === 'consumed' || i.status === 'wasted' || i.need_to_buy
+        (i) => i.need_to_buy || (i.status === 'available' && Number(i.quantity ?? 0) <= 0)
       ).length;
 
       // Running low is a separate question from need-to-buy: the item is still

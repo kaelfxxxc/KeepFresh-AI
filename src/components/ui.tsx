@@ -22,7 +22,7 @@ import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
 
 type IconComp = React.ComponentType<LucideProps>;
-type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary';
+type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'wasted';
 
 const toneMap: Record<Tone, { bg: string; fg: string }> = {
   success: { bg: COLORS.successBg, fg: COLORS.successText },
@@ -32,6 +32,9 @@ const toneMap: Record<Tone, { bg: string; fg: string }> = {
   // Brand green, for a badge that states something the user asked for rather
   // than something the app is warning them about — "To Buy" on a flagged item.
   primary: { bg: COLORS.primaryLight, fg: COLORS.primary },
+  // Thrown away. Deliberately not `danger`: red is reserved for the two states
+  // that still want something from the user today.
+  wasted: { bg: COLORS.wastedBg, fg: COLORS.wastedText },
 };
 
 /* ------------------------------------------------------------------ Card */
@@ -329,6 +332,71 @@ export function QuantityPrompt({
   );
 }
 
+/* ------------------------------------------------------- Action menu */
+/**
+ * The overflow menu behind a row's ⋯ button.
+ *
+ * Exists so a list row can carry its less frequent and destructive actions
+ * without putting them on the card face, where a scrolling thumb could reach
+ * them by accident. One modal serves the whole list — the caller holds the row
+ * it belongs to and passes `null`/`visible: false` to close — so a screen with
+ * two hundred rows still mounts a single menu.
+ *
+ * Selecting an action closes the menu first, and defers the handler by a tick,
+ * because the actions themselves open confirmation dialogs: raising an Alert in
+ * the same commit that hides the Modal can leave it presented behind a menu that
+ * is still animating out on iOS.
+ */
+export function ActionMenu({ visible, title, actions, onClose }: {
+  visible: boolean;
+  title?: string;
+  actions: { label: string; icon?: IconComp; onPress: () => void; danger?: boolean }[];
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.menuBackdrop} onPress={onClose}>
+        <Pressable style={styles.menuCard} onPress={(e) => e.stopPropagation()}>
+          {!!title && (
+            <Text style={styles.menuTitle} numberOfLines={1}>{title}</Text>
+          )}
+          {actions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Pressable
+                key={action.label}
+                onPress={() => {
+                  onClose();
+                  setTimeout(action.onPress, 0);
+                }}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: COLORS.mutedBg }]}
+              >
+                {Icon && (
+                  <Icon
+                    size={19}
+                    color={action.danger ? COLORS.dangerText : COLORS.text}
+                    strokeWidth={2}
+                  />
+                )}
+                <Text style={[styles.menuRowText, action.danger && { color: COLORS.dangerText }]}>
+                  {action.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <PillButton
+            title="Cancel"
+            variant="outline"
+            onPress={onClose}
+            style={{ marginTop: SPACING.sm }}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 /* ------------------------------------------------------------- Icons */
 export function IconButton({ icon: Icon, onPress, size = 20, color = COLORS.text, bg, style, badge }: {
   icon: IconComp;
@@ -620,14 +688,20 @@ export function QuantityStepper({
   compact?: boolean;
 }) {
   const atFloor = value <= min;
-  const size = compact ? 30 : 36;
+  // Both sizes clear the 44×44 touch minimum, by different means: the roomy
+  // variant draws it, the compact one draws 36 and claims the last 8px with
+  // hitSlop. Compact rows are already the tightest thing on the inventory card,
+  // so growing the drawn circle there would cost a line of product information
+  // to buy a few pixels nobody can see.
+  const size = compact ? 36 : 44;
+  const slop = compact ? 4 : 0;
 
   return (
     <View style={[styles.stepper, compact && styles.stepperCompact]}>
       <Pressable
         onPress={() => onStep(-1)}
         disabled={busy || atFloor}
-        hitSlop={6}
+        hitSlop={slop}
         accessibilityLabel="Decrease quantity"
         style={({ pressed }) => [
           styles.stepperBtn,
@@ -641,11 +715,19 @@ export function QuantityStepper({
         <Text style={[styles.stepperGlyph, compact && { fontSize: 17 }]}>−</Text>
       </Pressable>
 
-      <View style={styles.stepperValueWrap}>
+      <View style={[styles.stepperValueWrap, compact && styles.stepperValueWrapCompact]}>
         {busy ? (
           <ActivityIndicator size="small" color={COLORS.primary} />
         ) : (
-          <Text style={[styles.stepperValue, compact && { fontSize: 15 }]} numberOfLines={1}>
+          <Text
+            style={[styles.stepperValue, compact && { fontSize: 15 }]}
+            numberOfLines={1}
+            // The count is the whole point of the control, and it changes under
+            // the user's finger — so it is labelled rather than left as bare
+            // text a screen reader would read as an unlabelled number.
+            accessibilityLabel={`${value}${unit ? ` ${unit}` : ''}`}
+            accessibilityLiveRegion="polite"
+          >
             {value}
           </Text>
         )}
@@ -655,7 +737,7 @@ export function QuantityStepper({
       <Pressable
         onPress={() => onStep(1)}
         disabled={busy}
-        hitSlop={6}
+        hitSlop={slop}
         accessibilityLabel="Increase quantity"
         style={({ pressed }) => [
           styles.stepperBtn,
@@ -936,6 +1018,26 @@ const styles = StyleSheet.create({
   },
   promptChipText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
   promptActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  menuBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+  },
+  menuCard: {
+    width: '100%', maxWidth: 400,
+    backgroundColor: COLORS.white, borderRadius: RADII.card,
+    padding: SPACING.md,
+  },
+  menuTitle: {
+    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
+    paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm,
+  },
+  // 48 rather than the 44 minimum: these rows are the destructive ones, so they
+  // get a little more room than the rule requires.
+  menuRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    minHeight: 48, paddingHorizontal: SPACING.sm, borderRadius: RADII.input,
+  },
+  menuRowText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
   iconBtn: {
     width: 40,
     height: 40,
@@ -1003,7 +1105,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   emptyIconWrapCompact: { width: 48, height: 48, borderRadius: 24, marginBottom: 2 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  // `textAlign` on the title as well as the hint: the block centres its children
+  // with alignItems, which only centres a line that fits. A title long enough to
+  // wrap would fill the box and then sit left inside it, under a hint that was
+  // still centred — the one way this block could read as off-centre.
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
   emptyTitleCompact: { fontSize: 14 },
   emptyHint: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18 },
   emptyHintCompact: { fontSize: 12, lineHeight: 16 },
@@ -1039,6 +1145,7 @@ const styles = StyleSheet.create({
   stepperGlyph: { fontSize: 20, fontWeight: '800', color: COLORS.text, lineHeight: 24 },
   stepperGlyphPlus: { color: COLORS.primary },
   stepperValueWrap: { minWidth: 46, alignItems: 'center', justifyContent: 'center' },
+  stepperValueWrapCompact: { minWidth: 34 },
   stepperValue: { fontSize: 17, fontWeight: '800', color: COLORS.text },
   stepperUnit: { fontSize: 10, color: COLORS.secondaryText, marginTop: -2 },
 

@@ -231,12 +231,19 @@ export function NotificationBell() {
                 <ActivityIndicator color={COLORS.primary} />
               </View>
             ) : items.length === 0 ? (
-              <EmptyState
-                compact
-                icon={CheckCircle2}
-                title="You're all caught up!"
-                hint="Reminders about expiring items and running-low stock land here."
-              />
+              // Wrapped so the block is centred against the card's full width.
+              // The card is a fixed-width absolute box with no horizontal
+              // padding of its own, so this is the one place the popover's
+              // layout differs from the full-screen screens EmptyState was
+              // written for.
+              <View style={styles.emptyWrap}>
+                <EmptyState
+                  compact
+                  icon={CheckCircle2}
+                  title="You're all caught up!"
+                  hint="Reminders about expiring items and running-low stock land here."
+                />
+              </View>
             ) : (
               <ScrollView
                 style={{ maxHeight: Math.max(120, cardMaxHeight - HEADER_HEIGHT) }}
@@ -317,6 +324,17 @@ const styles = StyleSheet.create({
   markAll: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   markAllText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
   loading: { padding: SPACING.xl, alignItems: 'center' },
+  // The wrapper owns the centring, so the block is centred against the card's
+  // full width even if EmptyState's own `alignItems` is ever changed: the card
+  // is a fixed-width absolute box with no horizontal padding of its own, and
+  // this is the one place the popover's layout differs from the full-screen
+  // screens EmptyState was written for. The vertical padding gives the block
+  // equal room above and below instead of letting it hug the header.
+  emptyWrap: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+  },
   list: { paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm },
   row: {
     flexDirection: 'row',

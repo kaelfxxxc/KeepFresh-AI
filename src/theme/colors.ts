@@ -17,6 +17,11 @@ export const COLORS = {
   divider: '#ECEEF1',
   disabled: '#E9ECEF',
   mutedBg: '#F1F3F5',
+  // A bar that shows a quantity and nothing more — a month's spend, a price
+  // level. Deliberately neither the brand green (which means "good, fresh, on
+  // track" everywhere else in the app, and had no business making that claim
+  // about a bill) nor a near-white grey pale enough to read as an empty track.
+  chartBar: '#ADB5BD',
 
   // Solid accent colors (icons, small elements)
   warning: '#E8A000',

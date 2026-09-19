@@ -8,6 +8,7 @@ import { COLORS, SPACING, RADII } from '../../src/theme';
 import { Sparkles, ScanBarcode, PencilLine, PackagePlus } from 'lucide-react-native';
 import { NavHeader, PillButton, StatusBadge } from '../../src/components/ui';
 import { categoryIcon, categoryLabel } from '../../src/utils/categoryIcons';
+import { directImageUri, isLocalFileUri, resolveItemImageUri, uploadItemImage } from '../../src/services/inventoryImageService';
 import type { ReviewInfo } from '../../src/services/barcodeService';
 
 type ScanSource = 'photo' | 'lookup' | 'inventory';
@@ -26,16 +27,33 @@ const EMPTY: ReviewInfo = {
 };
 
 /**
- * Whether an image URL is worth storing on the row.
+ * The photo to write onto the row, or null when there is nothing worth storing.
  *
- * A photo scan carries the picked file's own `file://` path, which is a location
- * on this one device: it would render as a broken image for anyone else in the
- * household, and stop resolving here as soon as the picker's cache is cleared.
- * The photo's job is to identify the item, and the category icon is what the
- * inventory row shows afterwards, so only remote URLs are persisted.
+ * A photo scan carries the picked file's own `file://` path — a location on this
+ * one device, and one the picker's cache is free to clear. Those are uploaded to
+ * the `inventory-images` bucket first, which is what turns the picture the user
+ * just took into something the rest of the household can see and what keeps it
+ * from vanishing afterwards; the row then holds the bucket path, which is signed
+ * on the way to the screen.
+ *
+ * Anything else is carried over as it stands, because it came out of the column
+ * itself: an https URL from a barcode provider, or a path in our own bucket.
+ * Passing those through unchanged is what stops "Add Another" from dropping the
+ * photo the original item was added with.
+ *
+ * Throws when an upload fails, rather than falling back to null: saving the item
+ * photo-less and saying nothing would leave the user believing the photo was
+ * kept. The caller turns that into a message and abandons the save.
  */
-const persistableImageUrl = (url?: string | null): string | null =>
-  url && /^https?:\/\//i.test(url) ? url : null;
+async function resolvableImageUrl(userId: string, url?: string | null): Promise<string | null> {
+  if (!url) return null;
+  if (!isLocalFileUri(url)) return url;
+  try {
+    return await uploadItemImage(userId, url);
+  } catch {
+    throw new Error('The photo could not be uploaded. Check your connection and try again — nothing was saved.');
+  }
+}
 
 const row = (label: string, value: string) => (
   <View style={styles.attrRow}>
@@ -113,6 +131,9 @@ export default function ProductInfoScreen() {
         : source === 'lookup' || source === 'inventory'
           ? 'Auto-filled from barcode lookup. Please verify and edit if needed.'
           : null;
+      // Uploaded before the insert so the row lands with its final value, rather
+      // than briefly pointing at a file only this device can see.
+      const imageUrl = await resolvableImageUrl(profile.id, info.image_url);
       const { error } = await supabase.from('inventory_items').insert({
         user_id: profile.id,
         product_name: info.product_name.trim(),
@@ -122,7 +143,7 @@ export default function ProductInfoScreen() {
         quantity: Number(info.quantity) || 1,
         unit: info.unit || 'pcs',
         barcode: info.barcode || params.barcode || null,
-        image_url: persistableImageUrl(info.image_url),
+        image_url: imageUrl,
         notes,
       });
       if (error) {
@@ -132,19 +153,40 @@ export default function ProductInfoScreen() {
           { text: 'OK', onPress: () => router.back() },
         ]);
       }
-    } catch (error) {
-      Alert.alert('Error', 'Unable to add item to inventory.');
+    } catch (error: any) {
+      // A failed upload carries its own message; anything else is the generic
+      // one, since the specific cause here is not something the user can act on.
+      Alert.alert('Error', error?.message || 'Unable to add item to inventory.');
     } finally {
       setLoading(false);
     }
   };
 
-  // The photo scan's local file path is a real image, so the hero shows it; a
-  // barcode lookup's image is remote. Either way the fallback is the category's
+  // What the hero falls back to when there is no photo to show — the category's
   // own icon rather than a generic box.
   const HeroIcon = categoryIcon(info.category);
 
-  const showImage = !!info.image_url && !imgBroken;
+  // The hero can be handed a stored value rather than something immediately
+  // renderable: "Add Another" reuses the item's own row, whose photo is a path
+  // inside the private bucket. That has to be signed first, exactly like every
+  // other stored photo in the app. A photo scan's local file and a barcode
+  // lookup's remote URL both render as they stand, and are answered without a
+  // promise so they never flash the fallback icon while one resolves.
+  const [heroUri, setHeroUri] = useState<string | null>(null);
+  const immediateHero = directImageUri(info.image_url);
+
+  useEffect(() => {
+    setHeroUri(null);
+    if (!info.image_url || immediateHero) return undefined;
+    let live = true;
+    resolveItemImageUri(info.image_url).then((next) => {
+      if (live) setHeroUri(next);
+    });
+    return () => { live = false; };
+  }, [info.image_url, immediateHero]);
+
+  const heroSource = immediateHero ?? heroUri;
+  const showImage = !!heroSource && !imgBroken;
   const autoFilled = source === 'lookup' || source === 'inventory';
   const hasDetails = !!(info.description || info.ingredients);
 
@@ -156,7 +198,7 @@ export default function ProductInfoScreen() {
         <View style={styles.hero}>
           {showImage ? (
             <Image
-              source={{ uri: info.image_url as string }}
+              source={{ uri: heroSource as string }}
               style={styles.heroImage}
               resizeMode="contain"
               onError={() => setImgBroken(true)}

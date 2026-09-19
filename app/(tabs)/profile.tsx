@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
-import { supabase } from '../../src/lib/supabase';
+import { uploadAvatar } from '../../src/services/avatarService';
 import { COLORS, SPACING, RADII } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import {
@@ -90,20 +90,21 @@ export default function ProfileScreen() {
     });
     if (result.canceled || !profile) return;
     const uri = result.assets[0].uri;
+    // Shows the pick immediately, before the upload lands.
     setAvatarUri(uri);
-    const fileName = `${profile.id}/avatar.jpg`;
     try {
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, { uri, name: fileName, type: 'image/jpeg' } as any, { upsert: true });
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
-        await updateProfile({ avatar_url: publicUrl });
-      } else {
-        Alert.alert('Upload failed', uploadError.message);
-      }
-    } catch {
-      Alert.alert('Upload failed', 'Could not upload this photo.');
+      // Stored as a path in the private bucket, never `getPublicUrl` — that
+      // returns a URL the bucket refuses, which is why the photo used to show
+      // here (from local state) and then be missing everywhere it was read back,
+      // the dashboard included.
+      const path = await uploadAvatar(profile.id, uri, profile.avatar_url);
+      const { error } = await updateProfile({ avatar_url: path });
+      if (error) throw error;
+    } catch (e) {
+      // Put back the photo that was actually saved rather than leaving a local
+      // file on screen that the account does not have.
+      setAvatarUri(profile.avatar_url);
+      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload this photo.');
     }
   };
 

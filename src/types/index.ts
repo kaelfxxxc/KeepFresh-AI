@@ -89,6 +89,18 @@ export interface Recipe {
   image_query: string | null;
   source: 'catalog' | 'ai';
   generated_at: string | null;
+  // Added by recipe_product_links.sql
+  /**
+   * Lower-case cuisine tag, e.g. `'filipino'`. The app only special-cases that
+   * one value — it leads a product's set — and shows any other as a label.
+   */
+  cuisine: string | null;
+  /**
+   * The inventory item this recipe was generated *around*, set only by the
+   * per-product calls. `null` for the pantry-wide set, whose recipes still reach
+   * a product's list through their ingredients.
+   */
+  primary_inventory_item_id: string | null;
 }
 
 export interface RecipeIngredient {
@@ -105,6 +117,18 @@ export interface RecipeIngredient {
    * this one column, so the two lists cannot disagree.
    */
   available: boolean;
+  // Added by recipe_product_links.sql
+  /**
+   * The inventory row this ingredient matched when the recipe was generated.
+   *
+   * Non-null implies `available` — one matching pass writes both, against the
+   * same threshold. The converse does not hold, in two cases: a name made
+   * entirely of words the tokenizer drops ("Cooking Oil"), which the whole-string
+   * fallback can vouch for without pointing at any one row; and a name whose
+   * words are spread across several rows ("chicken" and "thighs" as two items),
+   * which matches the pantry without matching any single thing in it.
+   */
+  inventory_item_id: string | null;
 }
 
 /**
@@ -115,6 +139,14 @@ export interface RecipeWithIngredients extends Recipe {
   ingredient_names: string[];
   available_count: number;
   total_count: number;
+  /**
+   * Every inventory item this recipe is "for": its primary product if it was
+   * generated around one, plus each ingredient that matched a row in the pantry.
+   *
+   * Flattened into one field here so the product chips filter on a single value
+   * instead of re-deriving the union at every comparison.
+   */
+  inventory_item_ids: string[];
 }
 
 export interface FavoriteRecipe {

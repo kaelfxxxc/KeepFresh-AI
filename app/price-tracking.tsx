@@ -125,12 +125,31 @@ export default function PriceTrackingScreen() {
                   <View style={styles.spendRow}>
                     {spend.map((month) => (
                       <View key={month.label} style={styles.spendCol}>
-                        <Text style={styles.spendValue} numberOfLines={1}>
+                        <Text
+                          style={styles.spendValue}
+                          numberOfLines={1}
+                          // Six months on a phone leaves each column narrow, and
+                          // amounts are four or five digits. Shrinking the type
+                          // when it has to beats the ellipsis that would
+                          // otherwise hide the last digit — the one that matters.
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.75}
+                        >
                           {Math.round(month.value).toLocaleString()}
                         </Text>
                         <View style={styles.spendTrack}>
                           <View
-                            style={[styles.spendFill, { height: `${Math.max((month.value / spendMax) * 100, 4)}%` }]}
+                            style={[
+                              styles.spendFill,
+                              {
+                                // A month with nothing spent gets no bar. The 4%
+                                // floor exists so a small month stays visible
+                                // beside a large one; applied to zero it drew a
+                                // fixed stub for every empty month, which read as
+                                // a placeholder rather than as a figure.
+                                height: `${month.value > 0 ? Math.max((month.value / spendMax) * 100, 4) : 0}%`,
+                              },
+                            ]}
                           />
                         </View>
                         <Text style={styles.spendLabel}>{month.label}</Text>
@@ -227,20 +246,31 @@ function ProductCard({ product }: { product: ProductPriceSummary }) {
       {expanded && (
         <View style={styles.history}>
           <View style={styles.sparkRow}>
-            {product.trend.map((point, index) => (
-              <View key={`${point.label}-${index}`} style={styles.sparkCol}>
-                <View style={styles.sparkTrack}>
-                  <View
-                    style={[
-                      styles.sparkFill,
-                      { height: `${Math.max((point.value / trendMax) * 100, 4)}%` },
-                      index === product.trend.length - 1 && styles.sparkFillLatest,
-                    ]}
-                  />
+            {product.trend.map((point, index) => {
+              // The bars are a price *level*, which is neither good nor bad on
+              // its own — only the change is. So the history is drawn neutral and
+              // the last bar, the one that is "now", takes the direction: red for
+              // a rise, green for a drop. It previously stayed the brand green
+              // whichever way the price had gone, which put a green bar directly
+              // under a red "+12%" badge.
+              const isLatest = index === product.trend.length - 1;
+              return (
+                <View key={`${point.label}-${index}`} style={styles.sparkCol}>
+                  <View style={styles.sparkTrack}>
+                    <View
+                      style={[
+                        styles.sparkFill,
+                        { height: `${Math.max((point.value / trendMax) * 100, 4)}%` },
+                        isLatest && (rising ? styles.sparkFillRise
+                          : falling ? styles.sparkFillDrop
+                          : styles.sparkFillFlat),
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.sparkLabel} numberOfLines={1}>{point.label}</Text>
                 </View>
-                <Text style={styles.sparkLabel} numberOfLines={1}>{point.label}</Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
           <Text style={styles.historyMeta}>
             Last recorded {new Date(product.lastRecordedAt).toLocaleDateString(undefined, {
@@ -363,9 +393,15 @@ const styles = StyleSheet.create({
   spendCard: { padding: SPACING.md },
   spendRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 120 },
   spendCol: { flex: 1, alignItems: 'center', height: '100%' },
-  spendValue: { fontSize: 10.5, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
+  // The amount is the number the card exists to show, so it is set at a size a
+  // person can read at a glance — it was 10.5, which left the bars dominating a
+  // figure that is the point of the chart.
+  spendValue: { fontSize: 13.5, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
   spendTrack: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  spendFill: { width: '100%', backgroundColor: COLORS.primary, borderRadius: 4 },
+  // A month's spend is a quantity, not a verdict, so the bars carry the neutral
+  // chart colour rather than the brand green — which in this app means "good",
+  // and was being said about a bill.
+  spendFill: { width: '100%', backgroundColor: COLORS.chartBar, borderRadius: 4 },
   spendLabel: { fontSize: 10.5, color: COLORS.secondaryText, marginTop: 5 },
 
   productCard: { padding: SPACING.md },
@@ -378,8 +414,14 @@ const styles = StyleSheet.create({
   sparkRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 72 },
   sparkCol: { flex: 1, alignItems: 'center', height: '100%' },
   sparkTrack: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  sparkFill: { width: '100%', backgroundColor: COLORS.primaryLight, borderRadius: 3 },
-  sparkFillLatest: { backgroundColor: COLORS.primary },
+  // Neutral, because a level on its own says nothing about whether it is good
+  // news. The latest bar is re-coloured below by the direction of the change.
+  // It was `neutralBg` (#E9ECEF), which is so close to the card it sits on that
+  // a bar looked like an empty track waiting to be filled.
+  sparkFill: { width: '100%', backgroundColor: COLORS.chartBar, borderRadius: 3 },
+  sparkFillRise: { backgroundColor: COLORS.danger },
+  sparkFillDrop: { backgroundColor: COLORS.success },
+  sparkFillFlat: { backgroundColor: COLORS.secondaryText },
   sparkLabel: { fontSize: 9, color: COLORS.secondaryText, marginTop: 4 },
   historyMeta: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: SPACING.sm },
 

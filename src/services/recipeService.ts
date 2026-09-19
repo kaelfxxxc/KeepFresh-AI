@@ -25,7 +25,22 @@ type RecipeRow = Recipe & { recipe_ingredients?: RecipeIngredient[] | null };
 
 /** Shared select: the recipe, plus exactly the ingredient fields the UI reads. */
 const RECIPE_COLUMNS =
-  '*, recipe_ingredients(id, recipe_id, ingredient_name, quantity, unit, optional, available)';
+  '*, recipe_ingredients(id, recipe_id, ingredient_name, quantity, unit, optional, available, inventory_item_id)';
+
+/**
+ * The detail screen's select: the shared columns, plus the name of the product
+ * the recipe was generated around.
+ *
+ * `primary_inventory_item_id` is enough to *link* a recipe to an item but not to
+ * name it, and the detail screen's one useful sentence about it — "built around
+ * your chicken" — needs the name. Embedding it here answers that in the same
+ * request rather than a second round trip.
+ *
+ * The `!primary_inventory_item_id` hint names the foreign key column, which is
+ * how PostgREST picks between two tables it could otherwise join on more than
+ * one path. Only the detail screen pays for it, so the list query is unchanged.
+ */
+const RECIPE_DETAIL_COLUMNS = `${RECIPE_COLUMNS}, primary_item:inventory_items!primary_inventory_item_id(product_name)`;
 
 /**
  * Roll the nested ingredients into the summary counts a card renders, and drop
@@ -34,15 +49,26 @@ const RECIPE_COLUMNS =
  * The card shows "5 of 7 ingredients" without a query per row, and the counts
  * come from the same rows the detail screen splits on — so a card and the screen
  * it opens can never disagree about coverage.
+ *
+ * `inventory_item_ids` is gathered here for the same reason: the product chips
+ * need "which pantry items is this dish for", and the answer is already in the
+ * rows this function is walking. De-duplicated, because a recipe can name the
+ * same product twice ("chicken thigh" and "chicken stock" both match one item).
  */
 function withRollup(row: RecipeRow): RecipeWithIngredients {
   const ingredients = row.recipe_ingredients ?? [];
   const { recipe_ingredients: _nested, ...recipe } = row;
+
+  const itemIds = new Set<string>();
+  if (row.primary_inventory_item_id) itemIds.add(row.primary_inventory_item_id);
+  ingredients.forEach((i) => { if (i.inventory_item_id) itemIds.add(i.inventory_item_id); });
+
   return {
     ...recipe,
     ingredient_names: ingredients.map((i) => i.ingredient_name),
     available_count: ingredients.filter((i) => i.available).length,
     total_count: ingredients.length,
+    inventory_item_ids: [...itemIds],
   };
 }
 
@@ -61,6 +87,17 @@ export interface GroceryAddResult {
   added: string[];
   /** Names already there — re-tapping is a no-op, not a duplicate row. */
   already_listed: string[];
+}
+
+/** Everything the detail screen renders, in one answer. */
+export interface RecipeDetail {
+  recipe: Recipe;
+  ingredients: RecipeIngredient[];
+  /**
+   * The product this recipe was built around, when it came from a per-product
+   * set. NULL for the pantry-wide recipes, which are not "for" any single item.
+   */
+  primaryItemName: string | null;
 }
 
 export const recipeService = {
@@ -99,28 +136,46 @@ export const recipeService = {
    * roughly the order the dish needs them. The screen re-sorts into available and
    * missing; nothing depends on the original order surviving that.
    */
-  async getRecipeDetail(
-    id: string,
-  ): Promise<{ recipe: Recipe; ingredients: RecipeIngredient[] } | null> {
+  async getRecipeDetail(id: string): Promise<RecipeDetail | null> {
     const { data, error } = await supabase
       .from('recipes')
-      .select(RECIPE_COLUMNS)
+      .select(RECIPE_DETAIL_COLUMNS)
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
 
-    const { recipe_ingredients: ingredients, ...recipe } = data as RecipeRow;
-    return { recipe: recipe as Recipe, ingredients: ingredients ?? [] };
+    // The client is untyped and reads an embedded to-one relation as a bare
+    // object, which is a shape it cannot infer — hence the cast, as in
+    // `getFavorites`.
+    const {
+      recipe_ingredients: ingredients,
+      primary_item: primaryItem,
+      ...recipe
+    } = data as unknown as RecipeRow & { primary_item: { product_name: string } | null };
+
+    return {
+      recipe: recipe as Recipe,
+      ingredients: ingredients ?? [],
+      primaryItemName: primaryItem?.product_name ?? null,
+    };
   },
 
   /**
    * Ask the server to write a new set of recipes from the current inventory.
    *
-   * Spends one AI scan on success. The server does the spending, after the model
-   * has answered — so a refusal, an empty pantry, or an Anthropic outage costs
-   * the user nothing, and `limit_reached` is the only outcome that means they
-   * were charged and refused.
+   * Spends one AI scan on success — the whole generation, however many model
+   * calls it took to write. The server does the spending, after the model has
+   * answered — so a refusal, an empty pantry, or an outage costs the user
+   * nothing, and `limit_reached` is the only outcome that means they were
+   * charged and refused.
+   *
+   * Passing `category` narrows the request to a single chip and the server
+   * answers with one call. Leaving it out is what makes the generation cover
+   * products: the server also writes a set around each of the most urgent few,
+   * which is what the product chips on the tab read. That is several model calls
+   * and takes noticeably longer, which is why the screen's confirmation says so
+   * rather than letting the spinner be the only warning.
    *
    * The caller re-reads the list afterwards rather than rendering a response:
    * there is one shape for a recipe in this app, and it is the row.

@@ -42,7 +42,10 @@ export function DatePickerModal({
   visible,
   value,
   minDate = todayKey(),
+  maxDate = null,
   title = 'Expiration date',
+  confirmLabel = 'Set date',
+  showClear = true,
   onCancel,
   onConfirm,
 }: {
@@ -51,7 +54,19 @@ export function DatePickerModal({
   value: string | null;
   /** Earliest selectable day. `null` removes the floor entirely. */
   minDate?: string | null;
+  /**
+   * Latest selectable day, or `null` for no ceiling.
+   *
+   * The floor defaults to today because this picker was built for expiration
+   * dates, which are always ahead. Browsing the past — a report's range, say —
+   * passes `minDate={null}` and a ceiling instead, which is why both bounds are
+   * expressed here rather than only the future-facing one.
+   */
+  maxDate?: string | null;
   title?: string;
+  confirmLabel?: string;
+  /** Whether to offer clearing the value at all. */
+  showClear?: boolean;
   onCancel: () => void;
   /** Called with the chosen `YYYY-MM-DD`, or null when cleared. */
   onConfirm: (value: string | null) => void;
@@ -69,6 +84,7 @@ export function DatePickerModal({
 
   const today = todayKey();
   const floor = minDate ? parseDateKey(minDate) : null;
+  const ceiling = maxDate ? parseDateKey(maxDate) : null;
 
   // Leading blanks put the 1st under its weekday. The trailing pad keeps every
   // row a full seven, which matters because each cell flexes to an equal share —
@@ -95,6 +111,8 @@ export function DatePickerModal({
   // Compared as strings: for zero-padded keys, lexicographic order is date order.
   const atFloor =
     floor != null && dateKey({ y: floor.y, m: floor.m, d: 1 }) <= dateKey({ y: cursor.y, m: cursor.m, d: 1 });
+  const atCeiling =
+    ceiling != null && dateKey({ y: ceiling.y, m: ceiling.m, d: 1 }) <= dateKey({ y: cursor.y, m: cursor.m, d: 1 });
 
   const shiftMonth = (delta: number) => {
     setCursor((current) => monthOf(`${current.y}-${String(current.m + 1).padStart(2, '0')}-01`, delta));
@@ -120,12 +138,13 @@ export function DatePickerModal({
 
             <Pressable
               onPress={() => shiftMonth(1)}
+              disabled={atCeiling}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Next month"
-              style={styles.navBtn}
+              style={[styles.navBtn, atCeiling && styles.navBtnOff]}
             >
-              <ChevronRight size={19} strokeWidth={2.4} color={COLORS.text} />
+              <ChevronRight size={19} strokeWidth={2.4} color={atCeiling ? COLORS.divider : COLORS.text} />
             </Pressable>
           </View>
 
@@ -143,7 +162,9 @@ export function DatePickerModal({
                 {week.map((key, index) => {
                   if (!key) return <View key={`blank-${index}`} style={styles.cell} />;
 
-                  const disabled = floor != null && key < minDate!;
+                  const outOfFloor = floor != null && key < minDate!;
+                  const outOfCeiling = ceiling != null && key > maxDate!;
+                  const disabled = outOfFloor || outOfCeiling;
                   const isSelected = key === selected;
                   const isToday = key === today;
                   const dayNumber = Number(key.slice(8));
@@ -187,18 +208,20 @@ export function DatePickerModal({
           </View>
 
           <View style={styles.actions}>
-            <Pressable
-              onPress={() => onConfirm(null)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Clear the expiration date"
-              style={styles.clearBtn}
-            >
-              <Text style={styles.clearText}>Clear</Text>
-            </Pressable>
+            {showClear && (
+              <Pressable
+                onPress={() => onConfirm(null)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Clear the date"
+                style={styles.clearBtn}
+              >
+                <Text style={styles.clearText}>Clear</Text>
+              </Pressable>
+            )}
             <PillButton title="Cancel" variant="outline" onPress={onCancel} style={{ flex: 1 }} />
             <PillButton
-              title="Set date"
+              title={confirmLabel}
               onPress={() => onConfirm(selected)}
               disabled={!selected}
               style={{ flex: 1 }}

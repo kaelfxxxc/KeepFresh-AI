@@ -60,3 +60,16 @@ export function parseDateKey(key: string | null | undefined): CalendarDate | nul
   if (probe.getFullYear() !== y || probe.getMonth() !== m || probe.getDate() !== d) return null;
   return { y, m, d };
 }
+
+/**
+ * A stored key as one line for display, in the app's timezone.
+ *
+ * Display only: comparisons and storage stay on the key itself, so nothing has
+ * to parse a human string back. An unreadable key renders as a dash rather than
+ * "Invalid Date".
+ */
+export function formatDateKey(key: string | null | undefined, format = 'D MMM YYYY'): string {
+  const parts = parseDateKey(key);
+  if (!parts) return '—';
+  return moment.tz([parts.y, parts.m, parts.d], APP_TIMEZONE).format(format);
+}

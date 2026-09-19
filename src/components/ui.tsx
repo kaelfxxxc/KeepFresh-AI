@@ -21,6 +21,7 @@ import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
 import { directImageUri, resolveItemImageUri } from '../services/inventoryImageService';
+import { resolveAvatarUri } from '../services/avatarService';
 
 type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'wasted';
@@ -432,8 +433,39 @@ export function AvatarCircle({ uri, initials, size = 42, onPress }: {
   size?: number;
   onPress?: () => void;
 }) {
-  const node = uri ? (
-    <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+  // An avatar is stored as a path inside the private `avatars` bucket and has to
+  // be signed before <Image> can fetch it; a photo the user just picked is still
+  // a local file and renders as it stands. Same shape as ItemImage below, and for
+  // the same reason — resolving without a promise where we can is what keeps the
+  // fallback from flashing over a photo that is about to load.
+  const [signed, setSigned] = useState<string | null>(null);
+  const [broken, setBroken] = useState(false);
+  const immediate = directImageUri(uri);
+
+  useEffect(() => {
+    setBroken(false);
+    setSigned(null);
+    if (!uri || immediate) return undefined;
+    let live = true;
+    resolveAvatarUri(uri).then((next) => {
+      if (live) setSigned(next);
+    });
+    // A row recycled onto another member must not take the previous avatar.
+    return () => { live = false; };
+  }, [uri, immediate]);
+
+  const source = immediate ?? signed;
+
+  // Initials rather than a blank circle when there is nothing to show. A photo
+  // that will not load — deleted object, or an unreadable URL from an older
+  // build — should still leave the user identified instead of anonymous, which
+  // is exactly what a bare <Image> left behind.
+  const node = source && !broken ? (
+    <Image
+      source={{ uri: source }}
+      onError={() => setBroken(true)}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
+    />
   ) : (
     <View style={[styles.avatarFallback, { width: size, height: size, borderRadius: size / 2 }]}>
       <Text style={[styles.avatarInitials, { fontSize: size * 0.4 }]}>

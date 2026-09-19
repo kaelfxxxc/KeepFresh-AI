@@ -10,14 +10,21 @@ import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
 import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
 import {
-  ChevronRight, Crown, History, Package,
+  CalendarDays, ChevronRight, Crown, History, Package,
   PieChart, ShoppingBasket, ShoppingCart, TrendingDown,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import { AvatarCircle, ItemImage, SectionLabel, StatusBadge } from '../../src/components/ui';
 import { NotificationBell } from '../../src/components/NotificationBell';
+import { DateRangePickerModal } from '../../src/components/DateRangePicker';
 import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
 import { timeAgo } from '../../src/utils/timeAgo';
+import { todayKey } from '../../src/utils/dateKey';
+import {
+  buildWasteTrend, defaultRange, earliestSelectableKey, formatRangeLabel,
+  monthKeyIn, monthKeyOf, queryStartIso, unitLabel,
+} from '../../src/utils/wasteTrend';
+import type { BucketUnit, TrendBucket } from '../../src/utils/wasteTrend';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 
 /** One row of the "Recently consumed" list. */
@@ -25,6 +32,8 @@ interface ConsumedEntry {
   id: string;
   name: string;
   category: string | null;
+  /** A bucket path or a remote URL — signed for display by ItemImage. */
+  imageUrl: string | null;
   quantity: number;
   unit: string;
   at: string;
@@ -47,11 +56,33 @@ interface HomeStats {
   expirationAlerts: number;
   recentlyConsumed: ConsumedEntry[];
   wasteThisMonth: number;   // item count this month
-  wasteDeltaPct: number;    // vs previous month (+ = worse)
-  trend: { month: string; value: number }[];
+  /**
+   * Percentage change against last month, or `null` when there is no last month
+   * to compare against (nothing was binned then). Null is a real answer, not a
+   * zero: a month that went from no waste to some is not "0% change".
+   */
+  wasteDeltaPct: number | null;
+  /**
+   * One point per bucket of the selected range, oldest first. The bucket size
+   * follows the range (`bucketUnit` says which), so the chart is always legible
+   * whatever span the user picked.
+   */
+  trend: TrendBucket[];
+  /** How to read `trend`'s labels — `Daily`, `Weekly` or `Monthly`. */
+  bucketUnit: BucketUnit;
+  /**
+   * The range these buckets were read for.
+   *
+   * Carried so the chart can tell whether the bars on screen answer the range the
+   * header is currently naming. Committing a new range re-reads, and until that
+   * read lands the old bars are still in `trend` — drawing them under the new
+   * label would show one range's numbers under another's name. Matching these
+   * against the committed range is what keeps the pair together, including when
+   * the read fails and they never would have.
+   */
+  rangeStart: string;
+  rangeEnd: string;
 }
-
-const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 export default function HomeScreen() {
   const { profile } = useAuth();
@@ -66,6 +97,13 @@ export default function HomeScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /**
+   * The span the trend covers. Seeded from `defaultRange` — the last six months,
+   * the view the card showed before the range was selectable — and owned here
+   * rather than by the picker, because the read depends on it.
+   */
+  const [range, setRange] = useState(defaultRange);
+  const [rangeOpen, setRangeOpen] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     if (!profile) return;
@@ -111,11 +149,12 @@ export default function HomeScreen() {
       const lowStock = available.filter((i) => Number(i.quantity ?? 0) <= LOW_STOCK_THRESHOLD).length;
 
       // The last few things the user actually used up, newest first. The item
-      // join gives the row its name, category and unit; consumption records
-      // cascade away with their item, so a row here always has something to show.
+      // join gives the row its name, category, unit and photo; consumption
+      // records cascade away with their item, so a row here always has something
+      // to show.
       const { data: consumed } = await supabase
         .from('inventory_consumption')
-        .select('id, quantity, unit, consumed_at, inventory_items(product_name, category, unit)')
+        .select('id, quantity, unit, consumed_at, inventory_items(product_name, category, unit, image_url)')
         .eq('user_id', uid)
         .order('consumed_at', { ascending: false })
         .limit(5);
@@ -124,41 +163,46 @@ export default function HomeScreen() {
         id: row.id as string,
         name: row.inventory_items?.product_name || 'Item',
         category: row.inventory_items?.category ?? null,
+        // Carried through so the row shows the photo the item was added with,
+        // rather than only ever its category icon.
+        imageUrl: row.inventory_items?.image_url ?? null,
         quantity: Number(row.quantity ?? 0),
         unit: row.unit || row.inventory_items?.unit || 'pcs',
         at: row.consumed_at as string,
       }));
 
-      // Waste rows over the last ~60 days for this vs previous month
-      const since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0);
+      // Waste rows over the selected range. This used to ask only for the
+      // current month and then invent a series to draw, so the chart showed
+      // numbers nothing in the database backed — and it was pinned to Apr–Aug,
+      // which is only the right half-year in August.
+      //
+      // The read starts at whichever comes first, the range or the start of last
+      // month, so the same rows serve the chart the user asked for and the
+      // banner's this-month-against-last comparison, which does not move with the
+      // range.
       const { data: waste } = await supabase
         .from('food_waste')
-        .select('wasted_at, estimated_value')
+        .select('wasted_at')
         .eq('user_id', uid)
-        .gte('wasted_at', since.toISOString());
+        .gte('wasted_at', queryStartIso(range.start));
 
+      // Counted by month, in the app's timezone, for the banner's two figures.
       const byMonth: Record<string, number> = {};
-      waste?.forEach((w) => {
-        const k = monthKey(new Date(w.wasted_at));
+      (waste ?? []).forEach((w) => {
+        const k = monthKeyOf(w.wasted_at);
         byMonth[k] = (byMonth[k] || 0) + 1;
       });
-      const thisMonth = monthKey(new Date());
-      const lastMonthDate = new Date(); lastMonthDate.setDate(0);
-      const lastMonth = monthKey(lastMonthDate);
-      const wasteThisMonth = byMonth[thisMonth] || 0;
-      const prevMonth = byMonth[lastMonth] || 0;
+
+      const wasteThisMonth = byMonth[monthKeyIn(0)] ?? 0;
+      const prevMonth = byMonth[monthKeyIn(-1)] ?? 0;
       const wasteDeltaPct = prevMonth > 0
         ? Math.round(((wasteThisMonth - prevMonth) / prevMonth) * 100)
-        : 0;
+        : null;
 
-      // April-August trend (falls back to a gentle pseudo-series when sparse)
-      const labels = ['Apr', 'May', 'Jun', 'Jul', 'Aug'];
-      const year = today.getFullYear();
-      const trend = labels.map((m, idx) => {
-        const k = `${year}-${String(idx + 4).padStart(2, '0')}`;
-        const real = byMonth[k];
-        return { month: m, value: real ?? 1 + ((idx * 7) % 3) };
-      });
+      // The bars themselves. Bucketing is the trend module's job — it picks the
+      // unit from the span, so a fortnight of waste is drawn by the day and two
+      // years of it by the month, without the card ever having to decide.
+      const { unit: bucketUnit, buckets } = buildWasteTrend(waste ?? [], range.start, range.end);
 
       setStats({
         totalItems: available.length,
@@ -168,14 +212,17 @@ export default function HomeScreen() {
         recentlyConsumed,
         wasteThisMonth,
         wasteDeltaPct,
-        trend,
+        trend: buckets,
+        bucketUnit,
+        rangeStart: range.start,
+        rangeEnd: range.end,
       });
     } catch (e) {
       console.error('Error fetching dashboard:', e);
     } finally {
       setRefreshing(false);
     }
-  }, [profile]);
+  }, [profile, range]);
 
   useEffect(() => {
     if (profile) fetchDashboard();
@@ -184,13 +231,14 @@ export default function HomeScreen() {
   // Every number on this screen is derived, so the honest way to keep it live is
   // to re-run the query rather than to patch individual counters — a consume on
   // another device moves the need-to-buy, low-stock and recently-consumed figures
-  // at once. Realtime is a freshness layer only; focus and pull-to-refresh still
-  // carry the screen when the socket is down.
+  // at once, and binning something moves the waste banner and the trend's last
+  // bar together. Realtime is a freshness layer only; focus and pull-to-refresh
+  // still carry the screen when the socket is down.
   useEffect(() => {
     if (!profile) return undefined;
     return subscribeToTables(
       `dashboard:${profile.id}`,
-      ['inventory_items', 'inventory_consumption'],
+      ['inventory_items', 'inventory_consumption', 'food_waste'],
       () => { fetchDashboard(); },
       { userId: profile.id }
     );
@@ -218,9 +266,45 @@ export default function HomeScreen() {
   const firstName = (profile.full_name || 'there').split(' ')[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const better = (stats?.wasteDeltaPct ?? 0) <= 0;
 
-  const maxTrend = Math.max(1, ...(stats?.trend.map((t) => t.value) ?? [1]));
+  const delta = stats?.wasteDeltaPct ?? null;
+  const better = (delta ?? 0) <= 0;
+  const wasteThisMonth = stats?.wasteThisMonth ?? 0;
+  /**
+   * The bars for the committed range, or none.
+   *
+   * Committing a new range re-reads, and until that read lands `stats.trend` is
+   * still the previous range's — so the chart waits rather than drawing one
+   * range's numbers under another range's name. It also covers the read that
+   * never lands: the bars stay withheld instead of going quietly stale.
+   */
+  const trendFor = stats != null && stats.rangeStart === range.start && stats.rangeEnd === range.end
+    ? stats
+    : null;
+  const trend = trendFor?.trend ?? [];
+  const bucketUnit = trendFor?.bucketUnit ?? 'month';
+
+  /** The span the chart covers, as one line for the chip that opens the picker. */
+  const rangeLabel = formatRangeLabel(range.start, range.end);
+
+  /**
+   * The line that sits beside the percentage, when there is one worth showing.
+   *
+   * Null until the read lands: "nothing wasted" is a claim about the data, and
+   * making it before the data arrives would be asserting something we do not
+   * know yet.
+   */
+  const deltaNote = stats == null
+    ? null
+    : wasteThisMonth === 0
+      ? 'Nothing wasted — great job!'
+      // Wasted, with nothing to measure it against — the case the missing chip
+      // would otherwise leave unexplained.
+      : delta == null
+        ? 'Nothing wasted last month to compare'
+        : null;
+
+  const maxTrend = Math.max(1, ...(trend.map((t) => t.value)));
 
   const consumed = stats?.recentlyConsumed ?? [];
 
@@ -344,18 +428,23 @@ export default function HomeScreen() {
             adjustsFontSizeToFit
             minimumFontScale={0.6}
           >
-            {stats?.wasteThisMonth ?? 0} items
+            {wasteThisMonth} items
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
-            <View style={[styles.deltaChip, better ? { backgroundColor: COLORS.successBg } : { backgroundColor: COLORS.dangerBg }]}>
-              <TrendingDown size={12} color={better ? COLORS.successText : COLORS.dangerText} strokeWidth={2.5} />
-              <Text style={[styles.deltaText, { color: better ? COLORS.successText : COLORS.dangerText }]}>
-                {better ? '' : '+'}{stats?.wasteDeltaPct ?? 0}% vs last month
-              </Text>
-            </View>
-            {stats && stats.wasteThisMonth === 0 && (
-              <Text style={styles.deltaNote}>Nothing wasted — great job!</Text>
+            {/* The chip is the comparison, and there is only a comparison when
+                last month had waste: no baseline is not the same as no change,
+                so it is left off rather than shown as 0%. The note beside it
+                says which of the two "nothing to compare" and "nothing wasted"
+                actually applies. */}
+            {delta != null && (
+              <View style={[styles.deltaChip, better ? { backgroundColor: COLORS.successBg } : { backgroundColor: COLORS.dangerBg }]}>
+                <TrendingDown size={12} color={better ? COLORS.successText : COLORS.dangerText} strokeWidth={2.5} />
+                <Text style={[styles.deltaText, { color: better ? COLORS.successText : COLORS.dangerText }]}>
+                  {better ? '' : '+'}{delta}% vs last month
+                </Text>
+              </View>
             )}
+            {deltaNote && <Text style={styles.deltaNote}>{deltaNote}</Text>}
           </View>
         </Pressable>
 
@@ -402,33 +491,62 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* Waste trend */}
+        {/* Waste trend — real rows from `food_waste`, bucketed to suit the span
+            the user picked, with a bucket nothing was binned in drawn as no bar
+            rather than as a stub.
+
+            The range chip is the control, not a label: it opens the picker, and
+            it is also where the span is read back. The unit sits opposite it,
+            because day and week buckets are labelled with a bare number and
+            "12" means nothing until you know whether it is a day or a week. */}
         <View style={styles.chartCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.chartTitle}>Food Waste Trend</Text>
-            <StatusBadge label="Apr–Aug" tone="success" />
+          <Text style={styles.chartTitle}>Food Waste Trend</Text>
+          <View style={styles.chartHeaderRow}>
+            <Pressable
+              style={({ pressed }) => [styles.rangeChip, pressed && { opacity: 0.75 }]}
+              onPress={() => setRangeOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Time range: ${rangeLabel}. Change the range`}
+            >
+              <CalendarDays size={13} strokeWidth={2.4} color={COLORS.primaryDark} />
+              <Text style={styles.rangeChipText} numberOfLines={1}>{rangeLabel}</Text>
+              <ChevronRight size={13} strokeWidth={2.6} color={COLORS.primaryDark} />
+            </Pressable>
+            {trendFor && <Text style={styles.unitCaption}>{unitLabel(bucketUnit)}</Text>}
           </View>
-          <View style={styles.chart}>
-            {(stats?.trend ?? []).map((pt, i) => (
-              <View key={i} style={styles.chartCol}>
-                <Text style={styles.chartValue}>{pt.value}</Text>
-                <View style={[styles.chartBarTrack, { height: 74 }]}>
-                  <View
-                    style={[
-                      styles.chartBar,
-                      { height: Math.max(4, (pt.value / maxTrend) * 74) },
-                    ]}
-                  />
+          {trendFor == null ? (
+            // Waiting on the read for the committed range — the first one, or a
+            // new range's. Not to be confused with "no waste": that is a real
+            // result and is drawn as a row of zero-height bars, which says it
+            // plainly. `buildWasteTrend` always returns at least one bucket, so
+            // this branch is only ever the wait.
+            <View style={styles.chartWaiting}>
+              <Text style={styles.chartWaitingText}>Loading…</Text>
+            </View>
+          ) : (
+            <View style={styles.chart}>
+              {trend.map((pt, i) => (
+                <View key={i} style={styles.chartCol}>
+                  <Text style={styles.chartValue}>{pt.value}</Text>
+                  <View style={[styles.chartBarTrack, { height: 74 }]}>
+                    <View
+                      style={[
+                        styles.chartBar,
+                        { height: pt.value > 0 ? Math.max(4, (pt.value / maxTrend) * 74) : 0 },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.chartLabel}>{pt.label}</Text>
                 </View>
-                <Text style={styles.chartLabel}>{pt.month}</Text>
-              </View>
-            ))}
-          </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Recently consumed — what has actually left the pantry lately. The
-            category icon comes from the same resolver the inventory rows use, so
-            the same food looks the same in both places.
+            item's own photo when it has one, falling back to the category icon
+            from the same resolver the inventory rows use, so the same food looks
+            the same in both places.
 
             Sits under the trend rather than above it: the chart is the summary of
             the month, and the rows below it are the detail behind that summary —
@@ -448,7 +566,7 @@ export default function HomeScreen() {
             <View style={styles.card}>
               {consumed.map((entry, index) => (
                 <View key={entry.id} style={[styles.consumeRow, index > 0 && styles.consumeRowDivided]}>
-                  <ItemImage category={entry.category} size={38} />
+                  <ItemImage uri={entry.imageUrl} category={entry.category} size={38} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.consumeName} numberOfLines={1}>{entry.name}</Text>
                     <Text style={styles.consumeMeta} numberOfLines={1}>
@@ -462,6 +580,27 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* The range picker sits outside the ScrollView: it is presented over the
+          whole screen, and inside a scroll container it would be clipped to the
+          scrolled viewport rather than centred on the display. */}
+      <DateRangePickerModal
+        visible={rangeOpen}
+        start={range.start}
+        end={range.end}
+        minDate={earliestSelectableKey()}
+        maxDate={todayKey()}
+        title="Trend range"
+        onCancel={() => setRangeOpen(false)}
+        onConfirm={(start, end) => {
+          setRange({ start, end });
+          setRangeOpen(false);
+        }}
+        onReset={() => {
+          setRange(defaultRange());
+          setRangeOpen(false);
+        }}
+      />
     </View>
   );
 }
@@ -568,8 +707,26 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     ...SHADOW.card,
   },
-  chartTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text, marginBottom: 4 },
+  chartTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  // The chip takes the slack and the unit caption keeps its intrinsic width, so
+  // a long range label ellipsises instead of pushing the unit off the card.
+  chartHeaderRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', gap: SPACING.sm, marginTop: 6,
+  },
+  rangeChip: {
+    flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: COLORS.primaryLight, borderRadius: RADII.pill,
+    paddingVertical: 6, paddingHorizontal: 11,
+  },
+  rangeChipText: { flexShrink: 1, fontSize: 12, fontWeight: '700', color: COLORS.primaryDark },
+  unitCaption: { fontSize: 11.5, fontWeight: '700', color: COLORS.secondaryText },
   chart: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.md },
+  // Matches what the bars occupy — value line, 74pt track, label — plus the
+  // chart's own top margin, so the card does not resize when the read lands and
+  // push the rest of the page down.
+  chartWaiting: { marginTop: SPACING.md, height: 110, alignItems: 'center', justifyContent: 'center' },
+  chartWaitingText: { fontSize: 12.5, color: COLORS.secondaryText },
   chartCol: { flex: 1, alignItems: 'center' },
   chartValue: { fontSize: 10, color: COLORS.secondaryText, marginBottom: 3 },
   chartBarTrack: { width: 18, justifyContent: 'flex-end', backgroundColor: COLORS.mutedBg, borderRadius: 9, overflow: 'hidden' },

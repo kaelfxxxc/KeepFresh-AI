@@ -5,11 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { recipeService } from '../../src/services/recipeService';
 import { RecipeImage, matchTone } from '../../src/components/RecipeImage';
+import { cuisineLabel } from '../../src/utils/pantryRecipes';
 import type { Recipe, RecipeIngredient } from '../../src/types';
 import { COLORS, SPACING, RADII } from '../../src/theme';
 import {
   Heart, Clock3, Timer, Users, ChefHat, ArrowLeft, Check, Plus,
-  UtensilsCrossed, ShoppingCart,
+  UtensilsCrossed, ShoppingCart, Package,
 } from 'lucide-react-native';
 import { PillButton, StatusBadge } from '../../src/components/ui';
 
@@ -20,6 +21,8 @@ export default function RecipeDetailScreen() {
   const recipeId = params.id;
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>([]);
+  /** The product this dish was generated around, when it was one of those sets. */
+  const [primaryItem, setPrimaryItem] = useState<string | null>(null);
   /** Tick-offs as the user cooks. Available ingredients only — you can't check off what you don't have. */
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   /** Ingredient names already on the grocery list, by name. */
@@ -36,6 +39,7 @@ export default function RecipeDetailScreen() {
         if (detail) {
           setRecipe(detail.recipe);
           setIngredients(detail.ingredients);
+          setPrimaryItem(detail.primaryItemName);
         }
         setIsFavorite(await recipeService.isFavorite(profile.id, recipeId));
 
@@ -149,7 +153,12 @@ export default function RecipeDetailScreen() {
           <Pressable style={[styles.roundBtn, { top: insets.top + 6, right: SPACING.lg }]} onPress={toggleFavorite} hitSlop={8}>
             <Heart size={20} color={isFavorite ? COLORS.danger : COLORS.text} fill={isFavorite ? COLORS.danger : 'transparent'} strokeWidth={2} />
           </Pressable>
-          <StatusBadge label={recipe.category || 'Meal'} tone="success" style={styles.heroBadge} />
+          {/* Category and cuisine together: both describe what the dish *is*, so
+              they sit over the photo rather than in the row of facts below it. */}
+          <View style={styles.heroBadges}>
+            <StatusBadge label={recipe.category || 'Meal'} tone="success" />
+            {!!recipe.cuisine && <StatusBadge label={cuisineLabel(recipe.cuisine)} tone="primary" />}
+          </View>
         </View>
 
         <View style={styles.content}>
@@ -169,6 +178,15 @@ export default function RecipeDetailScreen() {
             )}
             <View style={styles.metaChip}><ChefHat size={14} color={COLORS.primary} strokeWidth={2.2} /><Text style={styles.metaText}>{recipe.difficulty}</Text></View>
             <View style={styles.metaChip}><Users size={14} color={COLORS.primary} strokeWidth={2.2} /><Text style={styles.metaText}>Serves {recipe.servings}</Text></View>
+            {/* Only the per-product sets have one of these, and it is the answer
+                to "why did the app suggest this to me" — so it is stated, not
+                left for the ingredients list to imply. */}
+            {!!primaryItem && (
+              <View style={styles.metaChip}>
+                <Package size={14} color={COLORS.primary} strokeWidth={2.2} />
+                <Text style={styles.metaText}>For {primaryItem}</Text>
+              </View>
+            )}
           </View>
 
           {/* What this recipe costs you at the shop, in the numbers the card promised. */}
@@ -287,7 +305,14 @@ const styles = StyleSheet.create({
   loadingText: { color: COLORS.secondaryText, textAlign: 'center' },
   missingTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
   hero: { height: 230, position: 'relative' },
-  heroBadge: { position: 'absolute', left: SPACING.lg, bottom: SPACING.md },
+  heroBadges: {
+    position: 'absolute',
+    left: SPACING.lg,
+    bottom: SPACING.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
   roundBtn: {
     position: 'absolute', left: SPACING.lg,
     width: 38, height: 38, borderRadius: 19,

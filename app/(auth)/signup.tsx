@@ -54,14 +54,27 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
-    const { error, requiresEmailConfirmation } = await signUp(email.trim(), password, fullName.trim(), accountType);
+    const { error, requiresEmailConfirmation } = await signUp(
+      email.trim(),
+      password,
+      fullName.trim(),
+      accountType,
+      // Carried through to the account creation itself, which is the first point
+      // there is a session for the bucket policy to accept an upload under. It
+      // used to be dropped here entirely, so the photo simply never existed.
+      avatar
+    );
     setLoading(false);
     if (error) {
       Alert.alert('Sign up failed', error.message);
     } else if (requiresEmailConfirmation) {
-      Alert.alert('Check your email', 'We sent you a confirmation link. Confirm it, then log in.', [
-        { text: 'OK', onPress: () => router.replace('/login') },
-      ]);
+      Alert.alert(
+        'Check your email',
+        avatar
+          ? 'We sent you a confirmation link. Confirm it, then log in — your photo can be added from Profile afterwards.'
+          : 'We sent you a confirmation link. Confirm it, then log in.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
+      );
     } else {
       Alert.alert('Welcome to KeepFresh AI!', 'Your account is ready.', [
         { text: 'OK', onPress: () => router.replace('/(tabs)') },

@@ -48,6 +48,7 @@ import {
   EmptyState,
   StatusBadge,
   FeatureLock,
+  PlanCheckLock,
   SectionLabel,
   Segmented,
 } from '../src/components/ui';
@@ -89,7 +90,7 @@ type IconComp = React.ComponentType<LucideProps>;
 
 export default function PriceTrackingScreen() {
   const { profile } = useAuth();
-  const { gates } = useSubscription();
+  const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
   const insets = useSafeAreaInsets();
   // Caps the content column and centres it, the same way Inventory and the Add
   // Item form do — so a tablet or a landscape phone gets a readable column
@@ -190,7 +191,20 @@ export default function PriceTrackingScreen() {
   // on screen.
   const filtering = activeFilter !== 'all' || query.length > 0;
 
-  if (!canView && !loading) {
+  // No entitlements means we cannot tell whether this page is allowed: `gates`
+  // reports every feature as allowed until it has a snapshot to read, so falling
+  // through to the content would show a lapsed account the very page its plan
+  // does not include. Say the plan is still unknown rather than guess either way.
+  if (!entitlements) {
+    return (
+      <View style={styles.container}>
+        <NavHeader title="Price Tracking" subtitle="Know what your groceries cost" />
+        <PlanCheckLock loading={planLoading} error={planError} onRetry={refreshPlan} />
+      </View>
+    );
+  }
+
+  if (!canView) {
     return (
       <View style={styles.container}>
         <NavHeader title="Price Tracking" subtitle="Know what your groceries cost" />

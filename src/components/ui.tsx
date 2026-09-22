@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight, RefreshCw, WifiOff } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
@@ -925,6 +925,15 @@ export function UpgradeNotice({
 
 /* --------------------------------------------------- Feature lock */
 /**
+ * What a locked page says when the caller has nothing more specific to add.
+ *
+ * Phrased as a requirement rather than a description. The lock above it already
+ * explains what the feature is; a user whose plan just lapsed needs to be told
+ * they cannot keep using the page, which is a different sentence.
+ */
+const LOCK_REQUIREMENT = 'Subscribe to continue using this page.';
+
+/**
  * A whole screen standing in for a feature the current plan does not include.
  *
  * Shows what the feature is for, so the upsell is informative rather than a
@@ -935,14 +944,31 @@ export function FeatureLock({
   icon: Icon,
   title,
   message,
+  requirement,
   ctaLabel = 'See plans',
+  ctaIcon: CtaIcon = Crown,
+  busy,
   onPress,
   bullets,
 }: {
   icon?: IconComp;
   title: string;
   message: string;
+  /**
+   * The condition the user has to meet, stated as a condition.
+   *
+   * Omitted, it renders the default "subscribe to continue" line — the shape
+   * almost every lock wants. `null` suppresses it for a lock that is not about
+   * paying at all (a feature the account type cannot buy, or a plan we could not
+   * read yet); a string states something more specific. `null` is deliberately
+   * distinct from omitting the prop, so a caller can switch the line off without
+   * having to pass an empty string that would still take up a line of the layout.
+   */
+  requirement?: string | null;
   ctaLabel?: string;
+  ctaIcon?: IconComp;
+  /** Shows the CTA as unavailable without changing what it says. */
+  busy?: boolean;
   onPress: () => void;
   bullets?: string[];
 }) {
@@ -969,13 +995,59 @@ export function FeatureLock({
         </View>
       )}
 
+      {requirement !== null && (
+        <Text style={styles.lockRequirement}>{requirement ?? LOCK_REQUIREMENT}</Text>
+      )}
+
       <PillButton
         title={ctaLabel}
-        icon={Crown}
+        icon={CtaIcon}
+        disabled={busy}
         onPress={onPress}
         style={{ alignSelf: 'stretch', marginTop: SPACING.lg }}
       />
     </View>
+  );
+}
+
+/**
+ * The lock for a page whose plan we do not know yet — still reading it, or
+ * unable to read it at all.
+ *
+ * This exists because every gate helper reports *allowed* when there are no
+ * entitlements: `if (!e) return allowed()`. Rendered without this, a gated page
+ * would show its content to a lapsed account for as long as the read takes, and
+ * would keep showing it after a failed read — the fail-open is deliberate for
+ * counting caps, which the database re-checks on write, but it is wrong for
+ * whole-page access, where nothing else stands behind the check.
+ *
+ * Neither allowing nor denying would be honest here, so the page says which of
+ * the two it is: still checking, or could not check.
+ */
+export function PlanCheckLock({
+  loading,
+  error,
+  onRetry,
+}: {
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <FeatureLock
+      icon={loading ? RefreshCw : WifiOff}
+      requirement={null}
+      title={loading ? 'Checking your plan…' : "We couldn't check your plan"}
+      message={
+        loading
+          ? 'This page shows what your subscription includes, so we check it first.'
+          : error ?? 'You appear to be offline. Your plan decides what this page shows.'
+      }
+      ctaLabel={loading ? 'Checking…' : 'Try again'}
+      ctaIcon={RefreshCw}
+      busy={loading}
+      onPress={onRetry}
+    />
   );
 }
 
@@ -1265,6 +1337,17 @@ const styles = StyleSheet.create({
   lockBullets: { alignSelf: 'stretch', marginTop: SPACING.md, gap: 10 },
   lockBulletRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   lockBulletText: { flex: 1, fontSize: 13.5, color: COLORS.text },
+  // The requirement, set apart from the description above it: primary-coloured
+  // and bold so it reads as the condition on the page rather than one more line
+  // about what the feature would do.
+  lockRequirement: {
+    marginTop: SPACING.md,
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });
 
 // NOTE: NavHeader's default onBack currently no-ops by design when omitted —

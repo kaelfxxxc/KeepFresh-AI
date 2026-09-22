@@ -1,16 +1,3 @@
-// RecipeImage — a recipe's photograph, over the app's own fallback art.
-//
-// A generated recipe's `image_url` is either a real photo of that dish or NULL:
-// the server refuses to attach a photo whose alt text does not describe the dish
-// (see the relevance vote in supabase/functions/recipe-suggestions). So this
-// component is built around "the photo may simply not exist". The tinted category
-// emoji is the base layer and always renders; the photo is painted over it once
-// it has actually decoded. There is never a blank rectangle, a URL that 404s
-// lands on the same art as a recipe that never had an image at all, and nothing
-// here can throw.
-//
-// The emoji and tint tables live here rather than in each screen because both the
-// tab and the detail view draw the same fallback, and they had drifted apart into
 // two copies of the same three hex values.
 
 import React, { useEffect, useState } from 'react';
@@ -68,7 +55,6 @@ export function matchTone(percent: number | null): 'success' | 'primary' | 'warn
 
 /**
  * Warm the native image cache for photos that are not on screen yet.
- *
  * Called once after the list loads so that scrolling does not wait on several
  * simultaneous downloads. Failures are the component's business, not this
  * function's — a prefetch that fails just means the card shows the fallback.

@@ -178,6 +178,13 @@ DECLARE
   v_account_type TEXT := 'household';
   v_sub          RECORD;
   v_plan         RECORD;
+  -- Whether `v_plan` actually holds a row.
+  --
+  -- `v_plan` is a RECORD, and reading a field of one that was never assigned
+  -- raises "record v_plan is not assigned yet" — it does not return NULL, the
+  -- way an unassigned scalar would. So every test of "did we resolve a plan"
+  -- has to ask a scalar, not the record.
+  v_plan_id      TEXT;
   v_features     JSONB;
   v_products     INTEGER := 0;
   v_scans        INTEGER := 0;
@@ -234,7 +241,16 @@ BEGIN
 
     IF v_is_active THEN
       -- Features come from the plan being paid for — only while it is running.
-      SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_sub.plan_id;
+      --
+      -- Resolved in two steps, id first into a scalar and only then the row.
+      -- Reading a field of a RECORD that no SELECT INTO ever assigned raises
+      -- "record v_plan is not assigned yet", so the row is fetched only once an
+      -- id is known to exist. That keeps this independent of what a zero-row
+      -- SELECT INTO leaves behind, which is the subtlety the bug turned on.
+      SELECT id INTO v_plan_id FROM public.subscription_plans WHERE id = v_sub.plan_id;
+      IF v_plan_id IS NOT NULL THEN
+        SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_plan_id;
+      END IF;
       v_status := v_sub.status;
     ELSIF v_sub.status = 'canceled' THEN
       v_status := 'canceled';
@@ -256,13 +272,35 @@ BEGIN
   -- whenever nothing above filled v_plan — i.e. whenever the account has no live
   -- subscription, which is exactly the "back to a free account" state.
   --
+  -- The test is `v_plan_id`, not `v_plan.id`. That is the whole bug this guards:
+  -- `v_plan` is a RECORD, so testing it directly raised
+  -- "record v_plan is not assigned yet" on precisely the accounts this branch
+  -- exists to serve — no subscription row, or one that has lapsed, expired or
+  -- been canceled. Since `enforce_inventory_entitlements()` reaches here through
+  -- `can_add_product()`, that error came out of adding an inventory item, which
+  -- is what made it look like an inventory bug rather than an entitlement one.
+  --
   -- Pointed at tier 'free', NOT 'free_trial'. The trial plans now carry the tier
   -- above them (Premium/Pro features), so falling back to one would hand a lapsed
   -- account the very features it just lost.
-  IF v_plan.id IS NULL THEN
-    SELECT * INTO v_plan FROM public.subscription_plans
+  IF v_plan_id IS NULL THEN
+    SELECT id INTO v_plan_id FROM public.subscription_plans
     WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free'
     LIMIT 1;
+
+    IF v_plan_id IS NOT NULL THEN
+      SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_plan_id;
+    END IF;
+  END IF;
+
+  -- Nothing to fall back to means the plan catalogue is missing a `free` row for
+  -- this audience — a broken install, not a customer state. Say so plainly: the
+  -- alternative is dereferencing v_plan again below and raising the same
+  -- unhelpful "not assigned yet" from three different lines.
+  IF v_plan_id IS NULL THEN
+    RAISE EXCEPTION 'entitlements_unavailable: no free plan for audience %', v_account_type
+      USING ERRCODE = 'no_data_found',
+            HINT = 'The subscription_plans catalogue is missing its tier=''free'' row for this audience.';
   END IF;
 
   SELECT COALESCE(jsonb_object_agg(
@@ -271,7 +309,7 @@ BEGIN
          ), '{}'::jsonb)
   INTO v_features
   FROM public.feature_entitlements fe
-  WHERE fe.plan_id = v_plan.id;
+  WHERE fe.plan_id = v_plan_id;
 
   -- `products_used` counts LIVE products (available + expired). Consumed and
   -- wasted rows are history, not stock, and must not eat capacity.

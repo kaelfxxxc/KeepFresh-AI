@@ -1,7 +1,8 @@
 // Subscription, entitlement and multi-area inventory types.
 //
 // These mirror the schema created by
-// supabase/migrations/20260914120000_subscriptions_entitlements.sql.
+// supabase/migrations/subscriptions_entitlements.sql (as amended by
+// trial_expiration.sql and paymongo_payments.sql).
 // Re-exported from src/types so screens can import everything from one place.
 
 export type PlanAudience = 'household' | 'establishment';
@@ -39,7 +40,7 @@ export type SubscriptionStatus =
   | 'expired'
   | 'none';
 
-export type PaymentProvider = 'none' | 'google_play' | 'app_store' | 'stripe' | 'manual';
+export type PaymentProvider = 'none' | 'google_play' | 'app_store' | 'stripe' | 'manual' | 'paymongo';
 
 export interface UserSubscription {
   id: string;

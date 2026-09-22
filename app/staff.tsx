@@ -42,6 +42,7 @@ import {
   EmptyState,
   StatusBadge,
   FeatureLock,
+  PlanCheckLock,
   AvatarCircle,
   SectionLabel,
 } from '../src/components/ui';
@@ -65,7 +66,7 @@ const ASSIGNABLE: Exclude<OrgRole, 'owner'>[] = ['manager', 'staff'];
 
 export default function StaffScreen() {
   const { profile } = useAuth();
-  const { gates } = useSubscription();
+  const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
 
   const [org, setOrg] = useState<OrganizationWithMembership | null>(null);
   const [members, setMembers] = useState<OrganizationMemberWithProfile[]>([]);
@@ -143,7 +144,19 @@ export default function StaffScreen() {
     );
   };
 
-  if (!canManage && !loading) {
+  // With no entitlements every gate answers "allowed", so without this the team
+  // list would render for an account whose plan does not include it. Neither
+  // allowing nor denying is honest yet — say the plan is unknown.
+  if (!entitlements) {
+    return (
+      <View style={styles.container}>
+        <NavHeader title="Staff & Roles" subtitle="Your team" />
+        <PlanCheckLock loading={planLoading} error={planError} onRetry={refreshPlan} />
+      </View>
+    );
+  }
+
+  if (!canManage) {
     // Staff accounts only exist on Food Establishment plans. A household
     // account cannot buy its way in, so it gets the reason rather than an
     // invitation to a plan list that does not contain this feature.
@@ -169,6 +182,14 @@ export default function StaffScreen() {
             'Every change is attributed to the person who made it',
             'Remove access instantly, without losing history',
           ]}
+          // No household plan contains this feature, so a household account is
+          // given the change it actually has to make. Telling it to subscribe
+          // would point at a price list that cannot sell it the page.
+          requirement={
+            forEstablishment
+              ? 'Switch to a Food Establishment account to use this page.'
+              : undefined
+          }
           ctaLabel={forEstablishment ? 'Back to profile' : 'See plans'}
           onPress={() => router.push(forEstablishment ? '/profile' : '/subscription')}
         />

@@ -64,12 +64,30 @@ import { json, handleOptions } from '../_shared/cors.ts';
  * Deliberately not preview ids: Google documents preview models as carrying
  * tighter rate limits, which is the opposite of what a free-tier key needs.
  *
- * Overridable without a redeploy, for when all three are eventually retired:
+ * The order is not newest-first, and that is on purpose. It is whatever is
+ * answering: as of 2026-09-22 gemini-3.8-flash and gemini-flash-latest both reply
+ * 503 "currently experiencing high demand" while gemini-3.5-flash answers in
+ * under two seconds, and gemini-3.6-flash hangs past a 30s timeout rather than
+ * answering at all. Leading with the newest id would spend the fan-out's budget
+ * on models that are overloaded or hanging before reaching one that is not —
+ * the walk makes a stale order cost latency, not correctness, so it is worth
+ * ordering by measurement.
+ *
+ * `gemini-flash-latest` sits last and is the exception to the pinned-id rule
+ * above: it is a moving alias, so it cannot be retired out from under us. It is
+ * the backstop for the day every pinned id is gone.
+ *
+ * `gemini-2.5-flash` used to be here and had to be removed: it answers 404, "no
+ * longer available to new users", which is Google retiring it for accounts like
+ * this one. A backstop that has already been retired is worse than no backstop,
+ * because it reads as cover that is not there.
+ *
+ * Overridable without a redeploy, for when all of these are eventually retired:
  *   supabase secrets set RECIPE_MODEL=gemini-3.8-flash
  */
 const MODEL_CANDIDATES = Deno.env.get('RECIPE_MODEL')
   ? [Deno.env.get('RECIPE_MODEL') as string]
-  : ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+  : ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
 
 /** The candidate that answered last time, so the walk happens once. */
 let knownGoodModel: string | null = null;
@@ -762,17 +780,41 @@ interface MergedRecipe extends GeneratedRecipe {
  * one dead call among five is a slightly smaller set, and all five dead is an
  * outage the user should be told about.
  *
- * `timeoutMs` is the caller's rather than the constant, because a call started
- * late in the fan-out has less wall clock left than the first one had. Being cut
- * off by our own budget is a smaller set; being cut off by the platform is no
+ * `deadline` is the caller's rather than a fixed timeout, because a call started
+ * late in the fan-out has less wall clock left than the first one had, and
+ * because this function may spend that wall clock on several candidates. Being
+ * cut off by our own budget is a smaller set; being cut off by the platform is no
  * set at all.
  */
 async function askModel(
   geminiKey: string,
   ask: string,
-  timeoutMs: number,
+  deadline: number,
 ): Promise<{ ok: true; text: string } | { ok: false }> {
-  for (const model of knownGoodModel ? [knownGoodModel] : MODEL_CANDIDATES) {
+  // The model that answered last time goes first, but it is a preference and not
+  // a lock. Caching it exclusively — `[knownGoodModel]` and nothing else — made
+  // it a single point of failure: the moment it started answering 503, every
+  // generation after it failed, with the working candidates sitting right below
+  // it unasked. Preferred first and still in the walk is the whole point of
+  // having a list.
+  const candidates = knownGoodModel
+    ? [knownGoodModel, ...MODEL_CANDIDATES.filter((model) => model !== knownGoodModel)]
+    : MODEL_CANDIDATES;
+
+  for (const model of candidates) {
+    // Re-read the clock for every candidate rather than once for the call. The
+    // walk makes up to four attempts where there used to be one, so a timeout
+    // fixed at the call site would multiply the worst case by four — 4 x
+    // TIMEOUT_MS of hangs against a FANOUT_BUDGET_MS fan-out, which the platform
+    // would cut off with no set at all, the exact outcome the deadline exists to
+    // avoid. Each attempt gets whatever is left, and the walk gives up when there
+    // is too little left to be worth starting another one.
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_CALL_MS) {
+      console.error(`recipe-suggestions: no time left to try ${model}, giving up the walk`);
+      break;
+    }
+
     let res: Response;
     try {
       res = await fetch(
@@ -795,31 +837,59 @@ async function askModel(
               temperature: 0.9,
             },
           }),
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, remaining)),
         },
       );
     } catch (err) {
-      // A timeout, or the connection never opened. One call with no answer; the
-      // rest of the fan-out is still worth having.
-      console.error(`recipe-suggestions: request to ${model} failed`, err);
-      return { ok: false };
-    }
-
-    // A retired model id is a 404, which is our problem rather than the user's,
-    // so it moves straight to the next candidate.
-    if (res.status === 404) {
-      console.error(`recipe-suggestions: model ${model} unavailable, trying the next`);
+      // A timeout, a dropped connection, or DNS. All of them are about this one
+      // attempt rather than about the request, so the next candidate is worth
+      // trying — there is no reason a second model would time out for the same
+      // reason the first did.
+      console.error(`recipe-suggestions: request to ${model} failed, trying the next`, err);
+      if (knownGoodModel === model) knownGoodModel = null;
       continue;
     }
 
-    // 401/403 (bad key), 429 (rate limit), 5xx — all "try later", and none of
-    // them are charged against the user's scans. The upstream body is never
-    // forwarded: it can echo request detail back to the caller. Walking to the
-    // next candidate would not help — a rate limit is per key, not per model.
+    // A retired or renamed model id is a 404, which is our problem rather than
+    // the user's, so it moves straight to the next candidate. The cached model
+    // is dropped so the next generation does not lead with a dead id.
+    if (res.status === 404) {
+      console.error(`recipe-suggestions: model ${model} unavailable, trying the next`);
+      if (knownGoodModel === model) knownGoodModel = null;
+      continue;
+    }
+
+    // A bad key or a revoked project is the one failure every candidate shares,
+    // so it is the only one worth giving up on: the same key against the same
+    // list cannot succeed on the second line if it failed on the first.
+    if (res.status === 401 || res.status === 403) {
+      const detail = await res.text();
+      console.error(
+        `recipe-suggestions: upstream rejected the key (${res.status}): ${detail.slice(0, 500)}`,
+      );
+      return { ok: false };
+    }
+
+    // Everything else walks to the next candidate: 400 (a shape the model
+    // dislikes), 408, 429, and every 5xx.
+    //
+    // This used to give up here, on the reasoning that these are all "try later"
+    // and that a rate limit is per key rather than per model. The second half of
+    // that is false for the one that actually bites: Gemini reports an overloaded
+    // model as 503 UNAVAILABLE — "currently experiencing high demand" — and that
+    // is per model. Observed directly, one key, one moment: gemini-3.8-flash
+    // answered 503 while gemini-3.5-flash answered 200. Giving up on the first
+    // candidate therefore took the whole generation down while a working model sat
+    // one line below it, which is exactly the outage this walk exists to prevent.
+    //
+    // The upstream body is never forwarded to the caller: it can echo request
+    // detail back. None of these are charged against the user's scans.
     if (!res.ok) {
       const detail = await res.text();
-      console.error(`recipe-suggestions: upstream returned ${res.status}: ${detail.slice(0, 500)}`);
-      return { ok: false };
+      console.error(
+        `recipe-suggestions: ${model} returned ${res.status}, trying the next: ${detail.slice(0, 300)}`,
+      );
+      continue;
     }
 
     const payload = await res.json();
@@ -1121,7 +1191,10 @@ serve(async (req: Request) => {
         console.error('recipe-suggestions: fan-out budget spent, skipping a call');
         return { ok: false as const };
       }
-      return askModel(geminiKey, call.ask, Math.min(TIMEOUT_MS, budget));
+      // The deadline rather than a timeout: `askModel` walks several candidates
+      // and re-reads the clock between them, so the budget it is given has to be
+      // the one that actually runs out.
+      return askModel(geminiKey, call.ask, deadline);
     });
 
     // A call with no answer is a smaller set, not a failure: what the other calls

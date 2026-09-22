@@ -12,19 +12,26 @@ supabase/
 ├── migrations/
 │   ├── keepfreshdb.sql      # 1) full schema: 12 tables + 5 RPCs + trigger + storage (paste first)
 │   ├── seed.sql             # 2) real data: 14 recipes + demo household w/ live-looking inventory
-│   ├── 20260914120000_subscriptions_entitlements.sql   # 3) plans, feature matrix, entitlements, usage, storage areas, waste & price history
-│   ├── 20260914130000_staff_and_bulk_inventory.sql     # 4) organizations, roles, bulk_* RPCs
-│   ├── 20260914140000_org_member_directory.sql         # 5) resolved member profiles for the team list
-│   └── 20260914150000_function_privilege_hardening.sql # 6) revokes default EXECUTE, re-grants per function
+│   ├── subscriptions_entitlements.sql    # 3) plans, feature matrix, entitlements, usage, storage areas, waste & price history
+│   ├── staff_and_bulk_inventory.sql      # 4) organizations, roles, bulk_* RPCs
+│   ├── org_member_directory.sql          # 5) resolved member profiles for the team list
+│   ├── function_privilege_hardening.sql  # 6) revokes default EXECUTE, re-grants per function
+│   ├── trial_expiration.sql              # 7) free floor vs free trial, expiry + sync RPCs
+│   ├── paymongo_payments.sql             # 8) PayMongo checkout: provider + checkout session ledger
+│   └── fix_entitlements_unassigned_plan.sql  # fix: get_user_entitlements() on an account with no live plan
 ├── functions/
-│   ├── _shared/             # cors + admin client used by all functions
+│   ├── _shared/             # cors + admin client + PayMongo helpers used by all functions
 │   ├── expiration-notifier/ # daily cron: finds items expiring within each user's window, logs nudge
 │   ├── recipe-suggestions/  # real pantry-to-recipe matching (scores coverage, "can cook now?")
 │   ├── barcode-lookup/      # scan auto-fill: proxies Barcode Lookup API (key stays server-side), meters one AI scan per answered lookup
 │   ├── weekly-summary/      # 7-day stats: used / wasted / estimated savings / expiring soon
-│   └── subscription-verify/ # the ONLY path that can activate a paid plan (Play / App Store receipts)
-├── schedule.sql             # 7) optional: schedule expiration-notifier daily via pg_cron
-└── config.toml              # JWT policy: scheduled fn = no JWT, app fns = require user token
+│   ├── subscription-verify/ # activates a paid plan from a Play / App Store receipt
+│   ├── paymongo-checkout/   # opens a PayMongo hosted checkout page for a plan
+│   ├── paymongo-verify/     # "has my checkout been paid?" — asks PayMongo, then activates
+│   └── paymongo-webhook/    # PayMongo's payment notification (public; HMAC-verified, no JWT)
+├── schedule.sql             # 9) optional: schedule expiration-notifier daily via pg_cron
+└── config.toml              # JWT policy: scheduled fn = no JWT, app fns = require user token,
+                             #            paymongo-webhook = no JWT (signature-verified instead)
 ```
 
 ## Step 1 — Create the schema (paste, don't create by hand)
@@ -61,28 +68,47 @@ supabase/
 
 ## Step 2b — Apply the subscription migrations
 
-The four dated files under `migrations/` add plans, entitlements, usage
-metering, storage areas, waste/price history, staff roles and bulk operations.
-Apply them **in filename order**, either by pasting each into the SQL Editor or
-with the CLI:
+The files under `migrations/` add plans, entitlements, usage metering, storage
+areas, waste/price history, staff roles, bulk operations and the PayMongo
+checkout ledger. Apply them **in order**, either by pasting each into the SQL
+Editor or with the CLI:
 
 ```bash
 supabase db push          # applies migrations/, in order, once each
 ```
 
-- `20260914120000_subscriptions_entitlements.sql` — plan catalogue with the
-  exact price list, the per-tier feature matrix, `user_subscriptions` +
-  `subscription_usage`, storage areas, inventory alert timing and audit
-  history, the `can_*` / `get_user_entitlements` / `consume_ai_scan` functions,
-  the triggers that enforce every limit server-side, and the realtime
-  publication.
-- `20260914130000_staff_and_bulk_inventory.sql` — organisations, `org_members`
-  with Owner/Manager/Staff roles and RLS, plus `bulk_add_inventory`,
+The ones that carry subscription state, in the order they must run:
+
+- `subscriptions_entitlements.sql` — plan catalogue with the exact price list,
+  the per-tier feature matrix, `user_subscriptions` + `subscription_usage`,
+  storage areas, inventory alert timing and audit history, the `can_*` /
+  `get_user_entitlements` / `consume_ai_scan` functions, the triggers that
+  enforce every limit server-side, and the realtime publication.
+- `staff_and_bulk_inventory.sql` — organisations, `org_members` with
+  Owner/Manager/Staff roles and RLS, plus `bulk_add_inventory`,
   `bulk_update_inventory`, `bulk_adjust_quantity`, `bulk_delete_inventory`.
-- `20260914140000_org_member_directory.sql` — the resolved member list the team
-  screen reads.
-- `20260914150000_function_privilege_hardening.sql` — revokes the default
-  `EXECUTE` grant from `PUBLIC`/`anon` and re-grants each function explicitly.
+- `org_member_directory.sql` — the resolved member list the team screen reads.
+- `function_privilege_hardening.sql` — revokes the default `EXECUTE` grant from
+  `PUBLIC`/`anon` and re-grants each function explicitly.
+- `trial_expiration.sql` — splits the permanent free floor (`*_free`) from the
+  time-limited free trial (`*_trial`), and adds `sync_my_subscription()` and the
+  `expire_stale_subscriptions()` cron.
+- `paymongo_payments.sql` — adds `'paymongo'` to the `provider` allowlist and
+  creates `paymongo_checkout_sessions`, the ledger the GCash / Maya / QR Ph flow
+  is keyed on. Pasting it by hand works fine; the file is idempotent, and
+  re-pasting it is how the `payment_method_used` constraint gets widened when a
+  method is added.
+- `fix_entitlements_unassigned_plan.sql` — **paste this if adding an inventory
+  item ever fails with `record "v_plan" is not assigned yet`.** It re-defines
+  `get_user_entitlements()` (the body from `trial_expiration.sql`, so it must be
+  pasted after it), which tested a `RECORD` before assigning it. Reading a field
+  of a never-assigned `RECORD` raises rather than returning NULL, so the check
+  that guards the free-plan fallback crashed on exactly the accounts the fallback
+  exists for — anyone without a running plan. The insert trigger
+  `trg_enforce_inventory_entitlements` reaches that function through
+  `can_add_product()`, which is why it surfaced as an inventory error. The same
+  fix is applied at source in `trial_expiration.sql` and
+  `subscriptions_entitlements.sql`, so re-pasting those also resolves it.
 
 Every migration is idempotent and finishes with a status `SELECT`, so a failed
 paste is obvious rather than silent.
@@ -113,13 +139,14 @@ inventory — those two features exist only on Food Establishment plans.
 npm install -g supabase        # the Supabase CLI
 supabase login
 supabase link --project-ref <your-project-ref>   # the subdomain of your project
-supabase functions deploy expiration-notifier recipe-suggestions weekly-summary barcode-lookup subscription-verify
+supabase functions deploy expiration-notifier recipe-suggestions weekly-summary barcode-lookup subscription-verify paymongo-checkout paymongo-verify paymongo-webhook
 ```
 
-- `recipe-suggestions`, `weekly-summary`, `barcode-lookup` and
-  `subscription-verify` require a signed-in user's access token (call them with
-  the user's `Authorization` header).
+- `recipe-suggestions`, `weekly-summary`, `barcode-lookup`, `subscription-verify`,
+  `paymongo-checkout` and `paymongo-verify` require a signed-in user's access
+  token (call them with the user's `Authorization` header).
 - `expiration-notifier` needs no JWT so the scheduler can call it.
+- `paymongo-webhook` needs no JWT either, and for a different reason — see below.
 
 `barcode-lookup` proxies the Barcode Lookup API (api.barcodelookup.com) that
 powers the Scan screen's auto-fill. Its key must be set as a **server-side
@@ -163,6 +190,95 @@ Until a platform's credentials are set, purchases on it come back as
 `unavailable` and the app tells the user payments are not open yet — no plan is
 activated and no error is faked.
 
+### PayMongo (`paymongo-checkout`, `paymongo-verify`, `paymongo-webhook`)
+
+GCash, Maya and QR Ph, for the Philippine market the price list is built for. App
+Store and Play Billing do not cover any of them, and a hosted page needs no native
+module — so this works on the current Expo build.
+
+**A method must be activated on the PayMongo account or the page renders nothing.**
+This is the one failure that looks like a bug in this code and is not. PayMongo
+accepts a `payment_method_types` value it recognises but has not activated, then
+renders a checkout page with no way to pay — no error, no session failure, nothing
+in the logs. Methods are switched on per account under **Settings → Payment
+Methods** in the dashboard, in live mode, and e-wallets go to an onboarding review
+that takes days; note also that an Individual account may request Maya but not
+GCash. QR Ph is the exception: it is enabled by account activation itself, needs no
+request, and is payable by scanning with the GCash or Maya app — which is why it is
+in `PAYMONGO_METHODS` beside the two wallets rather than instead of them. See
+[docs.paymongo.com/docs/account-settings-account-capabilities](https://docs.paymongo.com/docs/account-settings-account-capabilities).
+
+`payment_method_types` is sent from the `PAYMONGO_METHODS` constant in
+`_shared/paymongo.ts`, and `payment_method_used` on the ledger has a matching
+`CHECK` — adding a method means changing both, in that order.
+
+**How a purchase flows.** The app asks `paymongo-checkout` for a plan; the server
+re-reads the plan and its price from the database (the client never sends a
+price), records an attempt in `paymongo_checkout_sessions`, and returns a hosted
+page URL. The app opens it in a WebView. PayMongo then tells us the outcome twice
+over — once by redirecting the browser, once by calling the webhook — and both
+funnel into the same writer, which claims the attempt with a conditional `UPDATE`
+so a replayed delivery can never buy two periods.
+
+**Secrets.** Two, and neither may ever be prefixed with `EXPO_PUBLIC_` or placed
+in `.env`:
+
+```bash
+supabase secrets set PAYMONGO_SECRET_KEY="sk_live_..."        # sk_test_... while testing
+supabase secrets set PAYMONGO_WEBHOOK_SECRET="whsk_..."       # shown when you add the endpoint
+```
+
+The **public** key is not needed: the checkout page is created server-side, so
+nothing on the device talks to PayMongo directly. `PAYMONGO_PUBLIC_KEY` in `.env`
+is a reference value only.
+
+**Webhook.** Dashboard → **Developers → Webhooks → Add endpoint**, pointing at
+
+```
+https://<ref>.supabase.co/functions/v1/paymongo-webhook
+```
+
+and subscribe to `checkout_session.payment.paid`. Copy the endpoint secret it
+shows into `PAYMONGO_WEBHOOK_SECRET` — the endpoint is public and the
+`Paymongo-Signature` HMAC is the *only* thing that makes a request genuine, so
+the function refuses to process anything at all when that secret is unset (503,
+so PayMongo retries once you have set it). Verification runs before the body is
+parsed: the header is a hex HMAC-SHA256 of the raw bytes, compared in constant
+time. To register the endpoint by API instead:
+
+```bash
+curl -X POST https://api.paymongo.com/v1/webhooks \
+  -u "$PAYMONGO_SECRET_KEY:" \
+  -H "Content-Type: application/json" \
+  -d '{"data":{"attributes":{"url":"https://<ref>.supabase.co/functions/v1/paymongo-webhook",
+        "events":["checkout_session.payment.paid"]}}}'
+```
+
+**The client flag.** `EXPO_PUBLIC_PAYMONGO_ENABLED=true` in `.env` switches the
+plan buttons on. It is a build flag, not a security control — the server checks
+its own secrets before it will create a session and answers
+`verification_not_configured` if they are missing, so a build with the flag set
+against an unconfigured server shows an honest error rather than failing
+silently. Set it to `false` to ship a build with no purchasing at all.
+
+**No auto-renew, by design.** Each payment buys one period. When it ends, the
+existing `expire_stale_subscriptions()` cron lapses the account to the free
+floor, exactly as it already does for a store subscription that stops renewing.
+Renewing is paying again.
+
+**GCash needs the WebView to forward its deep link.** GCash completes the payment
+inside its own app, and a WebView does not follow `gcash://` on its own — the
+"Open in GCash" button appears and does nothing, and the customer cannot pay.
+`app/checkout.tsx` intercepts it and hands it to the OS (`intent://` too, for
+Android). Maya redirects through the web and QR Ph is drawn by the page itself as
+a code to scan, so neither needs any of this. If GCash ever stops working, check
+that interception first.
+
+**Nothing here activates a plan on the client's say-so**, the same rule
+`subscription-verify` follows. `paymongo-verify` confirms the session belongs to
+the caller before it asks PayMongo anything, and the `guard_subscription_update()`
+trigger still rejects any client-side write to a plan.
+
 Test locally first (needs `supabase start` running) or straight against hosted:
 
 ```bash
@@ -205,6 +321,13 @@ project README describes if you want social login.
   caps, AI scans, storage-area counts and the establishment-only features are
   checked by triggers and inside the `bulk_*` / `can_*` functions. The app
   checks first only so the user sees an upgrade card instead of a raw error.
+- **A plan is activated by a server function, never by the app.** Two functions
+  can do it — `subscription-verify` (store receipts) and the PayMongo flow — and
+  `guard_subscription_update()` rejects any client-side change to `plan_id`,
+  `status`, `provider` or the period columns regardless of what either says.
+- `paymongo-webhook` is the one **public** endpoint. Its only gate is the
+  `Paymongo-Signature` HMAC, checked against the raw body before anything is
+  parsed, and it refuses to process at all when its secret is unset.
 - The service-role key never reaches the Expo bundle; the app holds only the
   anon key plus the signed-in user's token.
 
@@ -225,3 +348,18 @@ household account sees the household price list, a food establishment sees the
 establishment one. Entitlements are still read from whatever plan is active, so
 an account that already holds a plan of the other type keeps every feature it
 paid for even though that plan is no longer offered to it.
+
+**A locked page states the requirement, and never guesses when the plan is
+unknown.** Four screens — Reports, Price Tracking, Staff & roles and Bulk
+inventory — stand in a `FeatureLock` for a feature the active plan does not
+include, and each says plainly that a subscription is required to keep using the
+page rather than only describing the feature. Two of them differ on purpose:
+Staff & roles and Bulk inventory exist on Food Establishment plans only, so a
+household account is told to switch account type instead of being invited to buy
+a plan that cannot sell it the page. All four also refuse to render on a plan they
+could not read: the gate helpers answer *allowed* for every feature while
+`entitlements` is null (a deliberate fail-open for the counting caps, which the
+database re-checks on write), so the screens gate on the snapshot existing and
+show a "couldn't check your plan" state with a **Try again** while it is loading
+or after the read failed. See `FeatureLock` / `PlanCheckLock` in
+`src/components/ui.tsx`.

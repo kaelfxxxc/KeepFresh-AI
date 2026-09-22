@@ -628,6 +628,11 @@ DECLARE
   v_account_type TEXT := 'household';
   v_sub          RECORD;
   v_plan         RECORD;
+  -- Whether `v_plan` actually holds a row. Reading a field of an unassigned
+  -- RECORD raises "record v_plan is not assigned yet" rather than returning NULL,
+  -- so "did we resolve a plan" has to be asked of a scalar. See
+  -- trial_expiration.sql, which replaces this function, for the full note.
+  v_plan_id      TEXT;
   v_features     JSONB;
   v_products     INTEGER := 0;
   v_scans        INTEGER := 0;
@@ -659,7 +664,14 @@ BEGIN
   IF v_sub.id IS NULL THEN
     v_status := 'none';
   ELSE
-    SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_sub.plan_id;
+    -- Resolved in two steps, id first into a scalar and only then the row: see
+    -- the note in trial_expiration.sql, which replaces this function. Reading a
+    -- field of a RECORD no SELECT INTO ever assigned raises "not assigned yet"
+    -- rather than yielding NULL.
+    SELECT id INTO v_plan_id FROM public.subscription_plans WHERE id = v_sub.plan_id;
+    IF v_plan_id IS NOT NULL THEN
+      SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_plan_id;
+    END IF;
     v_is_active := v_sub.current_period_end > NOW() AND v_sub.status IN ('trialing', 'active');
     IF v_is_active THEN
       v_status := v_sub.status;
@@ -674,10 +686,22 @@ BEGIN
   -- still apply after a paid plan lapses. Not `free_trial` — the trial plans
   -- carry Premium/Pro features, so falling back to one would hand a lapsed
   -- account exactly what it just lost.
-  IF v_plan.id IS NULL THEN
-    SELECT * INTO v_plan FROM public.subscription_plans
+  IF v_plan_id IS NULL THEN
+    SELECT id INTO v_plan_id FROM public.subscription_plans
     WHERE audience = COALESCE(v_account_type, 'household') AND tier = 'free'
     LIMIT 1;
+
+    IF v_plan_id IS NOT NULL THEN
+      SELECT * INTO v_plan FROM public.subscription_plans WHERE id = v_plan_id;
+    END IF;
+  END IF;
+
+  -- A missing `free` row for this audience is a broken install, not a customer
+  -- state, and it is better said plainly than raised later as "not assigned yet".
+  IF v_plan_id IS NULL THEN
+    RAISE EXCEPTION 'entitlements_unavailable: no free plan for audience %', v_account_type
+      USING ERRCODE = 'no_data_found',
+            HINT = 'The subscription_plans catalogue is missing its tier=''free'' row for this audience.';
   END IF;
 
   SELECT COALESCE(jsonb_object_agg(
@@ -686,7 +710,7 @@ BEGIN
          ), '{}'::jsonb)
   INTO v_features
   FROM public.feature_entitlements fe
-  WHERE fe.plan_id = v_plan.id;
+  WHERE fe.plan_id = v_plan_id;
 
   SELECT COUNT(*) INTO v_products
   FROM public.inventory_items i

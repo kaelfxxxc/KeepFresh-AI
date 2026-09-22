@@ -43,6 +43,7 @@ import {
   EmptyState,
   StatusBadge,
   FeatureLock,
+  PlanCheckLock,
   QuantityStepper,
   SectionLabel,
 } from '../src/components/ui';
@@ -69,10 +70,22 @@ Rice 25kg,2,sack,grains,2027-01-15,1450`;
 
 export default function BulkInventoryScreen() {
   const { profile } = useAuth();
-  const { gates } = useSubscription();
+  const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
 
   const [tab, setTab] = useState<Tab>('add');
   const canUse = gates.bulkInventory.allowed;
+
+  // This screen had no guard of its own, so it rendered the paste-and-import
+  // tool whenever the gates said yes — and they say yes for everything until
+  // entitlements arrive. Gate it on the snapshot existing, not on the gate.
+  if (!entitlements) {
+    return (
+      <View style={styles.container}>
+        <NavHeader title="Bulk Inventory" subtitle="Many items at once" onBack={() => router.back()} />
+        <PlanCheckLock loading={planLoading} error={planError} onRetry={refreshPlan} />
+      </View>
+    );
+  }
 
   if (!canUse) {
     // Bulk operations come with Food Establishment plans only, so a household
@@ -99,6 +112,13 @@ export default function BulkInventoryScreen() {
             'Add or subtract the same quantity from many items',
             'Delete a whole selection at once',
           ]}
+          // A household account cannot buy this feature on any plan, so it is
+          // told the change it has to make instead of being invited to subscribe.
+          requirement={
+            forEstablishment
+              ? 'Switch to a Food Establishment account to use this page.'
+              : undefined
+          }
           ctaLabel={forEstablishment ? 'Back to profile' : 'See plans'}
           onPress={() => router.push(forEstablishment ? '/profile' : '/subscription')}
         />

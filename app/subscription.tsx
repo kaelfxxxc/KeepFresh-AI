@@ -6,10 +6,11 @@
 //   * what you could move to — the full price list, both audiences, with the
 //     monthly/yearly choice.
 //
-// Nothing on this screen activates a plan. "Choose" hands the store's receipt
-// to the `subscription-verify` edge function; the server decides. When billing
-// is not configured in the build, the button says so plainly instead of
-// pretending to succeed.
+// Nothing on this screen activates a plan. "Choose" either hands a store's
+// receipt to the `subscription-verify` edge function, or asks
+// `paymongo-checkout` for a hosted payment page and opens it — and in both cases
+// the server decides and the server writes. When no provider is configured in
+// the build, the button says so plainly instead of pretending to succeed.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -77,6 +78,10 @@ export default function SubscriptionScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const billingReady = paymentService.isConfigured();
+  // Only stores can be asked what an account already owns; see paymentService.
+  const canRestore = paymentService.canRestore();
+  // 'GCash, Maya or QR Ph' when PayMongo is the provider, null when it is a store.
+  const redirectMethods = paymentService.redirectPaymentMethods();
 
   const load = useCallback(async () => {
     try {
@@ -161,6 +166,20 @@ export default function SubscriptionScreen() {
       if (outcome.status === 'activated') {
         await refresh();
         Alert.alert('You are all set', `${plan.name} is now active.`);
+      } else if (outcome.status === 'redirect_required') {
+        // PayMongo hosts the payment page, so there is nothing to complete here.
+        // The screen opens it, and the outcome comes back through
+        // `paymentService.confirmCheckout` from there.
+        router.push({
+          pathname: '/checkout',
+          params: {
+            url: outcome.checkoutUrl,
+            sessionId: outcome.checkoutSessionId,
+            planName: plan.name,
+            amountCentavos: String(outcome.amountCentavos),
+            livemode: outcome.livemode ? 'true' : 'false',
+          },
+        });
       } else if (outcome.status === 'cancelled') {
         // Backing out of a store sheet is not an error worth an alert.
       } else {
@@ -368,13 +387,18 @@ export default function SubscriptionScreen() {
                 style={{ flex: 1 }}
               />
             )}
-            <PillButton
-              title="Restore purchases"
-              variant="subtle"
-              onPress={restore}
-              loading={restoring}
-              style={{ flex: 1 }}
-            />
+            {/* Only a store can be asked what an account owns. With no store
+                billing in the build this button could only ever report
+                failure, so it is hidden rather than offered. */}
+            {canRestore && (
+              <PillButton
+                title="Restore purchases"
+                variant="subtle"
+                onPress={restore}
+                loading={restoring}
+                style={{ flex: 1 }}
+              />
+            )}
           </View>
         </Card>
 
@@ -423,9 +447,11 @@ export default function SubscriptionScreen() {
         <View style={styles.finePrint}>
           <Info size={14} color={COLORS.secondaryText} strokeWidth={2} />
           <Text style={styles.finePrintText}>
-            {billingReady
-              ? 'Purchases are verified on our server before a plan is activated. Cancel any time — turning off renewal never deletes your data.'
-              : 'In-app billing is not enabled in this build, so plans cannot be purchased from here yet. Purchase verification runs on our server; nothing is activated locally.'}
+            {!billingReady
+              ? 'In-app billing is not enabled in this build, so plans cannot be purchased from here yet. Purchase verification runs on our server; nothing is activated locally.'
+              : redirectMethods
+                ? `Pay with ${redirectMethods}. Your plan runs for the period you pay for, and it is only activated once our server confirms the payment with the provider — nothing is activated on this device. Renewing is simply paying again.`
+                : 'Purchases are verified on our server before a plan is activated. Cancel any time — turning off renewal never deletes your data.'}
           </Text>
         </View>
       </ScrollView>
@@ -472,6 +498,15 @@ function PlanCard({
 
   const features = matrix[plan.id];
   const featured = plan.tier === 'pro';
+  /**
+   * The CTA is filled on both paid plans, not only the featured one.
+   *
+   * Premium is the plan a household or a small kitchen is most likely to pick,
+   * and an outline button on it — white with a green border — read as the less
+   * available option on the screen beside Pro's solid green one. The card itself
+   * is unchanged: `featured` still owns the border and the "Best value" badge.
+   */
+  const filledCta = featured || plan.tier === 'premium';
   const saving = yearlySavingPercent(monthly, yearly);
 
   const priceLabel = isTrial
@@ -546,7 +581,7 @@ function PlanCard({
                   ? 'Change plan'
                   : 'Choose plan'
           }
-          variant={featured ? 'primary' : 'outline'}
+          variant={filledCta ? 'primary' : 'outline'}
           loading={busyPlanId === plan.id}
           disabled={!canBuy || busyPlanId !== null || !billingReady}
           onPress={() => onChoose(plan)}

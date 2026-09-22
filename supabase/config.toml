@@ -36,3 +36,27 @@ verify_jwt = true
 # the caller's own access token.
 [functions.subscription-verify]
 verify_jwt = true
+
+# Creates a PayMongo Checkout Session and returns the hosted page URL. Requires a
+# JWT for the same reason subscription-verify does: the attempt is recorded
+# against the caller, and the amount is read from the plan in the database rather
+# than accepted from the request.
+# Holds PAYMONGO_SECRET_KEY, which never reaches the app.
+[functions.paymongo-checkout]
+verify_jwt = true
+
+# "Has my checkout been paid?" — the app asking after the hosted page closes, so
+# a payment that has cleared does not have to wait on the webhook. Requires a
+# JWT: it confirms the session belongs to the caller before asking PayMongo.
+[functions.paymongo-verify]
+verify_jwt = true
+
+# PayMongo's own notification that a checkout was paid. NO JWT, and that is
+# deliberate — PayMongo calls this from their infrastructure and cannot present a
+# Supabase token. Authenticity comes from the `Paymongo-Signature` header
+# instead: a hex HMAC-SHA256 of the raw body, keyed with PAYMONGO_WEBHOOK_SECRET
+# and compared in constant time before the body is parsed. That check is the only
+# thing standing between this endpoint and the internet, which is why it runs
+# first and refuses to process anything when the secret is unset.
+[functions.paymongo-webhook]
+verify_jwt = false

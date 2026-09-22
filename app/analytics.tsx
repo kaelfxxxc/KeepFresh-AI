@@ -36,6 +36,7 @@ import {
   Card,
   UpgradeNotice,
   FeatureLock,
+  PlanCheckLock,
 } from '../src/components/ui';
 import { wasteReportService } from '../src/services/wasteReportService';
 import type { ReportWindow, WasteReport } from '../src/types';
@@ -51,7 +52,7 @@ const WINDOW_LABEL: Record<ReportWindow, string> = {
 
 export default function AnalyticsScreen() {
   const { profile } = useAuth();
-  const { gates } = useSubscription();
+  const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
 
   const [range, setRange] = useState<ReportWindow>('monthly');
   const [report, setReport] = useState<WasteReport | null>(null);
@@ -84,7 +85,18 @@ export default function AnalyticsScreen() {
     load();
   }, [load]);
 
-  if (!canView && !loading) {
+  // See Price Tracking: with no entitlements the gates answer "allowed" for
+  // everything, so the report must not render on a snapshot we do not have.
+  if (!entitlements) {
+    return (
+      <View style={styles.container}>
+        <NavHeader title="Reports" subtitle="Food waste & savings" />
+        <PlanCheckLock loading={planLoading} error={planError} onRetry={refreshPlan} />
+      </View>
+    );
+  }
+
+  if (!canView) {
     return (
       <View style={styles.container}>
         <NavHeader title="Reports" subtitle="Food waste & savings" />

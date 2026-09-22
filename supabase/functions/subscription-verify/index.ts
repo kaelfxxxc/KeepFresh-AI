@@ -1,5 +1,10 @@
 // subscription-verify
-// Server-side purchase verification. The ONLY path that can turn a paid plan on.
+// Server-side purchase verification, for store billing (Google Play / App Store).
+//
+// One of two paths that can turn a paid plan on — the other is the PayMongo
+// checkout flow (`paymongo-checkout` / `paymongo-verify` / `paymongo-webhook`).
+// Both write through the same discipline and neither is reachable by the client
+// acting alone.
 //
 // The app never activates a subscription from the client. It sends the store's
 // purchase evidence here; this function verifies it against the store, and only

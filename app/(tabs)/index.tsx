@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, RefreshControl, Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,13 +8,13 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useSubscription } from '../../src/context/SubscriptionContext';
 import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
-import { COLORS, RADII, SHADOW, SPACING } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import {
   CalendarDays, ChevronRight, Crown, History, Package,
   PieChart, ShoppingBasket, ShoppingCart, TrendingDown,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
-import { AvatarCircle, ItemImage, SectionLabel, StatusBadge } from '../../src/components/ui';
+import { AvatarCircle, ItemImage, HighlightCard, StatCard, TrendBarChart, AIBanner, SectionHeader, StatusPill, colorWithOpacity } from '../../src/components/ui';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { DateRangePickerModal } from '../../src/components/DateRangePicker';
 import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
@@ -26,6 +26,7 @@ import {
 } from '../../src/utils/wasteTrend';
 import type { BucketUnit, TrendBucket } from '../../src/utils/wasteTrend';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 /** One row of the "Recently consumed" list. */
 interface ConsumedEntry {
@@ -92,9 +93,10 @@ export default function HomeScreen() {
   // The bottom nav floats over this screen, so the scroll content has to end
   // above it rather than behind it.
   const { contentInset } = useFloatingTabBar();
-  // Only for sizing the two icon boxes below — the layout itself is all flex, so
-  // this is a measurement, not a breakpoint.
-  const { width: screenWidth } = useWindowDimensions();
+  // The page gutter, not the raw screen width: on a tablet the content column
+  // stops growing at `CONTENT_MAX_WIDTH` and centres. On a phone this is just
+  // the usual margin, so nothing on the layouts below moves.
+  const { contentWidth, gutter } = usePageGutter();
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   /**
@@ -258,7 +260,7 @@ export default function HomeScreen() {
   if (!profile) {
     return (
       <View style={[styles.loading, { paddingTop: insets.top }]}>
-        <Text style={{ color: COLORS.secondaryText }}>Loading dashboard…</Text>
+        <Text style={{ color: colors.textSecondary }}>Loading dashboard…</Text>
       </View>
     );
   }
@@ -331,7 +333,7 @@ export default function HomeScreen() {
    * a 320pt phone; the clamp holds it near the hand-tuned size on ordinary phones,
    * where it works out to about 42.
    */
-  const tileWidth = (screenWidth - SPACING.lg * 2 - SPACING.md) / 2;
+  const tileWidth = (contentWidth - spacing.md) / 2;
   const iconBoxSize = Math.round(Math.min(56, Math.max(38, tileWidth * 0.26)));
   const iconBox = {
     width: iconBoxSize,
@@ -363,19 +365,19 @@ export default function HomeScreen() {
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: contentInset }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refreshEntitlements(); fetchDashboard(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); refreshEntitlements(); fetchDashboard(); }} colors={[colors.primary]} tintColor={colors.primary} />
         }
       >
         {/* Top bar. The greeting takes the slack so the actions keep their
             intrinsic width, and minWidth 0 on it lets the row shrink instead of
             pushing past the screen edge. */}
-        <View style={styles.topBar}>
+        <View style={[styles.topBar, { paddingHorizontal: gutter }]}>
           <View style={styles.greetingBlock}>
             {/* Shrink-to-fit rather than ellipsise: the actions beside it take a
                 fixed 142pt, which leaves ~190pt on a 390pt screen — less than
                 "Good afternoon, Alvin" needs at 24pt. Same treatment as the
                 banner figure below. */}
-            <Text style={styles.greeting} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{greeting}, {firstName}</Text>
+            <Text style={styles.greeting} numberOfLines={2}>{greeting},{`\n`}{firstName}</Text>
             <Text style={styles.subGreeting} numberOfLines={1}>
               {entitlements?.is_active === false
                 ? 'Your plan has ended — your inventory is safe'
@@ -398,7 +400,7 @@ export default function HomeScreen() {
             >
               <Crown
                 size={21}
-                color={entitlements?.is_active === false ? COLORS.danger : COLORS.primary}
+                color={entitlements?.is_active === false ? colors.danger : colors.primary}
                 strokeWidth={2.3}
               />
             </Pressable>
@@ -411,174 +413,144 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Waste banner */}
-        <Pressable style={styles.banner} onPress={() => router.push('/analytics')}>
-          <View style={[styles.bannerDeco, { left: -30, top: -40 }]} />
-          <View style={[styles.bannerDeco, { right: -24, bottom: -34, width: 110, height: 110, backgroundColor: 'rgba(255,255,255,0.35)' }]} />
-          <View style={styles.bannerTop}>
-            <Text style={styles.bannerTitle}>Food Waste This Month</Text>
-            <View style={styles.bannerLink}>
-              <Text style={styles.bannerLinkText}>Details</Text>
-              <ChevronRight size={16} color={COLORS.primary} />
-            </View>
+        <View style={[styles.planNotice, { marginHorizontal: gutter }]}>
+          <View style={styles.planNoticeCopy}>
+            <StatusPill status="active" label={entitlements?.is_active === false ? 'ENDED' : 'ACTIVE'} />
+            <Text style={styles.planNoticeText} numberOfLines={1}>
+              {entitlements?.is_active === false ? 'Your plan has ended' : 'Your plan is active'}
+            </Text>
           </View>
-          <Text
-            style={styles.bannerAmount}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.6}
-          >
-            {wasteThisMonth} items
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
-            {/* The chip is the comparison, and there is only a comparison when
-                last month had waste: no baseline is not the same as no change,
-                so it is left off rather than shown as 0%. The note beside it
-                says which of the two "nothing to compare" and "nothing wasted"
-                actually applies. */}
-            {delta != null && (
-              <View style={[styles.deltaChip, better ? { backgroundColor: COLORS.successBg } : { backgroundColor: COLORS.dangerBg }]}>
-                <TrendingDown size={12} color={better ? COLORS.successText : COLORS.dangerText} strokeWidth={2.5} />
-                <Text style={[styles.deltaText, { color: better ? COLORS.successText : COLORS.dangerText }]}>
-                  {better ? '' : '+'}{delta}% vs last month
-                </Text>
+          <Pressable onPress={() => router.push('/subscription')} hitSlop={8}>
+            <Text style={styles.planNoticeAction}>Manage <ChevronRight size={14} color={colors.primary} /></Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.contentStack, { paddingHorizontal: gutter }]}>
+          <HighlightCard
+            index={0}
+            label="Food Waste This Month"
+            value={`${wasteThisMonth} items`}
+            caption={deltaNote ?? (delta != null ? `${better ? '↓' : '↑'} ${Math.abs(delta)}% vs last month` : undefined)}
+            onActionPress={() => router.push('/analytics')}
+            actionLabel="Details"
+            secondaryIcon={TrendingDown}
+            secondaryText={wasteThisMonth === 0 ? "You're keeping food fresh!" : `${wasteThisMonth} items binned`}
+            secondaryBadge={wasteThisMonth === 0 ? "Zero Waste" : (better ? "Improving" : "Needs Attention")}
+          />
+
+          {/* 2-column StatCard Grid */}
+          <View style={styles.metricGrid}>
+            <StatCard
+              index={1}
+              icon={Package}
+              title="Items in inventory"
+              value={`${stats?.totalItems ?? 0}`}
+              iconBg={colors.primary}
+              onPress={() => router.push('/inventory')}
+            />
+            <StatCard
+              index={2}
+              icon={ShoppingCart}
+              title="Need to buy"
+              value={`${stats?.needToBuy ?? 0}`}
+              iconBg={colors.warning}
+              onPress={() => router.push('/inventory')}
+            />
+          </View>
+          <View style={styles.metricGrid}>
+            <StatCard
+              index={3}
+              icon={ShoppingBasket}
+              title="Grocery List"
+              value="Open"
+              caption="Smart list & scan"
+              iconBg={colors.primaryDark}
+              onPress={() => router.push('/grocery')}
+            />
+            <StatCard
+              index={4}
+              icon={PieChart}
+              title="Analytics"
+              value="Reports"
+              caption="Waste & savings"
+              iconBg={colors.primary}
+              onPress={() => router.push('/analytics')}
+            />
+          </View>
+
+          {/* Waste trend card with TrendBarChart */}
+          <View style={styles.chartCard}>
+            <View style={styles.chartHeaderRow}>
+              <View>
+                <Text style={styles.chartTitle}>Food Waste Trend</Text>
+                {trendFor && <Text style={styles.unitCaption}>{unitLabel(bucketUnit)}</Text>}
               </View>
-            )}
-            {deltaNote && <Text style={styles.deltaNote}>{deltaNote}</Text>}
-          </View>
-        </Pressable>
-
-        {/* Metric pair */}
-        <View style={styles.metricRow}>
-          <Pressable style={styles.metric} onPress={() => router.push('/inventory')}>
-            <View style={[styles.metricIconWrap, iconBox]}>
-              <Package size={iconGlyphSize} color={COLORS.primary} strokeWidth={2.1} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.metricValue}>{stats?.totalItems ?? 0}</Text>
-              <Text style={styles.metricLabel} numberOfLines={2}>Items in inventory</Text>
-            </View>
-          </Pressable>
-          <Pressable style={styles.metric} onPress={() => router.push({ pathname: '/inventory', params: { filter: 'need_to_buy' } })}>
-            <View style={[styles.metricIconWrap, iconBox, { backgroundColor: COLORS.warningBg }]}>
-              <ShoppingCart size={iconGlyphSize} color={COLORS.warningText} strokeWidth={2.1} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.metricValue}>{stats?.needToBuy ?? 0}</Text>
-              <Text style={styles.metricLabel} numberOfLines={2}>Need to buy</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* Quick actions */}
-        <View style={styles.quickRow}>
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
               <Pressable
-                key={action.key}
-                style={({ pressed }) => [styles.quickTile, pressed && { opacity: 0.85 }]}
-                onPress={action.go}
+                style={({ pressed }) => [styles.rangeChip, pressed && { opacity: 0.75 }]}
+                onPress={() => setRangeOpen(true)}
                 accessibilityRole="button"
-                accessibilityLabel={action.label}
+                accessibilityLabel={`Time range: ${rangeLabel}. Change the range`}
               >
-                <View style={[styles.quickIconWrap, iconBox]}>
-                  <Icon size={iconGlyphSize} color={COLORS.primary} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.quickLabel} numberOfLines={1}>{action.label}</Text>
+                <CalendarDays size={13} strokeWidth={2.4} color={colors.primaryDark} />
+                <Text style={styles.rangeChipText} numberOfLines={1}>{rangeLabel}</Text>
+                <ChevronRight size={13} strokeWidth={2.6} color={colors.primaryDark} />
               </Pressable>
-            );
-          })}
-        </View>
-
-        {/* Waste trend — real rows from `food_waste`, bucketed to suit the span
-            the user picked, with a bucket nothing was binned in drawn as no bar
-            rather than as a stub.
-
-            The range chip is the control, not a label: it opens the picker, and
-            it is also where the span is read back. The unit sits opposite it,
-            because day and week buckets are labelled with a bare number and
-            "12" means nothing until you know whether it is a day or a week. */}
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Food Waste Trend</Text>
-          <View style={styles.chartHeaderRow}>
-            <Pressable
-              style={({ pressed }) => [styles.rangeChip, pressed && { opacity: 0.75 }]}
-              onPress={() => setRangeOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel={`Time range: ${rangeLabel}. Change the range`}
-            >
-              <CalendarDays size={13} strokeWidth={2.4} color={COLORS.primaryDark} />
-              <Text style={styles.rangeChipText} numberOfLines={1}>{rangeLabel}</Text>
-              <ChevronRight size={13} strokeWidth={2.6} color={COLORS.primaryDark} />
-            </Pressable>
-            {trendFor && <Text style={styles.unitCaption}>{unitLabel(bucketUnit)}</Text>}
-          </View>
-          {trendFor == null ? (
-            // Waiting on the read for the committed range — the first one, or a
-            // new range's. Not to be confused with "no waste": that is a real
-            // result and is drawn as a row of zero-height bars, which says it
-            // plainly. `buildWasteTrend` always returns at least one bucket, so
-            // this branch is only ever the wait.
-            <View style={styles.chartWaiting}>
-              <Text style={styles.chartWaitingText}>Loading…</Text>
             </View>
-          ) : (
-            <View style={styles.chart}>
-              {trend.map((pt, i) => (
-                <View key={i} style={styles.chartCol}>
-                  <Text style={styles.chartValue}>{pt.value}</Text>
-                  <View style={[styles.chartBarTrack, { height: 74 }]}>
-                    <View
-                      style={[
-                        styles.chartBar,
-                        { height: pt.value > 0 ? Math.max(4, (pt.value / maxTrend) * 74) : 0 },
-                      ]}
-                    />
+
+            {trendFor == null ? (
+              <View style={styles.chartWaiting}>
+                <Text style={styles.chartWaitingText}>Loading…</Text>
+              </View>
+            ) : (
+              <TrendBarChart
+                index={6}
+                data={trend.map((pt) => pt.value)}
+                currentIndex={trend.length - 1}
+                labels={trend.map((pt) => pt.label)}
+                maxValue={maxTrend}
+              />
+            )}
+          </View>
+
+          {/* Recently consumed section */}
+          {consumed.length > 0 && (
+            <View style={styles.sectionWrap}>
+              <SectionHeader
+                title="Recently Consumed"
+                actionLabel="View all"
+                onActionPress={() => router.push('/inventory')}
+              />
+              <View style={styles.card}>
+                {consumed.map((entry, index) => (
+                  <View key={entry.id} style={[styles.consumeRow, index > 0 && styles.consumeRowDivided]}>
+                    <ItemImage uri={entry.imageUrl} category={entry.category} size={42} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.consumeName} numberOfLines={1}>{entry.name}</Text>
+                      <Text style={styles.consumeMeta} numberOfLines={1}>
+                        {entry.quantity} {entry.unit} · {timeAgo(entry.at)}
+                      </Text>
+                    </View>
+                    <StatusPill status="fresh" label="Used" />
                   </View>
-                  <Text style={styles.chartLabel}>{pt.label}</Text>
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
           )}
+
+          {/* AI Freshness Banner */}
+          <AIBanner
+            index={5}
+            icon="sparkle"
+            title="AI Freshness Insight"
+            body={
+              stats?.expirationAlerts && stats.expirationAlerts > 0
+                ? `You have ${stats.expirationAlerts} item${stats.expirationAlerts === 1 ? '' : 's'} expiring soon. Discover recipes to cook them today!`
+                : "Your pantry is well stocked and fresh. Use smart grocery and barcode scanning for easy tracking."
+            }
+            ctaLabel={stats?.expirationAlerts && stats.expirationAlerts > 0 ? "View recipes" : undefined}
+            onPressCta={stats?.expirationAlerts && stats.expirationAlerts > 0 ? () => router.push('/recipes') : undefined}
+          />
         </View>
-
-        {/* Recently consumed — what has actually left the pantry lately. The
-            item's own photo when it has one, falling back to the category icon
-            from the same resolver the inventory rows use, so the same food looks
-            the same in both places.
-
-            Sits under the trend rather than above it: the chart is the summary of
-            the month, and the rows below it are the detail behind that summary —
-            read the other way round, the detail arrived before the point it was
-            supporting. */}
-        {consumed.length > 0 && (
-          <View style={styles.section}>
-            <SectionLabel
-              right={
-                <Pressable onPress={() => router.push('/inventory')} hitSlop={8}>
-                  <Text style={styles.sectionLink}>View all</Text>
-                </Pressable>
-              }
-            >
-              Recently Consumed
-            </SectionLabel>
-            <View style={styles.card}>
-              {consumed.map((entry, index) => (
-                <View key={entry.id} style={[styles.consumeRow, index > 0 && styles.consumeRowDivided]}>
-                  <ItemImage uri={entry.imageUrl} category={entry.category} size={38} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.consumeName} numberOfLines={1}>{entry.name}</Text>
-                    <Text style={styles.consumeMeta} numberOfLines={1}>
-                      {entry.quantity} {entry.unit} · {timeAgo(entry.at)}
-                    </Text>
-                  </View>
-                  <StatusBadge label="Used" tone="neutral" icon={History} />
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
       </ScrollView>
 
       {/* The range picker sits outside the ScrollView: it is presented over the
@@ -606,130 +578,90 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   scroll: { flex: 1 },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    gap: SPACING.sm,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
   },
-  // Takes the slack so the actions keep their intrinsic width; minWidth 0 lets
-  // it actually shrink instead of forcing the row wider than the screen.
   greetingBlock: { flex: 1, minWidth: 0 },
-  greeting: { fontSize: 24, fontWeight: '800', color: COLORS.text },
-  subGreeting: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flexShrink: 0 },
-  // Same 42px rounded square and shadow as the bell beside it, so the two
-  // actions read as one row. The crown's colour is the only signal it carries
-  // now that the label is gone: brand green while the plan is live, red once
-  // it has lapsed.
+  greeting: { fontSize: 26, lineHeight: 31, fontWeight: '800', color: colors.textPrimary },
+  subGreeting: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexShrink: 0 },
+  planNotice: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    backgroundColor: colors.mintBg,
+    borderWidth: 1,
+    borderColor: colorWithOpacity(colors.primary, 0.2),
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  planNoticeCopy: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
+  planNoticeText: { flex: 1, fontSize: 13, color: colors.textPrimary },
+  planNoticeAction: { flexDirection: 'row', alignItems: 'center', color: colors.primary, fontSize: 13, fontWeight: '700' },
   planButton: {
     width: 42,
     height: 42,
-    borderRadius: RADII.icon,
+    borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.white,
-    ...SHADOW.faint,
+    backgroundColor: colors.surface,
+    ...shadow.card,
   },
-  banner: {
-    marginHorizontal: SPACING.lg,
-    borderRadius: RADII.card,
-    backgroundColor: COLORS.greenGradientTop,
-    padding: SPACING.lg,
-    overflow: 'hidden',
-    ...SHADOW.card,
+  contentStack: {
+    gap: spacing.md,
   },
-  bannerDeco: { position: 'absolute', width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.45)' },
-  bannerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  bannerTitle: { fontSize: 14, fontWeight: '700', color: COLORS.primaryDark },
-  bannerLink: { flexDirection: 'row', alignItems: 'center' },
-  bannerLinkText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
-  bannerAmount: { fontSize: 42, fontWeight: '800', color: COLORS.primaryDark, marginTop: 6 },
-  deltaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADII.pill },
-  deltaText: { fontSize: 12, fontWeight: '700' },
-  deltaNote: { fontSize: 12, color: COLORS.primaryDark },
-  metricRow: { flexDirection: 'row', gap: SPACING.md, marginHorizontal: SPACING.lg, marginTop: SPACING.md },
-  metric: {
-    flex: 1,
+  metricGrid: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  chartCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    ...shadow.card,
+  },
+  chartTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  chartHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.card,
-    padding: SPACING.md,
-    ...SHADOW.card,
-  },
-  // Size comes in with the `iconBox` object at the call site; only the paint is
-  // fixed here.
-  metricIconWrap: { backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  metricValue: { fontSize: 22, fontWeight: '800', color: COLORS.text },
-  metricLabel: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
-  // Two equal halves. `flexBasis: 0` plus `flexGrow: 1` is what makes them equal
-  // rather than proportional to their labels, and `minWidth: 0` lets a long label
-  // ellipsise instead of widening its tile.
-  quickRow: { flexDirection: 'row', gap: SPACING.sm, marginHorizontal: SPACING.lg, marginTop: SPACING.md },
-  quickTile: {
-    flexBasis: 0,
-    flexGrow: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: 6,
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.card,
-    ...SHADOW.card,
-  },
-  quickIconWrap: {
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
-  },
-  quickLabel: { fontSize: 12, fontWeight: '700', color: COLORS.text, maxWidth: '100%' },
-  section: { marginHorizontal: SPACING.lg, marginTop: SPACING.lg },
-  sectionLink: { fontSize: 12.5, fontWeight: '700', color: COLORS.primary },
-  card: {
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    paddingHorizontal: SPACING.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
-  },
-  consumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  consumeRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider },
-  consumeName: { fontSize: 14.5, fontWeight: '600', color: COLORS.text },
-  consumeMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
-  chartCard: {
-    marginHorizontal: SPACING.lg,
-    marginTop: SPACING.md,
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.card,
-    padding: SPACING.lg,
-    ...SHADOW.card,
-  },
-  chartTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  // The chip takes the slack and the unit caption keeps its intrinsic width, so
-  // a long range label ellipsises instead of pushing the unit off the card.
-  chartHeaderRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', gap: SPACING.sm, marginTop: 6,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
   rangeChip: {
-    flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: COLORS.primaryLight, borderRadius: RADII.pill,
-    paddingVertical: 6, paddingHorizontal: 11,
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.pill,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
   },
-  rangeChipText: { flexShrink: 1, fontSize: 12, fontWeight: '700', color: COLORS.primaryDark },
-  unitCaption: { fontSize: 11.5, fontWeight: '700', color: COLORS.secondaryText },
-  chart: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.md },
-  // Matches what the bars occupy — value line, 74pt track, label — plus the
-  // chart's own top margin, so the card does not resize when the read lands and
-  // push the rest of the page down.
-  chartWaiting: { marginTop: SPACING.md, height: 110, alignItems: 'center', justifyContent: 'center' },
-  chartWaitingText: { fontSize: 12.5, color: COLORS.secondaryText },
-  chartCol: { flex: 1, alignItems: 'center' },
-  chartValue: { fontSize: 10, color: COLORS.secondaryText, marginBottom: 3 },
-  chartBarTrack: { width: 18, justifyContent: 'flex-end', backgroundColor: COLORS.mutedBg, borderRadius: 9, overflow: 'hidden' },
-  chartBar: { width: '100%', backgroundColor: COLORS.secondary, borderTopLeftRadius: 9, borderTopRightRadius: 9 },
-  chartLabel: { fontSize: 11, color: COLORS.secondaryText, marginTop: 6, fontWeight: '600' },
+  rangeChipText: { flexShrink: 1, fontSize: 12, fontWeight: '700', color: colors.primaryDark },
+  unitCaption: { fontSize: 11.5, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
+  chartWaiting: { height: 110, alignItems: 'center', justifyContent: 'center' },
+  chartWaitingText: { fontSize: 12.5, color: colors.textSecondary },
+  sectionWrap: {
+    gap: spacing.xs,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    ...shadow.card,
+  },
+  consumeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  consumeRowDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+  consumeName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  consumeMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 });

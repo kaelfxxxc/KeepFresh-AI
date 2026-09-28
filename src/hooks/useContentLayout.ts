@@ -1,5 +1,5 @@
 import { useWindowDimensions } from 'react-native';
-import { SPACING } from '../theme';
+import { spacing } from '../../theme';
 
 /**
  * How wide a screen's content is allowed to get, and the margin that centres it.
@@ -23,7 +23,7 @@ export function useContentLayout() {
   const { width } = useWindowDimensions();
 
   const compact = width < COMPACT_WIDTH;
-  const baseGutter = compact ? SPACING.md : SPACING.lg;
+  const baseGutter = compact ? spacing.md : spacing.lg;
   const contentWidth = Math.min(width - baseGutter * 2, CONTENT_MAX_WIDTH);
 
   // Slack split in two rather than one fixed margin — this is what centres the
@@ -31,4 +31,23 @@ export function useContentLayout() {
   const gutter = (width - contentWidth) / 2;
 
   return { width, compact, contentWidth, gutter };
+}
+
+/**
+ * The page gutter for a screen that pads each of its blocks individually rather
+ * than padding its scroll view — the shape most of this app's screens are built
+ * in, where every card carries its own `marginHorizontal`.
+ *
+ * On a phone this is `base` and nothing moves. Past the content cap the slack
+ * splits evenly and the column centres, which is the whole of the wide-screen
+ * fix. It is deliberately a floor rather than a computed value: `useContentLayout`
+ * tightens its gutter on small screens, and dropping a phone's 32pt margin to 16
+ * would change the layout of every screen that adopted it, which reads as the
+ * bug rather than the fix.
+ */
+export function usePageGutter(base: number = spacing.xl) {
+  const { width } = useWindowDimensions();
+  const gutter = Math.max(base, (width - CONTENT_MAX_WIDTH) / 2);
+
+  return { width, gutter, contentWidth: width - gutter * 2 };
 }

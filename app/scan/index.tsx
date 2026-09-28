@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar, Animated, Easing, Linking } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, StatusBar, Animated, Easing, Linking, Modal, Image } from 'react-native';
 import { Camera, CameraType } from 'expo-camera/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useSubscription } from '../../src/context/SubscriptionContext';
-import { COLORS, SPACING } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { InventoryItem } from '../../src/types';
-import { lookupBarcode, toReviewProduct, ReviewInfo } from '../../src/services/barcodeService';
+import { lookupBarcode, toReviewProduct, ReviewInfo, BarcodeProduct } from '../../src/services/barcodeService';
 import { recognizeFood } from '../../src/services/foodVisionService';
 import { ScanBarcode, Images, PenLine, Settings, X, Sparkles } from 'lucide-react-native';
+import { IconBadge } from '../../src/components/ui';
 
 /**
  * How a photo is picked. `quality` is the only size lever available —
@@ -32,6 +33,12 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
  */
 const MIN_PHOTO_EDGE = 200;
 
+type LookupDisplay =
+  | { status: 'loading'; barcode: string }
+  | { status: 'success'; barcode: string; product: BarcodeProduct }
+  | { status: 'not_found'; barcode: string }
+  | { status: 'error'; barcode: string };
+
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const { entitlements, gates, refresh } = useSubscription();
@@ -44,12 +51,14 @@ export default function ScanScreen() {
   const scanningEnabled = gates.aiScan.allowed;
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [lookupDisplay, setLookupDisplay] = useState<LookupDisplay | null>(null);
   // Tracks whether this screen currently has focus so the <Camera> is only
   // mounted while visible (see useFocusEffect below).
   const [isFocused, setIsFocused] = useState(false);
   // Height of the barcode frame (measured), used to sweep the scan line.
   const [frameH, setFrameH] = useState(0);
   const sweep = useRef(new Animated.Value(0)).current;
+  const lastScanRef = useRef<{ value: string; timestamp: number } | null>(null);
 
   const maxTravel = Math.max(frameH - LINE_H - SWEEP_PAD * 2, 0);
   const translateY = sweep.interpolate({
@@ -77,6 +86,8 @@ export default function ScanScreen() {
       setIsFocused(true);
       setScanned(false);
       setLoading(false);
+      setLookupDisplay(null);
+      lastScanRef.current = null;
       return () => setIsFocused(false);
     }, [])
   );
@@ -239,6 +250,8 @@ export default function ScanScreen() {
   };
 
   const runLookup = async (barcode: string, fallback?: InventoryItem) => {
+    setLoading(true);
+    setLookupDisplay({ status: 'loading', barcode });
     const result = await lookupBarcode(barcode);
 
     // A lookup that reached the product database was charged to the plan, so
@@ -246,29 +259,28 @@ export default function ScanScreen() {
     if (result.status === 'found' || result.status === 'not_found') refresh();
 
     if (result.status === 'found') {
-      openReview(toReviewProduct(result.product), 'lookup');
+      setLookupDisplay({ status: 'success', barcode, product: result.product });
     } else if (result.status === 'limit_reached') {
+      setLookupDisplay({ status: 'error', barcode });
       promptScanLimit();
     } else if (result.status === 'unavailable' && fallback) {
       // Server unreachable / function not deployed yet — reuse what we know.
       openReview(fromExisting(fallback, barcode), 'inventory');
     } else if (result.status === 'unavailable') {
-      offerManualEntry(
-        barcode,
-        'We couldn’t reach the product database. Would you like to enter the information manually?'
-      );
+      setLookupDisplay({ status: 'error', barcode });
     } else {
-      offerManualEntry(
-        barcode,
-        'We couldn’t find this barcode in the product database. Would you like to enter the information manually?'
-      );
+      setLookupDisplay({ status: 'not_found', barcode });
     }
+    setLoading(false);
   };
 
   const handleBarCodeScanned = async ({ data }: { data: string }) => {
     // The camera stays live while a picked photo is being analyzed, so a code
     // drifting into frame must not hijack the scan already in flight.
-    if (loading) return;
+    const timestamp = Date.now();
+    const previous = lastScanRef.current;
+    if (loading || (previous?.value === data && timestamp - previous.timestamp < 2000)) return;
+    lastScanRef.current = { value: data, timestamp };
     setScanned(true);
     setLoading(true);
     try {
@@ -307,11 +319,13 @@ export default function ScanScreen() {
     if (!scanningEnabled) {
       return (
         <View style={styles.centerState}>
-          <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+          <IconBadge color={colors.primary} size={88}>
+            <ScanBarcode size={40} color={colors.primary} strokeWidth={1.8} />
+          </IconBadge>
           <Text style={styles.stateTitle}>{gates.aiScan.title}</Text>
           <Text style={styles.stateText}>{gates.aiScan.message}</Text>
           <Pressable style={styles.manualBtn} onPress={() => router.push('/subscription')}>
-            <Sparkles size={16} color={COLORS.white} strokeWidth={2.2} />
+            <Sparkles size={16} color={colors.surface} strokeWidth={2.2} />
             <Text style={styles.manualText}>See plans</Text>
           </Pressable>
           <Pressable style={styles.textBtn} onPress={() => router.push('/inventory/add')} hitSlop={8}>
@@ -323,7 +337,7 @@ export default function ScanScreen() {
     if (hasPermission === null) {
       return (
         <View style={styles.centerState}>
-          <ActivityIndicator color={COLORS.primary} />
+          <ActivityIndicator color={colors.primary} />
           <Text style={styles.stateText}>Requesting camera permission…</Text>
         </View>
       );
@@ -331,14 +345,16 @@ export default function ScanScreen() {
     if (hasPermission === false) {
       return (
         <View style={styles.centerState}>
-          <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+          <IconBadge color={colors.primary} size={88}>
+            <ScanBarcode size={40} color={colors.primary} strokeWidth={1.8} />
+          </IconBadge>
           <Text style={styles.stateTitle}>Camera access needed</Text>
           <Text style={styles.stateText}>
             Enable camera permission to scan barcodes and photograph items. You can still upload a photo or add one
             manually.
           </Text>
           <Pressable style={styles.manualBtn} onPress={() => { Linking.openSettings().catch(() => {}); }}>
-            <Settings size={16} color={COLORS.white} strokeWidth={2.2} />
+            <Settings size={16} color={colors.surface} strokeWidth={2.2} />
             <Text style={styles.manualText}>Open Settings</Text>
           </Pressable>
         </View>
@@ -354,7 +370,7 @@ export default function ScanScreen() {
             type={CameraType.back}
             onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
             barCodeScannerSettings={{
-              barCodeTypes: ['ean13', 'ean8', 'upc-a', 'upc-e', 'code39', 'code93', 'code128'],
+              barCodeTypes: ['ean13', 'ean8'],
             }}
           />
         )}
@@ -393,11 +409,11 @@ export default function ScanScreen() {
             onPress={() => router.back()}
             hitSlop={10}
           >
-            <X size={22} color={COLORS.white} strokeWidth={2.4} />
+            <X size={22} color={colors.surface} strokeWidth={2.4} />
           </Pressable>
 
-          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + SPACING.md }]}>
-            {loading && <ActivityIndicator color={COLORS.primary} style={{ marginBottom: SPACING.sm }} />}
+          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+            {loading && <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.sm }} />}
             <Text style={styles.sheetTitle}>Scan Product</Text>
             <Text style={styles.sheetSubtitle}>Scan a barcode, snap a photo, or enter details manually.</Text>
             {!!entitlements && (
@@ -434,7 +450,7 @@ export default function ScanScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Upload a photo from the gallery"
               >
-                <Images size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
+                <Images size={17} color={loading ? colors.textSecondary : colors.primary} strokeWidth={2.2} />
                 <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Upload Photo</Text>
               </Pressable>
               <Pressable
@@ -444,13 +460,84 @@ export default function ScanScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Enter the product details manually"
               >
-                <PenLine size={17} color={loading ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.2} />
+                <PenLine size={17} color={loading ? colors.textSecondary : colors.primary} strokeWidth={2.2} />
                 <Text style={[styles.modeText, loading && styles.modeTextDisabled]}>Edit Manually</Text>
               </Pressable>
             </View>
           </View>
         </>
       )}
+
+      <Modal
+        visible={lookupDisplay !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setLookupDisplay(null);
+          setScanned(false);
+        }}
+      >
+        <View style={styles.resultBackdrop}>
+          <View style={styles.resultCard}>
+            {lookupDisplay?.status === 'loading' && (
+              <>
+                <ActivityIndicator color={colors.primary} size="large" />
+                <Text style={styles.resultTitle}>Looking up product…</Text>
+                <Text style={styles.resultMeta}>{lookupDisplay.barcode}</Text>
+              </>
+            )}
+
+            {lookupDisplay?.status === 'success' && (
+              <>
+                {lookupDisplay.product.image_url ? (
+                  <Image source={{ uri: lookupDisplay.product.image_url }} style={styles.resultImage} />
+                ) : null}
+                <Text style={styles.resultTitle} numberOfLines={3}>
+                  {lookupDisplay.product.title || 'Product found'}
+                </Text>
+                {!!lookupDisplay.product.brand && (
+                  <Text style={styles.resultBrand} numberOfLines={2}>{lookupDisplay.product.brand}</Text>
+                )}
+                <Pressable
+                  style={styles.resultPrimaryButton}
+                  onPress={() => {
+                    const review = toReviewProduct(lookupDisplay.product);
+                    setLookupDisplay(null);
+                    openReview(review, 'lookup');
+                  }}
+                >
+                  <Text style={styles.resultPrimaryText}>Continue</Text>
+                </Pressable>
+              </>
+            )}
+
+            {lookupDisplay?.status === 'not_found' && (
+              <Text style={styles.resultTitle}>No info found for {lookupDisplay.barcode}</Text>
+            )}
+
+            {lookupDisplay?.status === 'error' && (
+              <>
+                <Text style={styles.resultTitle}>Couldn&apos;t reach lookup service</Text>
+                <Pressable style={styles.resultPrimaryButton} onPress={() => runLookup(lookupDisplay.barcode)}>
+                  <Text style={styles.resultPrimaryText}>Retry</Text>
+                </Pressable>
+              </>
+            )}
+
+            {lookupDisplay && lookupDisplay.status !== 'loading' && (
+              <Pressable
+                style={styles.resultSecondaryButton}
+                onPress={() => {
+                  setLookupDisplay(null);
+                  setScanned(false);
+                }}
+              >
+                <Text style={styles.resultSecondaryText}>Scan again</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -458,54 +545,106 @@ export default function ScanScreen() {
 const CORNER = 30;
 const LINE_H = 2; // scan line thickness
 const SWEEP_PAD = 6; // gap the sweep keeps from the frame's top/bottom edges
+
+// Everything drawn *over* the live camera preview — the scrim behind the close
+// button, the hint pill, the corner brackets — is deliberately literal rather
+// than tokenised. These sit on a video feed, not on a card, so the design
+// system's surfaces do not apply and a palette change must not repaint them.
+const OVERLAY_SCRIM = 'rgba(0,0,0,0.55)';
+const OVERLAY_BTN = 'rgba(0,0,0,0.4)';
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  centerState: { flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center', paddingHorizontal: SPACING.xl, gap: 8 },
-  stateTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm },
-  stateText: { fontSize: 14, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 20 },
-  manualBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.primary, borderRadius: 50, paddingHorizontal: SPACING.lg, paddingVertical: 12, marginTop: SPACING.md },
-  manualText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  textBtn: { paddingVertical: SPACING.sm },
-  textBtnLabel: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
+  centerState: { flex: 1, backgroundColor: colors.screenBg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: spacing.md },
+  stateTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.sm },
+  stateText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  manualBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, borderRadius: radii.pill, paddingHorizontal: spacing.lg, paddingVertical: 12, marginTop: spacing.md },
+  manualText: { color: colors.surface, fontWeight: '700', fontSize: 15 },
+  textBtn: { paddingVertical: spacing.sm },
+  textBtnLabel: { color: colors.primary, fontWeight: '700', fontSize: 14 },
   cameraWrap: { flex: 1 },
   camera: { flex: 1 },
   cornerFrame: {
     position: 'absolute', left: 0, right: 0, top: '22%', bottom: '38%',
     alignItems: 'center', justifyContent: 'center',
   },
-  corner: { position: 'absolute', width: CORNER, height: CORNER, borderColor: COLORS.scanCorner },
+  corner: { position: 'absolute', width: CORNER, height: CORNER, borderColor: '#FFFFFF' },
   cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 14 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 14 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 14 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 14 },
   scanLine: {
     position: 'absolute', top: 0, left: 12, right: 12, height: LINE_H,
-    backgroundColor: COLORS.secondary, borderRadius: 2,
-    shadowColor: COLORS.secondary, shadowOpacity: 0.9, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
+    backgroundColor: colors.primary, borderRadius: 2,
+    shadowColor: colors.primary, shadowOpacity: 0.9, shadowRadius: 6, shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
   topHint: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   hintText: {
-    color: COLORS.white, fontSize: 13, fontWeight: '600',
-    backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 50, overflow: 'hidden',
+    color: colors.surface, fontSize: 13, fontWeight: '600',
+    backgroundColor: OVERLAY_SCRIM, paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill, overflow: 'hidden',
   },
-  closeBtn: { position: 'absolute', right: SPACING.lg, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
+  closeBtn: { position: 'absolute', right: spacing.lg, width: 40, height: 40, borderRadius: radii.pill, backgroundColor: OVERLAY_BTN, alignItems: 'center', justifyContent: 'center' },
   bottomSheet: {
-    backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, alignItems: 'center',
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg,
+    paddingHorizontal: spacing.xl, paddingTop: spacing.lg, alignItems: 'center',
     marginTop: 'auto',
   },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
-  sheetSubtitle: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18, marginTop: 4 },
-  quota: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 6 },
-  shutterWrap: { marginVertical: SPACING.md },
-  shutterOuter: { width: 66, height: 66, borderRadius: 33, borderWidth: 3, borderColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  shutter: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.primary },
-  actionRow: { flexDirection: 'row', gap: SPACING.sm, alignSelf: 'stretch' },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
+  sheetSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
+  quota: { fontSize: 11.5, color: colors.textSecondary, marginTop: 6 },
+  shutterWrap: { marginVertical: spacing.md },
+  shutterOuter: { width: 66, height: 66, borderRadius: radii.pill, borderWidth: 3, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  shutter: { width: 50, height: 50, borderRadius: radii.pill, backgroundColor: colors.primary },
+  actionRow: { flexDirection: 'row', gap: spacing.sm, alignSelf: 'stretch' },
   modeBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    height: 48, borderRadius: 50, borderWidth: 1.5, borderColor: COLORS.primary, backgroundColor: COLORS.white,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    height: 48, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface,
   },
-  modeText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
-  modeTextDisabled: { color: COLORS.secondaryText },
+  modeText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  modeTextDisabled: { color: colors.textSecondary },
+  resultBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  resultCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    ...shadow.card,
+  },
+  resultImage: {
+    width: 128,
+    height: 128,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.screenBg,
+  },
+  resultTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  resultMeta: { color: colors.textSecondary, fontSize: 13, marginTop: spacing.sm },
+  resultBrand: { color: colors.textSecondary, fontSize: 14, marginTop: spacing.xs, textAlign: 'center' },
+  resultPrimaryButton: {
+    minWidth: 140,
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+  },
+  resultPrimaryText: { color: colors.surface, fontSize: 14, fontWeight: '700' },
+  resultSecondaryButton: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, marginTop: spacing.xs },
+  resultSecondaryText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
 });

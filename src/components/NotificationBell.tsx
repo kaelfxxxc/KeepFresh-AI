@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, CheckCheck, CheckCircle2 } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToTables } from '../lib/realtime';
-import { COLORS, RADII, SHADOW, SPACING } from '../theme';
+import { colors, radii, spacing, shadow } from '../theme';
 import { CountBadge, EmptyState } from './ui';
 import { notificationService } from '../services/notificationService';
 import type { NotificationEntry } from '../services/notificationService';
@@ -92,7 +92,7 @@ export function NotificationBell() {
     );
   }, [uid, load]);
 
-  const cardWidth = Math.min(CARD_WIDTH, screenWidth - SPACING.lg * 2);
+  const cardWidth = Math.min(CARD_WIDTH, screenWidth - spacing.lg * 2);
 
   /**
    * Measure the bell, then open.
@@ -116,10 +116,10 @@ export function NotificationBell() {
       // second clamp is what keeps the card on screen when the bell is close to
       // the left edge on a narrow phone.
       const rightAlign = screenWidth - (x + width);
-      const rightMost = screenWidth - cardWidth - SPACING.md;
+      const rightMost = screenWidth - cardWidth - spacing.md;
       setAnchor({
         top: y + height + GAP,
-        right: Math.max(SPACING.md, Math.min(rightAlign, rightMost)),
+        right: Math.max(spacing.md, Math.min(rightAlign, rightMost)),
       });
       setOpen(true);
     });
@@ -170,7 +170,7 @@ export function NotificationBell() {
   // screen, so a long history stays reachable without the card leaving the
   // viewport.
   const cardMaxHeight = anchor
-    ? Math.min(CARD_MAX_HEIGHT, screenHeight - anchor.top - insets.bottom - SPACING.lg)
+    ? Math.min(CARD_MAX_HEIGHT, screenHeight - anchor.top - insets.bottom - spacing.lg)
     : CARD_MAX_HEIGHT;
 
   return (
@@ -185,7 +185,7 @@ export function NotificationBell() {
           }
           style={({ pressed }) => [styles.bellWrap, pressed && { opacity: 0.7 }]}
         >
-          <Bell size={22} color={COLORS.text} strokeWidth={2} />
+          <Bell size={22} color={colors.textPrimary} strokeWidth={2} />
           <CountBadge count={unread} />
         </Pressable>
       </View>
@@ -220,7 +220,7 @@ export function NotificationBell() {
                   hitSlop={8}
                   style={({ pressed }) => [styles.markAll, pressed && { opacity: 0.7 }]}
                 >
-                  <CheckCheck size={14} color={COLORS.primary} strokeWidth={2.4} />
+                  <CheckCheck size={14} color={colors.primary} strokeWidth={2.4} />
                   <Text style={styles.markAllText}>Mark all as read</Text>
                 </Pressable>
               )}
@@ -228,7 +228,7 @@ export function NotificationBell() {
 
             {loading ? (
               <View style={styles.loading}>
-                <ActivityIndicator color={COLORS.primary} />
+                <ActivityIndicator color={colors.primary} />
               </View>
             ) : items.length === 0 ? (
               // Wrapped so the block is centred against the card's full width.
@@ -290,11 +290,11 @@ const styles = StyleSheet.create({
   bellWrap: {
     width: 42,
     height: 42,
-    borderRadius: RADII.icon,
-    backgroundColor: COLORS.white,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOW.faint,
+    ...shadow.faint,
     position: 'relative',
   },
   // Light enough to read as a popover over the screen rather than a dialog
@@ -302,28 +302,28 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
   card: {
     position: 'absolute',
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.card,
-    paddingVertical: SPACING.sm,
-    ...SHADOW.card,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingVertical: spacing.sm,
+    ...shadow.card,
     shadowOpacity: 0.16,
     shadowRadius: 18,
     elevation: 8,
   },
   // Only used in the unmeasurable case, so the card still lands somewhere sane.
-  cardFallback: { top: 90, right: SPACING.lg },
+  cardFallback: { top: 90, right: spacing.lg },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.md,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
     height: HEADER_HEIGHT,
   },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   markAll: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  markAllText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
-  loading: { padding: SPACING.xl, alignItems: 'center' },
+  markAllText: { fontSize: 12, fontWeight: '700', color: colors.primary },
+  loading: { padding: spacing.xl, alignItems: 'center' },
   // The wrapper owns the centring, so the block is centred against the card's
   // full width even if EmptyState's own `alignItems` is ever changed: the card
   // is a fixed-width absolute box with no horizontal padding of its own, and
@@ -333,31 +333,31 @@ const styles = StyleSheet.create({
   emptyWrap: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    paddingVertical: SPACING.md,
+    paddingVertical: spacing.md,
   },
-  list: { paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm },
+  list: { paddingHorizontal: spacing.sm, paddingBottom: spacing.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 10,
-    borderRadius: RADII.input,
+    borderRadius: radii.sm,
   },
-  rowUnread: { backgroundColor: COLORS.primaryLight },
+  rowUnread: { backgroundColor: colors.mintBg },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     marginTop: 5,
-    backgroundColor: COLORS.danger,
+    backgroundColor: colors.danger,
   },
   // Kept in the layout rather than removed, so read and unread rows share one
   // left edge instead of the read ones shifting across.
   dotRead: { backgroundColor: 'transparent' },
   rowBody: { flex: 1, minWidth: 0 },
-  rowTitle: { fontSize: 14.5, fontWeight: '700', color: COLORS.text },
+  rowTitle: { fontSize: 14.5, fontWeight: '700', color: colors.textPrimary },
   rowTitleRead: { fontWeight: '600' },
-  rowMessage: { fontSize: 12.5, color: COLORS.secondaryText, marginTop: 2, lineHeight: 17 },
-  rowTime: { fontSize: 11, color: COLORS.secondaryText, marginTop: 4 },
+  rowMessage: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
+  rowTime: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
 });

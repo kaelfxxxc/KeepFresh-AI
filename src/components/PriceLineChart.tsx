@@ -14,7 +14,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { COLORS, SPACING } from '../theme';
+import { colors, spacing } from '../../theme';
 
 /**
  * The plot's height, derived from its measured width.
@@ -50,7 +50,7 @@ const PAD_Y = DOT_RADIUS + RING;
 
 export function PriceLineChart({
   data,
-  color = COLORS.primary,
+  color = colors.primary,
   formatValue = (n: number) => String(n),
 }: {
   data: { label: string; value: number }[];
@@ -123,7 +123,7 @@ export function PriceLineChart({
                 y1={baseY}
                 x2={width}
                 y2={baseY}
-                stroke={COLORS.divider}
+                stroke={colors.border}
                 strokeWidth={1}
               />
               <Path
@@ -143,7 +143,7 @@ export function PriceLineChart({
                   y1={y(data[active].value)}
                   x2={x(active)}
                   y2={baseY}
-                  stroke={COLORS.divider}
+                  stroke={colors.border}
                   strokeWidth={1}
                 />
               )}
@@ -155,7 +155,7 @@ export function PriceLineChart({
                 cy={y(last.value)}
                 r={DOT_RADIUS}
                 fill={color}
-                stroke={COLORS.white}
+                stroke={colors.surface}
                 strokeWidth={RING}
               />
 
@@ -165,7 +165,7 @@ export function PriceLineChart({
                   cy={y(data[active].value)}
                   r={DOT_RADIUS}
                   fill={color}
-                  stroke={COLORS.white}
+                  stroke={colors.surface}
                   strokeWidth={RING}
                 />
               )}
@@ -216,10 +216,10 @@ const styles = StyleSheet.create({
   plot: { width: '100%' },
   hitRow: { ...StyleSheet.absoluteFillObject, flexDirection: 'row' },
   hit: { flex: 1, height: '100%' },
-  xRow: { flexDirection: 'row', marginTop: SPACING.sm },
-  xLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: COLORS.secondaryText },
-  xLabelActive: { color: COLORS.text, fontWeight: '700' },
+  xRow: { flexDirection: 'row', marginTop: spacing.sm },
+  xLabel: { flex: 1, textAlign: 'center', fontSize: 11, color: colors.textSecondary },
+  xLabelActive: { color: colors.textPrimary, fontWeight: '700' },
   // Text tokens, never the series colour — a label wearing the line's green
   // would read as part of the mark.
-  caption: { fontSize: 12, fontWeight: '600', color: COLORS.text, marginTop: 2, minHeight: 16 },
+  caption: { fontSize: 12, fontWeight: '600', color: colors.textPrimary, marginTop: 2, minHeight: 16 },
 });

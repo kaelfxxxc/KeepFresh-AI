@@ -37,16 +37,8 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, RADII, SHADOW, SPACING } from '../src/theme';
-import {
-  NavHeader,
-  Card,
-  PillButton,
-  Segmented,
-  StatusBadge,
-  UsageMeter,
-  Divider,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow, statusSurface } from '../theme';
+import { NavHeader, Card, PillButton, Segmented, StatusBadge, UsageMeter, Divider, SectionHeader } from '../src/components/ui';
 import {
   subscriptionService,
   describeStatus,
@@ -60,10 +52,14 @@ import {
 } from '../src/services/subscriptionService';
 import { paymentService } from '../src/services/paymentService';
 import type { BillingPeriod, FeatureEntitlement, SubscriptionPlan } from '../src/types';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 
 type FeatureMatrix = Record<string, Record<string, FeatureEntitlement>>;
 
 export default function SubscriptionScreen() {
+  // The page gutter: the usual margin on a phone, and the slack that centres
+  // the column once the screen is wider than `CONTENT_MAX_WIDTH`.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const { entitlements, refresh } = useSubscription();
   const router = useRouter();
@@ -261,7 +257,7 @@ export default function SubscriptionScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: SPACING.xxl }}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxl }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -270,8 +266,8 @@ export default function SubscriptionScreen() {
               refresh();
               load();
             }}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
@@ -279,7 +275,7 @@ export default function SubscriptionScreen() {
         <Card style={styles.currentCard}>
           <View style={styles.currentTop}>
             <View style={styles.crownWrap}>
-              <Crown size={20} color={COLORS.primary} strokeWidth={2.3} />
+              <Crown size={20} color={colors.primary} strokeWidth={2.3} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.currentName} numberOfLines={1}>
@@ -296,7 +292,7 @@ export default function SubscriptionScreen() {
 
           {!!entitlements?.current_period_end && (
             <View style={styles.renewRow}>
-              <CalendarClock size={15} color={COLORS.secondaryText} strokeWidth={2} />
+              <CalendarClock size={15} color={colors.textSecondary} strokeWidth={2} />
               <Text style={styles.renewText}>
                 {/* `is_active` first: a lapsed plan used to fall through to the
                     "Renews …" wording below, which told an expired user their
@@ -314,7 +310,7 @@ export default function SubscriptionScreen() {
 
           {entitlements?.is_active === false && (
             <View style={styles.lapsed}>
-              <Info size={15} color={COLORS.warningText} strokeWidth={2.2} />
+              <Info size={15} color={colors.warning} strokeWidth={2.2} />
               <Text style={styles.lapsedText}>
                 {trialOver
                   ? `Your free trial${
@@ -339,7 +335,7 @@ export default function SubscriptionScreen() {
             label="AI scans this month"
             used={entitlements?.ai_scans_used ?? 0}
             limit={entitlements?.max_ai_scans ?? 0}
-            style={{ marginTop: SPACING.md }}
+            style={{ marginTop: spacing.md }}
           />
 
           {(entitlements?.products_used ?? 0) >= (entitlements?.max_products ?? Infinity) && (
@@ -365,7 +361,7 @@ export default function SubscriptionScreen() {
               .describeFeatures(entitlements?.features)
               .map((feature) => (
                 <View key={feature.key} style={styles.featureChip}>
-                  <Check size={12} color={COLORS.primary} strokeWidth={3} />
+                  <Check size={12} color={colors.primary} strokeWidth={3} />
                   <Text style={styles.featureChipText}>
                     {feature.label}
                     {feature.limit != null && feature.limit > 1 ? ` (${feature.limit})` : ''}
@@ -403,26 +399,23 @@ export default function SubscriptionScreen() {
         </Card>
 
         {/* --------------------------------------------------- Plan list */}
-        <View style={styles.sectionHead}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.sectionTitle}>{audienceLabel} plans</Text>
-            <Text style={styles.sectionSub}>
-              These are the plans for your {audienceLabel} account. Pick the capacity you need.
-            </Text>
-          </View>
-        </View>
+        <SectionHeader
+          title={`${audienceLabel} plans`}
+          subtitle={`These are the plans for your ${audienceLabel} account. Pick the capacity you need.`}
+          style={styles.sectionHead}
+        />
 
         <Segmented options={periodOptions} value={period} onChange={setPeriod} />
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color={COLORS.primary} />
+            <ActivityIndicator color={colors.primary} />
           </View>
         ) : loadError ? (
           <Text style={styles.errorText}>{loadError}</Text>
         ) : (
           visibleGroups.map((group) => (
-            <View key={group.audience} style={{ marginTop: SPACING.lg }}>
+            <View key={group.audience} style={{ marginTop: spacing.lg }}>
               {group.tiers.map((tier) => (
                 <PlanCard
                   key={`${group.audience}-${tier.tier}`}
@@ -445,7 +438,7 @@ export default function SubscriptionScreen() {
 
         {/* ------------------------------------------------ Fine print */}
         <View style={styles.finePrint}>
-          <Info size={14} color={COLORS.secondaryText} strokeWidth={2} />
+          <Info size={14} color={colors.textSecondary} strokeWidth={2} />
           <Text style={styles.finePrintText}>
             {!billingReady
               ? 'In-app billing is not enabled in this build, so plans cannot be purchased from here yet. Purchase verification runs on our server; nothing is activated locally.'
@@ -537,11 +530,11 @@ function PlanCard({
 
       <View style={styles.planLimits}>
         <View style={styles.planLimit}>
-          <Package size={14} color={COLORS.primary} strokeWidth={2.2} />
+          <Package size={14} color={colors.primary} strokeWidth={2.2} />
           <Text style={styles.planLimitText}>{plan.max_products} products</Text>
         </View>
         <View style={styles.planLimit}>
-          <ScanLine size={14} color={COLORS.primary} strokeWidth={2.2} />
+          <ScanLine size={14} color={colors.primary} strokeWidth={2.2} />
           <Text style={styles.planLimitText}>{plan.max_ai_scans} AI scans / month</Text>
         </View>
       </View>
@@ -550,7 +543,7 @@ function PlanCard({
         <View style={styles.planFeatures}>
           {subscriptionService.describeFeatures(features).map((feature) => (
             <View key={feature.key} style={styles.planFeatureRow}>
-              <Check size={14} color={COLORS.primary} strokeWidth={2.6} />
+              <Check size={14} color={colors.primary} strokeWidth={2.6} />
               <Text style={styles.planFeatureText}>
                 {feature.label}
                 {feature.limit != null && feature.limit > 1 ? ` — up to ${feature.limit}` : ''}
@@ -585,7 +578,7 @@ function PlanCard({
           loading={busyPlanId === plan.id}
           disabled={!canBuy || busyPlanId !== null || !billingReady}
           onPress={() => onChoose(plan)}
-          style={{ marginTop: SPACING.md }}
+          style={{ marginTop: spacing.md }}
         />
       )}
     </Card>
@@ -612,95 +605,112 @@ function periodLabelFor(period: BillingPeriod): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
 
-  currentCard: { padding: SPACING.lg },
+  currentCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
   currentTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   crownWrap: {
     width: 42,
     height: 42,
-    borderRadius: RADII.icon,
-    backgroundColor: COLORS.primaryLight,
+    borderRadius: 21,
+    backgroundColor: colors.mintBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  currentName: { fontSize: 17, fontWeight: '800', color: COLORS.text },
-  currentPrice: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
-  renewRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: SPACING.md },
-  renewText: { fontSize: 12.5, color: COLORS.secondaryText, flex: 1 },
+  currentName: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  currentPrice: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  renewRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md },
+  renewText: { fontSize: 12.5, color: colors.textSecondary, flex: 1 },
   lapsed: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: COLORS.warningBg,
-    borderRadius: RADII.card,
-    padding: SPACING.md,
-    marginTop: SPACING.md,
+    backgroundColor: statusSurface.warning.bg,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: statusSurface.warning.border,
   },
-  lapsedText: { flex: 1, fontSize: 12.5, color: COLORS.warningText, lineHeight: 17 },
+  lapsedText: { flex: 1, fontSize: 12.5, color: statusSurface.warning.text, lineHeight: 17 },
 
   limitHit: {
-    backgroundColor: COLORS.dangerBg,
-    borderRadius: RADII.card,
-    padding: SPACING.md,
-    marginTop: SPACING.md,
+    backgroundColor: statusSurface.danger.bg,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: statusSurface.danger.border,
   },
-  limitHitText: { fontSize: 12.5, color: COLORS.dangerText, lineHeight: 17 },
+  limitHitText: { fontSize: 12.5, color: statusSurface.danger.text, lineHeight: 17 },
 
   includesLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: COLORS.text,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.sm,
+    color: colors.textPrimary,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   featureWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   featureChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.mintBg,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: RADII.pill,
+    borderRadius: radii.pill,
   },
-  featureChipText: { fontSize: 11.5, fontWeight: '600', color: COLORS.primaryDark },
-  mutedNote: { fontSize: 12, color: COLORS.secondaryText },
+  featureChipText: { fontSize: 11.5, fontWeight: '600', color: colors.primaryDark },
+  mutedNote: { fontSize: 12, color: colors.textSecondary },
 
-  currentActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  currentActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
 
-  sectionHead: { flexDirection: 'row', alignItems: 'flex-start', marginTop: SPACING.xl, marginBottom: SPACING.sm },
-  sectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text },
-  sectionSub: { fontSize: 12.5, color: COLORS.secondaryText, marginTop: 3, lineHeight: 17 },
+  sectionHead: { marginTop: spacing.xl, marginBottom: spacing.sm },
 
-  loadingBox: { paddingVertical: SPACING.xl, alignItems: 'center' },
-  errorText: { fontSize: 13, color: COLORS.dangerText, marginTop: SPACING.md },
+  loadingBox: { paddingVertical: spacing.xl, alignItems: 'center' },
+  errorText: { fontSize: 13, color: colors.danger, marginTop: spacing.md },
 
-  planCard: { padding: SPACING.lg, marginTop: SPACING.sm },
-  planCardFeatured: { borderColor: COLORS.primary, borderWidth: 1.5 },
+  planCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  planCardFeatured: { borderColor: colors.primary, borderWidth: 2 },
   planHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   planTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  planTier: { fontSize: 16, fontWeight: '800', color: COLORS.text },
-  planPrice: { fontSize: 24, fontWeight: '800', color: COLORS.primary, marginTop: 6 },
-  planSub: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  planTier: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  planPrice: { fontSize: 24, fontWeight: '800', color: colors.primary, marginTop: 6 },
+  planSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
-  planLimits: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: SPACING.md },
+  planLimits: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: spacing.md },
   planLimit: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  planLimitText: { fontSize: 13, fontWeight: '600', color: COLORS.text },
+  planLimitText: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
 
-  planFeatures: { marginTop: SPACING.md, gap: 8 },
+  planFeatures: { marginTop: spacing.md, gap: 8 },
   planFeatureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  planFeatureText: { flex: 1, fontSize: 13, color: COLORS.text },
+  planFeatureText: { flex: 1, fontSize: 13, color: colors.textPrimary },
 
   currentTag: {
-    marginTop: SPACING.md,
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: RADII.pill,
+    marginTop: spacing.md,
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.pill,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  currentTagText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
-  trialNote: { fontSize: 12, color: COLORS.secondaryText, marginTop: SPACING.md, lineHeight: 17 },
+  currentTagText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  trialNote: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.md, lineHeight: 17 },
 
-  finePrint: { flexDirection: 'row', gap: 8, marginTop: SPACING.xl, paddingHorizontal: 2 },
-  finePrintText: { flex: 1, fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16 },
+  finePrint: { flexDirection: 'row', gap: 8, marginTop: spacing.xl, paddingHorizontal: 2 },
+  finePrintText: { flex: 1, fontSize: 11.5, color: colors.textSecondary, lineHeight: 16 },
 });

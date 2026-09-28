@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Linking } from 'react-native';
-import { COLORS, SPACING, RADII } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { ChevronDown, LifeBuoy, Mail } from 'lucide-react-native';
-import { NavHeader } from '../../src/components/ui';
+import { NavHeader, IconBadge, SectionHeader } from '../../src/components/ui';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 const FAQS = [
   { q: 'How do I add items to inventory?', a: 'Tap Add Item on the Inventory tab, scan a barcode on the Scan screen, or add details manually. Set an expiration date so KeepFresh can alert you.' },
@@ -13,6 +14,7 @@ const FAQS = [
 ];
 
 export default function HelpScreen() {
+  const { gutter } = usePageGutter();
   const [open, setOpen] = useState<number | null>(0);
 
   const email = 'support@keepfresh.app';
@@ -23,7 +25,7 @@ export default function HelpScreen() {
   return (
     <View style={styles.container}>
       <NavHeader title="Help & Support" subtitle="Answers to common questions" />
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg }}>
+      <ScrollView contentContainerStyle={{ paddingVertical: spacing.xl, paddingHorizontal: gutter }}>
         <View style={styles.card}>
           {FAQS.map((f, i) => {
             const expanded = open === i;
@@ -31,7 +33,7 @@ export default function HelpScreen() {
               <View key={i} style={[styles.faqItem, i < FAQS.length - 1 && styles.sep]}>
                 <Pressable style={styles.faqQ} onPress={() => setOpen(expanded ? null : i)}>
                   <Text style={styles.faqQText}>{f.q}</Text>
-                  <ChevronDown size={18} color={COLORS.secondaryText} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
+                  <ChevronDown size={18} color={colors.textSecondary} style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
                 </Pressable>
                 {expanded && <Text style={styles.faqAText}>{f.a}</Text>}
               </View>
@@ -39,17 +41,21 @@ export default function HelpScreen() {
           })}
         </View>
 
-        <Text style={styles.sectionTitle}>Still need help?</Text>
+        <SectionHeader title="Still need help?" />
         <View style={styles.card}>
           <Pressable style={styles.contactRow} onPress={contact}>
-            <View style={styles.contactIcon}><Mail size={18} color={COLORS.primary} strokeWidth={2.1} /></View>
+            <IconBadge color={colors.primary} size={40}>
+              <Mail size={18} color={colors.primary} strokeWidth={2.1} />
+            </IconBadge>
             <View style={{ flex: 1 }}>
               <Text style={styles.contactTitle}>Email Support</Text>
               <Text style={styles.contactSub}>{email}</Text>
             </View>
           </Pressable>
           <View style={styles.contactRow}>
-            <View style={styles.contactIcon}><LifeBuoy size={18} color={COLORS.primary} strokeWidth={2.1} /></View>
+            <IconBadge color={colors.primary} size={40}>
+              <LifeBuoy size={18} color={colors.primary} strokeWidth={2.1} />
+            </IconBadge>
             <View style={{ flex: 1 }}>
               <Text style={styles.contactTitle}>Response time</Text>
               <Text style={styles.contactSub}>Usually within one business day</Text>
@@ -62,16 +68,17 @@ export default function HelpScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  card: { backgroundColor: COLORS.white, borderRadius: 12, paddingHorizontal: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  card: {
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg, ...shadow.card,
+  },
   faqItem: { paddingVertical: 6 },
-  sep: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
+  sep: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   faqQ: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  faqQText: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
-  faqAText: { fontSize: 13, color: COLORS.secondaryText, lineHeight: 20, paddingBottom: 14, paddingRight: SPACING.md },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text, marginTop: SPACING.lg, marginBottom: SPACING.sm },
-  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  contactIcon: { width: 38, height: 38, borderRadius: RADII.icon, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  contactTitle: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  contactSub: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
+  faqQText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  faqAText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, paddingBottom: 14, paddingRight: spacing.md },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 14 },
+  contactTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  contactSub: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
 });

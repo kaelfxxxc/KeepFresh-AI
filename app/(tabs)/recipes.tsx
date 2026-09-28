@@ -7,11 +7,12 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { recipeService } from '../../src/services/recipeService';
 import { inventoryService } from '../../src/services/inventoryService';
 import { RecipeImage, prefetchRecipeImages, matchTone } from '../../src/components/RecipeImage';
-import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import type { RecipeWithIngredients } from '../../src/types';
-import { ChefHat, Clock3, Users, Sparkles } from 'lucide-react-native';
-import { Chip, EmptyState, ItemImage, StatusBadge, UpgradeNotice } from '../../src/components/ui';
+import { ChefHat, Clock3, Users, Sparkles, Trash2, Bookmark, ArrowRight, Zap } from 'lucide-react-native';
+import { EmptyState, ItemImage, UpgradeNotice, StatusPill, colorWithOpacity, type Status } from '../../src/components/ui';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 import {
   productGroups, recipesForProduct, isFilipino,
   type PantryItem, type ProductGroup,
@@ -46,6 +47,11 @@ function relativeTime(iso: string): string {
 }
 
 export default function RecipesScreen() {
+  // One gutter for the whole screen. The list, the header, the chip row and the
+  // caption each used to carry their own — the list at one value and everything
+  // else at another, so the first recipe card sat eight points left of the title
+  // above it.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const { gates, refresh: refreshEntitlements } = useSubscription();
   const insets = useSafeAreaInsets();
@@ -67,6 +73,7 @@ export default function RecipesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [emptyHint, setEmptyHint] = useState(EMPTY_HINT);
   /** Set when the server refuses for want of allowance, which `gates` may not know yet. */
   const [limitReached, setLimitReached] = useState(false);
@@ -175,6 +182,35 @@ export default function RecipesScreen() {
     );
   }, [category, generate, recipes.length]);
 
+  const clearSuggestions = useCallback(() => {
+    if (!profile || recipes.length === 0 || clearing) return;
+    Alert.alert(
+      'Clear recipe suggestions?',
+      'AI suggestions will be removed. Favorited recipes will stay saved.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            setClearing(true);
+            try {
+              await recipeService.clearAISuggestions(profile.id);
+              setRecipes([]);
+              setProduct(null);
+              setCategory('All');
+            } catch (error) {
+              console.error('Error clearing recipe suggestions:', error);
+              Alert.alert('Couldn\'t clear suggestions', 'Please try again.');
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [clearing, profile, recipes.length]);
+
   /** The product chip row: every pantry item with at least one recipe. */
   const groups = useMemo(() => productGroups(items, recipes), [items, recipes]);
 
@@ -223,45 +259,61 @@ export default function RecipesScreen() {
   const renderRecipe = ({ item }: { item: RecipeWithIngredients }) => {
     const uses = item.ingredient_names.slice(0, 3).join(', ');
     const totalMinutes = item.prep_time + (item.cook_time ?? 0);
-    // The Filipino dishes lead a product's set, and this says why they are at the
-    // top. A badge rather than an assumption: order alone is easy to miss, and
-    // "Filipino" is the one thing the user asked to be able to see.
     const filipino = isFilipino(item);
+    const matchStatus: Status =
+      item.match_percent !== null && item.match_percent >= 75
+        ? 'fresh'
+        : item.match_percent !== null && item.match_percent >= 40
+        ? 'expiringSoon'
+        : 'active';
+
     return (
       <Pressable
         style={({ pressed }) => [styles.card, pressed && { opacity: 0.92 }]}
         onPress={() => router.push({ pathname: '/recipes/[id]', params: { id: item.id } })}
       >
-        <RecipeImage uri={item.image_url} category={item.category} width={74} height={74} />
-        <View style={{ flex: 1 }}>
-          <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-            {item.match_percent !== null && (
-              <StatusBadge label={`${item.match_percent}% match`} tone={matchTone(item.match_percent)} />
-            )}
+        <View style={styles.cardImageWrap}>
+          <RecipeImage uri={item.image_url} category={item.category} width="100%" height={168} radius={0} />
+          <StatusPill
+            status={matchStatus}
+            label={`${item.match_percent ?? 0}% Pantry Match`}
+            style={styles.matchBadge}
+          />
+          <View style={styles.categoryLabel}>
+            <Text style={styles.categoryLabelText}>{filipino ? 'Filipino Comfort' : `${item.category || 'Meal'} idea`}</Text>
+          </View>
+        </View>
+        <View style={styles.cardContent}>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.name}>{item.name}</Text>
+            <Bookmark size={20} color={colors.textSecondary} strokeWidth={1.8} />
           </View>
           <View style={styles.metaRow}>
-            {filipino && <StatusBadge label="Filipino" tone="primary" />}
             <View style={styles.metaItem}>
-              <Clock3 size={13} color={COLORS.secondaryText} strokeWidth={2} />
+              <Clock3 size={13} color={colors.textSecondary} strokeWidth={1.8} />
               <Text style={styles.metaText}>{totalMinutes} min</Text>
             </View>
             <View style={styles.metaItem}>
-              <Users size={13} color={COLORS.secondaryText} strokeWidth={2} />
+              <Users size={13} color={colors.textSecondary} strokeWidth={1.8} />
               <Text style={styles.metaText}>{item.servings} servings</Text>
             </View>
+            <Text style={styles.metaDot}>•</Text>
             <Text style={styles.difficulty}>{item.difficulty}</Text>
           </View>
-          {uses ? (
-            <View style={styles.useRow}>
-              <Text style={styles.useLabel}>Use: </Text>
-              <Text style={styles.useText} numberOfLines={1}>
-                {uses}{item.ingredient_names.length > 3 ? ` +${item.ingredient_names.length - 3}` : ''}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.desc} numberOfLines={1}>{item.description}</Text>
-          )}
+          <View style={[styles.usePanel, matchStatus === 'expiringSoon' && styles.usePanelWarning]}>
+            <Text style={styles.useText}>
+              <Text style={styles.useCheck}>✓ </Text>
+              Uses: {uses || item.description}
+            </Text>
+            {item.match_percent !== null && item.match_percent < 75 && (
+              <Text style={styles.missingText}>⚠ Missing ingredients may be needed</Text>
+            )}
+          </View>
+          <View style={styles.cardActionRow}>
+            <Zap size={15} color={colors.surface} fill={colors.surface} strokeWidth={2.3} />
+            <Text style={styles.cardActionText}>{item.match_percent !== null && item.match_percent < 75 ? 'View Recipe' : 'View Recipe & Cook'}</Text>
+            <ArrowRight size={15} color={colors.surface} strokeWidth={2.5} />
+          </View>
         </View>
       </Pressable>
     );
@@ -269,39 +321,59 @@ export default function RecipesScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Recipe Suggestions</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
+          <Text style={styles.title}>AI Recipe Ideas</Text>
+          <Text style={styles.subtitle}>Made with ingredients from your fridge & pantry</Text>
         </View>
-        <Pressable
-          onPress={confirmGenerate}
-          disabled={generating || showUpgrade}
-          hitSlop={8}
-          style={({ pressed }) => [
-            styles.generateBtn,
-            (generating || showUpgrade) && { opacity: 0.45 },
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          {generating
-            ? <ActivityIndicator size="small" color={COLORS.primary} />
-            : <Sparkles size={20} color={COLORS.primary} strokeWidth={2.2} />}
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={clearSuggestions}
+            disabled={clearing || recipes.length === 0}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Clear recipe suggestions"
+            style={({ pressed }) => [
+              styles.clearBtn,
+              (clearing || recipes.length === 0) && { opacity: 0.35 },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            {clearing
+              ? <ActivityIndicator size="small" color={colors.danger} />
+              : <Trash2 size={18} color={colors.danger} strokeWidth={2.2} />}
+          </Pressable>
+          <Pressable
+            onPress={confirmGenerate}
+            disabled={generating || showUpgrade}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.generateBtn,
+              (generating || showUpgrade) && { opacity: 0.45 },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            {generating
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <><Sparkles size={15} color={colors.primary} strokeWidth={2.2} /><Text style={styles.generateText}>Regenerate</Text></>}
+          </Pressable>
+        </View>
       </View>
 
-      {/* Category chips. Scrolled rather than wrapped for the same reason as the
-          product row below, and more urgently: five chips are wider than a phone
-          screen on their own, so a plain row clipped "Beverages" off the right
-          edge with no way to reach it. */}
+      {/* Category filters use the same card treatment as the pantry products below. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.chipScroll}
-        contentContainerStyle={styles.chipRow}
+        style={styles.categoryScroll}
+        contentContainerStyle={[styles.categoryRow, { paddingHorizontal: gutter }]}
       >
         {RECIPE_CATEGORIES.map((cat) => (
-          <Chip key={cat} label={cat} active={category === cat} onPress={() => setCategory(cat)} />
+          <CategoryChip
+            key={cat}
+            label={cat}
+            active={category === cat}
+            onPress={() => setCategory(cat)}
+          />
         ))}
       </ScrollView>
 
@@ -314,7 +386,7 @@ export default function RecipesScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.productScroll}
-          contentContainerStyle={styles.productRow}
+          contentContainerStyle={[styles.productRow, { paddingHorizontal: gutter }]}
         >
           {groups.map((group) => (
             <ProductChip
@@ -334,12 +406,12 @@ export default function RecipesScreen() {
           title={upgradeTitle}
           message={upgradeMessage}
           onPress={() => router.push('/subscription')}
-          style={{ marginHorizontal: SPACING.lg, marginBottom: SPACING.md }}
+          style={{ marginHorizontal: gutter, marginBottom: spacing.md }}
         />
       )}
 
       {activeGroup && (
-        <Text style={styles.productCaption}>
+        <Text style={[styles.productCaption, { paddingHorizontal: gutter }]}>
           {activeGroup.count > visible.length
             ? `Top ${visible.length} of ${activeGroup.count} for ${activeGroup.name}`
             : `${visible.length} for ${activeGroup.name}`}
@@ -348,8 +420,8 @@ export default function RecipesScreen() {
       )}
 
       {generating && (
-        <View style={styles.generatingCard}>
-          <ActivityIndicator color={COLORS.primary} />
+        <View style={[styles.generatingCard, { marginHorizontal: gutter }]}>
+          <ActivityIndicator color={colors.primary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.generatingTitle}>Reading your pantry…</Text>
             <Text style={styles.generatingText}>
@@ -360,11 +432,27 @@ export default function RecipesScreen() {
       )}
 
       <FlatList
+        style={styles.recipeList}
         data={visible}
         keyExtractor={(item) => item.id}
         renderItem={renderRecipe}
-        contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: contentInset, gap: SPACING.sm }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRecipes(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
+        ListHeaderComponent={(
+          <View>
+            <View style={styles.instantBanner}>
+              <View style={styles.instantHeader}>
+                <View style={styles.instantIcon}><Zap size={15} color={colors.mintBg} fill={colors.mintBg} /></View>
+                <Text style={styles.instantEyebrow}>INSTANT COOK READY</Text>
+              </View>
+              <Text style={styles.instantTitle}>{visible.length || RECIPE_COUNT} meals ready to cook now without buying groceries</Text>
+              <View style={styles.instantFooter}>
+                <Text style={styles.instantFootText}>• All essential ingredients in stock</Text>
+                <Text style={styles.instantSavings}>Saves ~₱850 this week</Text>
+              </View>
+            </View>
+          </View>
+        )}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: contentInset, gap: spacing.sm }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRecipes(); }} colors={[colors.primary]} tintColor={colors.primary} />}
         ListEmptyComponent={
           loading || generating ? null : (
             <EmptyState
@@ -403,6 +491,38 @@ export default function RecipesScreen() {
 
 /* --------------------------------------------------------------- product chip */
 
+function CategoryChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.productChip,
+        styles.categoryChip,
+        active && styles.productChipActive,
+        pressed && { opacity: 0.8 },
+      ]}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={`${label} recipe category`}
+    >
+      <View style={[styles.categoryChipIcon, active && styles.categoryChipIconActive]}>
+        <ChefHat size={14} color={active ? colors.primaryDark : colors.primary} strokeWidth={2.3} />
+      </View>
+      <Text style={[styles.productChipText, active && styles.productChipTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 /**
  * One item in the product row.
  *
@@ -435,7 +555,7 @@ function ProductChip({
       <ItemImage uri={group.imageUrl} category={group.category} size={22} radius={11} />
       <Text
         style={[styles.productChipText, active && styles.productChipTextActive]}
-        numberOfLines={1}
+        numberOfLines={2}
       >
         {group.name}
       </Text>
@@ -447,13 +567,21 @@ function ProductChip({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
-  subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingBottom: spacing.md },
+  title: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  subtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   generateBtn: {
+    height: 36, borderRadius: radii.pill,
+    paddingHorizontal: 12,
+    backgroundColor: colors.mintBg, borderWidth: 1, borderColor: colors.primary,
+    flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center',
+  },
+  generateText: { color: colors.primaryDark, fontSize: 12, fontWeight: '700' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  clearBtn: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colorWithOpacity(colors.danger, 0.1), alignItems: 'center', justifyContent: 'center',
   },
   // Both chip rows are horizontal scrollers inside a column that also holds the
   // list. `flexGrow: 0` keeps each one at its content height: without it a
@@ -461,50 +589,83 @@ const styles = StyleSheet.create({
   // and squeezes the list below it. The margin lives on the scroller rather than
   // on its content container, where it would move the chips inside the scroll
   // area instead of moving the row.
-  chipScroll: { flexGrow: 0, marginBottom: SPACING.md },
-  chipRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg },
-  productScroll: { flexGrow: 0 },
-  productRow: { paddingHorizontal: SPACING.lg, gap: SPACING.sm, paddingBottom: SPACING.md },
+  recipeList: { flex: 1, zIndex: 0 },
+  categoryScroll: { flexGrow: 0, zIndex: 2, elevation: 2 },
+  categoryRow: { gap: spacing.sm, minHeight: 42, alignItems: 'center', paddingVertical: spacing.xs, paddingBottom: spacing.sm },
+  productScroll: { flexGrow: 0, zIndex: 2, elevation: 2 },
+  productRow: { gap: spacing.sm, minHeight: 42, alignItems: 'center', paddingVertical: spacing.xs, paddingBottom: spacing.sm },
   productChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.white, borderRadius: RADII.pill,
+    backgroundColor: colors.surface, borderRadius: radii.pill,
     paddingVertical: 5, paddingLeft: 5, paddingRight: 12,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
-    // Bounded so one long product name cannot stretch the row off the screen;
-    // the name ellipsises and the count stays visible.
-    maxWidth: 190,
+    borderWidth: 1, borderColor: colors.border,
   },
-  productChipActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  productChipText: { flexShrink: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
-  productChipTextActive: { color: COLORS.primaryDark, fontWeight: '800' },
-  productChipCount: { fontSize: 11.5, fontWeight: '700', color: COLORS.secondaryText },
+  categoryChip: { paddingLeft: 8, paddingRight: 14 },
+  categoryChipIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.mintBg,
+  },
+  categoryChipIconActive: { backgroundColor: colors.surface },
+  productChipActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
+  productChipText: { flexShrink: 1, maxWidth: 220, fontSize: 13, lineHeight: 16, fontWeight: '600', color: colors.textPrimary },
+  productChipTextActive: { color: colors.primaryDark, fontWeight: '800' },
+  productChipCount: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary },
   productCaption: {
-    fontSize: 12, color: COLORS.secondaryText,
-    paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm,
+    fontSize: 12, color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
   generatingCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md, marginHorizontal: SPACING.lg, marginBottom: SPACING.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.md, marginBottom: spacing.md,
+    ...shadow.card,
   },
-  generatingTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  generatingText: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2, lineHeight: 17 },
+  generatingTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  generatingText: { fontSize: 12, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
+  instantBanner: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  instantHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  instantIcon: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  instantEyebrow: { color: colors.mintBg, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  instantTitle: { color: colors.surface, fontSize: 16, lineHeight: 22, fontWeight: '800', marginTop: spacing.sm },
+  instantFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.lg },
+  instantFootText: { flex: 1, color: colors.mintBg, fontSize: 11.5 },
+  instantSavings: { color: colors.surface, backgroundColor: colors.primary, borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 7, fontSize: 11, fontWeight: '800' },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md, ...SHADOW.card,
+    width: '100%', minWidth: 0, overflow: 'hidden',
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    ...shadow.card,
   },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  name: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.text },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 },
+  cardImageWrap: { width: '100%', height: 168, position: 'relative' },
+  matchBadge: { position: 'absolute', top: spacing.sm, right: spacing.sm, backgroundColor: colors.primary, color: colors.surface },
+  categoryLabel: { position: 'absolute', left: spacing.sm, bottom: spacing.sm, backgroundColor: colors.surface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  categoryLabelText: { fontSize: 11, fontWeight: '700', color: colors.textPrimary },
+  cardContent: { minWidth: 0, padding: spacing.md, gap: spacing.sm },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  name: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 21, fontWeight: '800', color: colors.textPrimary },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 12, color: COLORS.secondaryText, fontWeight: '500' },
+  metaText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  metaDot: { color: colors.textSecondary, fontSize: 12 },
   difficulty: {
-    fontSize: 11, fontWeight: '700', color: COLORS.primary, textTransform: 'capitalize',
+    fontSize: 11, fontWeight: '700', color: colors.primary, textTransform: 'capitalize',
   },
-  useRow: { flexDirection: 'row', marginTop: 7 },
-  useLabel: { fontSize: 12, color: COLORS.secondaryText },
-  useText: { flex: 1, fontSize: 12, color: COLORS.text, fontWeight: '500' },
-  desc: { fontSize: 12, color: COLORS.secondaryText, marginTop: 7 },
+  usePanel: { backgroundColor: colors.mintBg, borderRadius: radii.md, padding: spacing.sm },
+  usePanelWarning: { backgroundColor: '#FFF4D6' },
+  useText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 17, color: colors.textPrimary, fontWeight: '500' },
+  useCheck: { color: colors.primary, fontWeight: '800' },
+  missingText: { color: '#A16207', fontSize: 11, marginTop: 3 },
+  cardActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primaryDark, borderRadius: radii.pill, paddingVertical: 10 },
+  cardActionText: { color: colors.surface, fontSize: 12, fontWeight: '800' },
 });

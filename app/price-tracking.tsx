@@ -39,19 +39,8 @@ import {
 import type { LucideProps } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, RADII, SHADOW, SPACING } from '../src/theme';
-import {
-  NavHeader,
-  Card,
-  PillButton,
-  Field,
-  EmptyState,
-  StatusBadge,
-  FeatureLock,
-  PlanCheckLock,
-  SectionLabel,
-  Segmented,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow, overlay } from '../theme';
+import { NavHeader, Card, PillButton, Field, EmptyState, StatusBadge, FeatureLock, PlanCheckLock, SectionLabel, StatCard, FilterChipRow, StatusPill, IconBadge, colorWithOpacity } from '../src/components/ui';
 import { PriceLineChart } from '../src/components/PriceLineChart';
 import {
   priceTrackingService,
@@ -267,102 +256,85 @@ export default function PriceTrackingScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); }}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
-        <Segmented<Range>
-          options={[
-            { label: 'This month', value: 'month' },
-            { label: 'Last 6 months', value: 'sixMonths' },
+        <FilterChipRow
+          chips={[
+            { label: 'This month', count: undefined },
+            { label: 'Last 6 months', count: undefined },
           ]}
-          value={range}
-          onChange={setRange}
+          activeChip={range === 'month' ? 'This month' : 'Last 6 months'}
+          onSelect={(label) => setRange(label === 'This month' ? 'month' : 'sixMonths')}
+          style={{ marginBottom: spacing.md }}
         />
 
         {loading ? (
-          <View style={styles.loadingBox}><ActivityIndicator color={COLORS.primary} /></View>
+          <View style={styles.loadingBox}><ActivityIndicator color={colors.primary} /></View>
         ) : (
           <>
             {spend && (
-              <Card style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Total tracked value</Text>
-
-                {/* The change rides on the value's own line rather than sitting
-                    in the pill row below the chart. It qualifies the number, so
-                    a reader who has to get past the chart to reach it reads the
-                    figure first and its direction second — which is backwards
-                    for the one pair on this card that has to be taken together.
-                    It wraps to its own line on a narrow screen rather than
-                    squeezing the figure. */}
-                <View style={styles.summaryHead}>
-                  <Text
-                    style={styles.summaryValue}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    // Capped before `minimumFontScale` gets its say: at 2× the
-                    // system font this is 68pt, and 0.7 of that is still 48pt —
-                    // wider than the card on a 320pt phone, so the figure would
-                    // clip rather than shrink. Capped at 1.4 the same floor
-                    // lands at 33pt, which fits.
-                    maxFontSizeMultiplier={1.4}
-                    minimumFontScale={0.7}
-                  >
-                    {pesoCompact(headline.value)}
-                  </Text>
-                  {delta}
-                </View>
-
-                {/* Both directions of last month's movement, directly under the
-                    figure they qualify. The net badge on the line above can read
-                    "no change" while half the list rose and half fell, so the
-                    two are reported separately rather than netted off. This sat
-                    in the pill row below the chart and was missed there — under
-                    the total value is where it was asked for and where it reads
-                    as part of the headline. */}
-                <View style={styles.movementRow}>
-                  {movement != null && movement.up.count > 0 && (
-                    <StatusBadge
-                      tone="danger"
-                      icon={TrendingUp}
-                      label={`${movement.up.avgPercent}% avg · ${movement.up.count} up`}
-                    />
-                  )}
-                  {movement != null && movement.down.count > 0 && (
-                    <StatusBadge
-                      tone="success"
-                      icon={TrendingDown}
-                      label={`${movement.down.avgPercent}% avg · ${movement.down.count} down`}
-                    />
-                  )}
-                  {/* Said out loud rather than left blank. These figures are
-                      absent because no price moved in the window, and a card
-                      that silently drops the row reads as a feature that is
-                      missing rather than as one with nothing to report. */}
-                  {movement != null && movement.up.count + movement.down.count === 0 && (
-                    <Text style={styles.movementNote}>
-                      No price changes in the last 30 days
-                    </Text>
-                  )}
-                </View>
-
-                {movement != null && movement.up.count + movement.down.count > 0 && (
-                  <Text style={styles.movementNote}>
-                    Average move over the last 30 days
-                  </Text>
-                )}
-
-                <PriceLineChart data={spend.trend} formatValue={pesoCompact} />
-
-                <View style={styles.pillRow}>
-                  <StatusBadge
-                    tone="primary"
+              <View style={{ marginBottom: spacing.md, gap: spacing.md }}>
+                <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                  <StatCard
+                    icon={TrendingUp}
+                    title="Monthly spend"
+                    value={pesoCompact(headline.value)}
+                    caption={headline.comparison}
+                    iconBg={colors.primary}
+                    style={{ flex: 1 }}
+                  />
+                  <StatCard
                     icon={Tag}
-                    label={`${products.length} ${products.length === 1 ? 'item' : 'items'} tracked`}
+                    title="Tracked items"
+                    value={String(products.length)}
+                    caption="Active in ledger"
+                    iconBg={colors.mintBg}
+                    style={{ flex: 1 }}
                   />
                 </View>
-              </Card>
+
+                <Card style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Total tracked spend & movement</Text>
+
+                  <View style={styles.summaryHead}>
+                    <Text
+                      style={styles.summaryValue}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      maxFontSizeMultiplier={1.4}
+                      minimumFontScale={0.7}
+                    >
+                      {pesoCompact(headline.value)}
+                    </Text>
+                    {delta}
+                  </View>
+
+                  <View style={styles.movementRow}>
+                    {movement != null && movement.up.count > 0 && (
+                      <StatusPill
+                        status="expired"
+                        label={`${movement.up.avgPercent}% avg · ${movement.up.count} up`}
+                      />
+                    )}
+                    {movement != null && movement.down.count > 0 && (
+                      <StatusPill
+                        status="fresh"
+                        label={`${movement.down.avgPercent}% avg · ${movement.down.count} down`}
+                      />
+                    )}
+                    {movement != null && movement.up.count + movement.down.count === 0 && (
+                      <Text style={styles.movementNote}>
+                        No price changes in the last 30 days
+                      </Text>
+                    )}
+                  </View>
+
+                  <PriceLineChart data={spend.trend} formatValue={pesoCompact} />
+                </Card>
+              </View>
             )}
 
             <SectionLabel>Your products</SectionLabel>
@@ -381,7 +353,7 @@ export default function PriceTrackingScreen() {
                       value={search}
                       onChangeText={setSearch}
                       placeholder="Search products"
-                      placeholderTextColor={COLORS.secondaryText}
+                      placeholderTextColor={colors.textSecondary}
                       returnKeyType="search"
                       autoCorrect={false}
                       // Both this box and the filter button beside it are a
@@ -423,7 +395,7 @@ export default function PriceTrackingScreen() {
                       </Text>
                       <ChevronDown
                         size={16}
-                        color={activeFilter !== 'all' ? COLORS.primary : COLORS.secondaryText}
+                        color={activeFilter !== 'all' ? colors.primary : colors.textSecondary}
                         strokeWidth={2.4}
                       />
                     </Pressable>
@@ -475,13 +447,13 @@ export default function PriceTrackingScreen() {
           // `right: gutter` rather than a fixed margin, so the button tracks
           // the right edge of the content column instead of drifting away from
           // it on a wide screen.
-          { bottom: insets.bottom + SPACING.md, right: gutter },
+          { bottom: insets.bottom + spacing.md, right: gutter },
           pressed && { opacity: 0.9 },
         ]}
         accessibilityRole="button"
         accessibilityLabel="Add a price"
       >
-        <Plus size={18} color={COLORS.white} strokeWidth={2.8} />
+        <Plus size={18} color={colors.surface} strokeWidth={2.8} />
         <Text style={styles.fabText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
           Add price
         </Text>
@@ -509,27 +481,23 @@ export default function PriceTrackingScreen() {
 function ProductCard({ product }: { product: ProductPriceSummary }) {
   const rising = product.change > 0;
   const falling = product.change < 0;
-  const tone = rising ? 'danger' : falling ? 'success' : 'neutral';
-  const ChangeIcon = rising ? TrendingUp : falling ? TrendingDown : Minus;
+  const pillStatus = rising ? 'expired' : falling ? 'fresh' : 'active';
   const Icon = categoryIcon(product.category);
 
   const changeLabel = rising
-    ? `+${product.changePercent}%`
+    ? `HIGH +${product.changePercent}%`
     : falling
-      ? `−${Math.abs(product.changePercent)}%`
-      : 'Stable';
+      ? `LOW −${Math.abs(product.changePercent)}%`
+      : 'STABLE';
 
   const updated = timeAgo(product.lastRecordedAt);
 
-  // A static row: what it costs, whether that moved, and when it was last seen.
-  // It used to expand on tap into a price history, but the row was the whole of
-  // the card's job — so the tap is gone rather than left toggling something that
-  // renders nothing, which would announce itself as a button and give press
-  // feedback for no result.
   return (
     <Card style={styles.productCard}>
       <View style={styles.productTop}>
-        <Icon size={20} color={COLORS.primary} strokeWidth={2} />
+        <IconBadge color={colors.primary} size={40}>
+          <Icon size={20} color={colors.primary} strokeWidth={2.2} />
+        </IconBadge>
 
         <View style={styles.productMiddle}>
           <Text style={styles.productName} numberOfLines={1}>{product.productName}</Text>
@@ -543,7 +511,7 @@ function ProductCard({ product }: { product: ProductPriceSummary }) {
             {peso(product.currentPrice)}
           </Text>
           {product.previousPrice != null && (
-            <StatusBadge label={changeLabel} tone={tone} icon={ChangeIcon} />
+            <StatusPill status={pillStatus} label={changeLabel} />
           )}
         </View>
       </View>
@@ -628,10 +596,10 @@ function FilterRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      style={({ pressed }) => [styles.filterRow, pressed && { backgroundColor: COLORS.mutedBg }]}
+      style={({ pressed }) => [styles.filterRow, pressed && { backgroundColor: colorWithOpacity(colors.textSecondary, 0.12) }]}
     >
       <View style={[styles.filterRowIcon, active && styles.filterRowIconActive]}>
-        <Icon size={18} color={active ? COLORS.primary : COLORS.secondaryText} strokeWidth={2} />
+        <Icon size={18} color={active ? colors.primary : colors.textSecondary} strokeWidth={2} />
       </View>
       <Text
         style={[styles.filterRowLabel, active && styles.filterRowLabelActive]}
@@ -642,7 +610,7 @@ function FilterRow({
       <Text style={styles.filterRowCount}>{count}</Text>
       {/* The tick is the selection, not the colour: the active row is also
           tinted, but tint alone is not something a reader can rely on. */}
-      {active && <Check size={18} color={COLORS.primary} strokeWidth={2.6} />}
+      {active && <Check size={18} color={colors.primary} strokeWidth={2.6} />}
     </Pressable>
   );
 }
@@ -750,40 +718,48 @@ function LogPriceModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   // Horizontal padding and the bottom inset are applied at the call site: the
   // first comes from the device width, the second from the safe area.
-  scrollBody: { paddingTop: SPACING.lg },
-  loadingBox: { paddingVertical: SPACING.xxl, alignItems: 'center' },
+  scrollBody: { paddingTop: spacing.lg },
+  loadingBox: { paddingVertical: spacing.xxl, alignItems: 'center' },
 
   /* Summary */
-  summaryCard: { padding: SPACING.md, marginTop: SPACING.md },
-  summaryLabel: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  summaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  summaryLabel: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   summaryHead: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: SPACING.sm,
+    gap: spacing.sm,
     marginTop: 2,
   },
   // The one figure the screen leads with, so it is set well clear of
   // everything else on the card. `flexShrink` lets it give way to the badge
   // beside it instead of pushing it off the edge.
-  summaryValue: { fontSize: 34, fontWeight: '800', color: COLORS.text, flexShrink: 1 },
+  summaryValue: { fontSize: 34, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 },
   // StatusBadge aligns itself to the start of its line (`alignSelf:
   // 'flex-start'` in the shared kit), which on a row it shares with a 34pt
   // number pins it to the top of the line box rather than against the figure.
   summaryDelta: { alignSelf: 'center' },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.md },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   // Wraps rather than squeezing: two badges side by side are wide, and on a
   // 320pt phone the second drops to its own line instead of truncating.
-  movementRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
+  movementRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   // Quiet, and below the badges rather than inside them: the label has to say
   // which window the figures cover, but it is not itself a figure. The toggle
   // above switches the chart between one month and six, so leaving this
   // unstated would invite reading "3 up" as belonging to whichever range is
   // selected.
-  movementNote: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: SPACING.sm },
+  movementNote: { fontSize: 11.5, color: colors.textSecondary, marginTop: spacing.sm },
 
   /* Search & filter */
   // The bottom margin is the gap the chip band used to provide between the
@@ -791,21 +767,21 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.input,
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: COLORS.divider,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     height: 46,
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
+  searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
   // Sized to its own label up to a cap that comes from the device width. Left
   // to itself "Canned & Packaged" would claim most of the row and squeeze the
   // search field beside it, so the cap holds and the label truncates instead.
@@ -815,25 +791,32 @@ const styles = StyleSheet.create({
     gap: 4,
     height: 46,
     paddingHorizontal: 14,
-    borderRadius: RADII.input,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: COLORS.divider,
-    backgroundColor: COLORS.white,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   // Tinted, not just emboldened: an active filter has to be legible as one at a
   // glance, because the list beneath it is otherwise unexplainably short.
-  filterBtnActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  filterBtnText: { flexShrink: 1, fontSize: 14, fontWeight: '600', color: COLORS.secondaryText },
-  filterBtnTextActive: { color: COLORS.primary, fontWeight: '700' },
+  filterBtnActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
+  filterBtnText: { flexShrink: 1, fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  filterBtnTextActive: { color: colors.primary, fontWeight: '700' },
 
-  productList: { gap: SPACING.sm },
+  productList: { gap: spacing.md },
 
   /* Product card */
-  productCard: { padding: SPACING.md },
+  productCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
   productTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   productMiddle: { flex: 1, minWidth: 0 },
-  productName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  productMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  productName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  productMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   // Capped as a share of the row rather than pinned to a fixed width: left
   // unbounded, a large accessibility font grows this column until the product
   // name beside it has nothing left, and `adjustsFontSizeToFit` on the price
@@ -845,10 +828,10 @@ const styles = StyleSheet.create({
   // proportional digits put the decimal point of ₱60.00 and ₱1,450.00 at
   // different offsets, so the cents jitter down the list. The headline value is
   // deliberately left proportional — equal-width digits look loose at 34pt.
-  currentPrice: { fontSize: 16, fontWeight: '800', color: COLORS.text, fontVariant: ['tabular-nums'] },
+  currentPrice: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, fontVariant: ['tabular-nums'] },
 
 
-  footnote: { fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16, marginTop: SPACING.lg },
+  footnote: { fontSize: 11.5, color: colors.textSecondary, lineHeight: 16, marginTop: spacing.lg },
 
   /* Floating action button */
   // The brand green, as the brief calls for — the primary action on the screen.
@@ -857,13 +840,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
     minHeight: 48,
-    borderRadius: RADII.pill,
-    ...SHADOW.card,
+    borderRadius: radii.pill,
+    ...shadow.card,
   },
-  fabText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  fabText: { color: colors.surface, fontWeight: '700', fontSize: 14 },
 
   /* Category filter sheet */
   filterSheet: {
@@ -872,42 +855,42 @@ const styles = StyleSheet.create({
     // Capped so the sheet never grows past the screen once every category is
     // listed; the ScrollView inside takes over from there.
     maxHeight: '70%',
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.card,
-    paddingTop: SPACING.lg,
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  filterList: { marginTop: SPACING.sm },
+  filterList: { marginTop: spacing.sm },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     minHeight: 52,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: RADII.input,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.sm,
   },
   filterRowIcon: {
     width: 34,
     height: 34,
-    borderRadius: RADII.icon,
-    backgroundColor: COLORS.mutedBg,
+    borderRadius: radii.sm,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  filterRowIconActive: { backgroundColor: COLORS.primaryLight },
-  filterRowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
-  filterRowLabelActive: { color: COLORS.primary, fontWeight: '700' },
-  filterRowCount: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  filterRowIconActive: { backgroundColor: colors.mintBg },
+  filterRowLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  filterRowLabelActive: { color: colors.primary, fontWeight: '700' },
+  filterRowCount: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
 
   /* Log price sheet */
   backdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
-  sheet: { width: '100%', maxWidth: 420, backgroundColor: COLORS.white, borderRadius: RADII.card, padding: SPACING.lg },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  sheetHint: { fontSize: 12.5, color: COLORS.secondaryText, marginTop: 4, marginBottom: SPACING.md, lineHeight: 17 },
-  sheetError: { fontSize: 12, color: COLORS.dangerText, marginTop: SPACING.sm },
-  sheetActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  sheet: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  sheetHint: { fontSize: 12.5, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.md, lineHeight: 17 },
+  sheetError: { fontSize: 12, color: colors.danger, marginTop: spacing.sm },
+  sheetActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
 });

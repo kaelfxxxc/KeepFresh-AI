@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarDays, ChevronRight } from 'lucide-react-native';
-import { COLORS, RADII, SHADOW, SPACING } from '../theme';
 import { PillButton } from './ui';
 import { DatePickerModal } from './DatePicker';
 import { formatDateKey } from '../utils/dateKey';
 import { formatRangeLabel } from '../utils/wasteTrend';
+import { colors, radii, spacing, shadow, overlay } from '../../theme';
 
 type Bound = 'start' | 'end';
 
@@ -89,7 +89,7 @@ export function DateRangePickerModal({
               <Text style={styles.rowLabel}>From</Text>
               <View style={styles.rowValue}>
                 <Text style={styles.rowDate}>{formatDateKey(draft.start)}</Text>
-                <ChevronRight size={17} strokeWidth={2.2} color={COLORS.secondaryText} />
+                <ChevronRight size={17} strokeWidth={2.2} color={colors.textSecondary} />
               </View>
             </Pressable>
 
@@ -102,14 +102,14 @@ export function DateRangePickerModal({
               <Text style={styles.rowLabel}>To</Text>
               <View style={styles.rowValue}>
                 <Text style={styles.rowDate}>{formatDateKey(draft.end)}</Text>
-                <ChevronRight size={17} strokeWidth={2.2} color={COLORS.secondaryText} />
+                <ChevronRight size={17} strokeWidth={2.2} color={colors.textSecondary} />
               </View>
             </Pressable>
 
             {/* What the two picks add up to, in the same shape the chart's own
                 chip uses — so the span being confirmed is the span that shows. */}
             <View style={styles.summary}>
-              <CalendarDays size={14} strokeWidth={2.2} color={COLORS.primary} />
+              <CalendarDays size={14} strokeWidth={2.2} color={colors.primary} />
               <Text style={styles.summaryText}>{formatRangeLabel(draft.start, draft.end)}</Text>
             </View>
 
@@ -153,31 +153,31 @@ export function DateRangePickerModal({
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
   card: {
     width: '100%', maxWidth: 400,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.lg, ...SHADOW.card,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.lg, ...shadow.card,
   },
-  title: { fontSize: 16, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.md },
+  title: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 14,
   },
-  rowDivided: { borderTopWidth: 1, borderTopColor: COLORS.divider },
-  rowLabel: { fontSize: 13.5, fontWeight: '700', color: COLORS.secondaryText },
+  rowDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+  rowLabel: { fontSize: 13.5, fontWeight: '700', color: colors.textSecondary },
   rowValue: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowDate: { fontSize: 14.5, fontWeight: '700', color: COLORS.text },
+  rowDate: { fontSize: 14.5, fontWeight: '700', color: colors.textPrimary },
   summary: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: COLORS.primaryLight, borderRadius: RADII.pill,
-    paddingVertical: 8, paddingHorizontal: SPACING.md, marginTop: SPACING.md,
+    backgroundColor: colors.mintBg, borderRadius: radii.pill,
+    paddingVertical: 8, paddingHorizontal: spacing.md, marginTop: spacing.md,
     alignSelf: 'flex-start',
   },
-  summaryText: { fontSize: 12.5, fontWeight: '700', color: COLORS.primaryDark },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.lg },
+  summaryText: { fontSize: 12.5, fontWeight: '700', color: colors.primaryDark },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   resetBtn: { paddingHorizontal: 6, paddingVertical: 8 },
-  resetText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  resetText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 });

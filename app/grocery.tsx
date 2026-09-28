@@ -7,11 +7,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 import { supabase } from '../src/lib/supabase';
-import { COLORS, SPACING, RADII } from '../src/theme';
+import { colors, radii, spacing, shadow } from '../theme';
 import { GroceryList, GroceryItem } from '../src/types';
-import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle, ScanBarcode } from 'lucide-react-native';
-import { NavHeader, EmptyState } from '../src/components/ui';
+import { ShoppingCart, Check, Plus, Trash2, Share2, Leaf, PlusCircle, ScanBarcode, Sparkles } from 'lucide-react-native';
+import { NavHeader, EmptyState, HighlightCard, AIBanner, StatusPill } from '../src/components/ui';
 import { categoryIcon, categoryLabel, resolveCategory } from '../src/utils/categoryIcons';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 
 const peso = (n: number) => `₱${n.toFixed(2)}`;
 
@@ -25,6 +26,11 @@ const DEFAULT_LIST_NAME = 'My Grocery List';
 const listKey = (name: string) => name.trim().toLowerCase();
 
 export default function GroceryListScreen() {
+  // The page gutter, applied to the list switcher, the items list and the
+  // composer bar together so they share one left edge — and so the composer,
+  // which is pinned across the full width, does not stretch away from the list
+  // it belongs to on a wide screen.
+  const { gutter } = usePageGutter();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
   const [lists, setLists] = useState<GroceryList[]>([]);
@@ -209,24 +215,24 @@ export default function GroceryListScreen() {
     <View key={item.id} style={styles.row}>
       <Pressable style={styles.checkBtn} onPress={() => togglePurchased(item)} hitSlop={8}>
         <View style={[styles.check, item.purchased && styles.checkOn]}>
-          {item.purchased && <Check size={13} color={COLORS.white} strokeWidth={3} />}
+          {item.purchased && <Check size={13} color={colors.surface} strokeWidth={3} />}
         </View>
       </Pressable>
-      {/* The name is the only part of the row allowed to give way. Without a
-          line limit it wraps instead of shrinking, and a grocery name long
-          enough to wrap takes the row height with it while shoving the price
-          and the delete button off the right edge. */}
       <View style={styles.rowMain}>
         <Text style={[styles.itemName, item.purchased && styles.itemNameOn]} numberOfLines={1}>
           {item.name}
         </Text>
         <Text style={styles.itemMeta} numberOfLines={1}>{item.quantity} {item.unit || ''}</Text>
       </View>
+      <StatusPill
+        status={item.purchased ? "active" : "expiringSoon"}
+        label={item.purchased ? "BOUGHT" : "TO BUY"}
+      />
       <Text style={[styles.price, item.purchased && styles.priceOn]} numberOfLines={1}>
         {peso(item.estimated_price || 0)}
       </Text>
       <Pressable onPress={() => deleteItem(item)} hitSlop={8}>
-        <Trash2 size={16} color={COLORS.danger} strokeWidth={2} />
+        <Trash2 size={16} color={colors.danger} strokeWidth={2} />
       </Pressable>
     </View>
   );
@@ -243,23 +249,22 @@ export default function GroceryListScreen() {
               accessibilityLabel="Scan a product into this list"
               style={styles.headerScan}
             >
-              <ScanBarcode size={20} color={COLORS.white} strokeWidth={2.2} />
+              <ScanBarcode size={20} color={colors.surface} strokeWidth={2.2} />
             </Pressable>
             <Pressable onPress={shareList} hitSlop={8} style={styles.headerIcon}>
-              <Share2 size={20} color={COLORS.primary} strokeWidth={2.2} />
+              <Share2 size={20} color={colors.primary} strokeWidth={2.2} />
             </Pressable>
           </View>
         }
       />
 
-      {/* List switcher. Only worth a row when there is genuinely more than one
-          list to switch between, and only ever one chip per name. */}
+      {/* List switcher */}
       {visibleLists.length > 1 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.listChipsRow}
-          contentContainerStyle={styles.listChips}
+          contentContainerStyle={[styles.listChips, { paddingHorizontal: gutter }]}
           keyboardShouldPersistTaps="handled"
         >
           {visibleLists.map((l) => {
@@ -283,7 +288,7 @@ export default function GroceryListScreen() {
             );
           })}
           <Pressable style={styles.listChipGhost} onPress={createList} hitSlop={6}>
-            <Plus size={14} color={COLORS.primary} strokeWidth={2.5} />
+            <Plus size={14} color={colors.primary} strokeWidth={2.5} />
             <Text style={styles.listChipGhostText}>New</Text>
           </Pressable>
         </ScrollView>
@@ -291,24 +296,27 @@ export default function GroceryListScreen() {
 
       {currentList ? (
         <>
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <View style={styles.summaryIconWrap}>
-                <ShoppingCart size={20} color={COLORS.primary} strokeWidth={2.2} />
-              </View>
-              <View style={styles.rowMain}>
-                <Text style={styles.summaryCount} numberOfLines={1}>
-                  {pending.length} item{pending.length === 1 ? '' : 's'} to buy
-                </Text>
-                <Text style={styles.summaryDone} numberOfLines={1}>
-                  {items.length - pending.length} checked off
-                </Text>
-              </View>
-              <View style={styles.budgetBlock}>
-                <Text style={styles.budgetAmount} numberOfLines={1}>{peso(budget)}</Text>
-                <Text style={styles.budgetLabel}>estimated</Text>
-              </View>
-            </View>
+          <View style={{ paddingHorizontal: gutter, marginBottom: spacing.md, gap: spacing.md }}>
+            <HighlightCard
+              label="Shopping list summary"
+              value={`${pending.length} to buy`}
+              actionLabel="Share"
+              onActionPress={shareList}
+              secondaryIcon={ShoppingCart}
+              secondaryText={`Est. budget: ${peso(budget)}`}
+              secondaryBadge={`${items.length - pending.length} done`}
+            />
+
+            <AIBanner
+              icon="sparkle"
+              title="Smart Depletion Alert"
+              body={
+                pending.length > 0
+                  ? `You have ${pending.length} item${pending.length > 1 ? 's' : ''} to buy. Purchasing mindfully cuts food waste by up to 25%.`
+                  : 'Your list is all checked off! Items running low in inventory will appear here.'
+              }
+              variant="mint"
+            />
           </View>
 
           {items.length === 0 ? (
@@ -323,15 +331,15 @@ export default function GroceryListScreen() {
           ) : (
             <ScrollView
               style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xl }}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchLists(); fetchItems(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
+              contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: spacing.xl }}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchLists(); fetchItems(); }} colors={[colors.primary]} tintColor={colors.primary} />}
             >
               {grouped.map((g) => {
                 const GroupIcon = categoryIcon(g.category);
                 return (
-                  <View key={g.category} style={{ marginTop: SPACING.md }}>
+                  <View key={g.category} style={{ marginTop: spacing.md }}>
                     <View style={styles.groupHead}>
-                      <GroupIcon size={13} color={COLORS.secondaryText} strokeWidth={2.4} />
+                      <GroupIcon size={14} color={colors.textSecondary} strokeWidth={2.4} />
                       <Text style={styles.groupLabel} numberOfLines={1}>{categoryLabel(g.category)}</Text>
                     </View>
                     <View style={styles.card}>
@@ -359,18 +367,18 @@ export default function GroceryListScreen() {
         </View>
       )}
 
-      <View style={[styles.composeBar, { paddingBottom: insets.bottom + SPACING.sm }]}>
+      <View style={[styles.composeBar, { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.sm }]}>
         <TextInput
           style={styles.composeInput}
           value={draft}
           onChangeText={setDraft}
           placeholder="Add an item…"
-          placeholderTextColor={COLORS.secondaryText}
+          placeholderTextColor={colors.textSecondary}
           onSubmitEditing={addItem}
           returnKeyType="done"
         />
         <Pressable style={[styles.addBtn, !draft.trim() && { opacity: 0.5 }]} onPress={addItem} disabled={!draft.trim()}>
-          <PlusCircle size={22} color={COLORS.white} strokeWidth={2.2} />
+          <PlusCircle size={22} color={colors.surface} strokeWidth={2.2} />
           <Text style={styles.addBtnText}>Add</Text>
         </Pressable>
       </View>
@@ -379,104 +387,116 @@ export default function GroceryListScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  headerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  headerScan: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
-  // `flexGrow: 0` is the whole fix for the bloated look: a horizontal ScrollView
-  // is a direct child of this screen's flex column, and with no height of its
-  // own it is free to stretch vertically. Left unconstrained it pushed the
-  // summary card and the list down the screen.
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  headerIcon: { width: 40, height: 40, borderRadius: radii.pill, backgroundColor: colors.mintBg, alignItems: 'center', justifyContent: 'center' },
+  headerScan: { width: 40, height: 40, borderRadius: radii.pill, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   listChipsRow: { flexGrow: 0, flexShrink: 0 },
   listChips: {
-    paddingHorizontal: SPACING.lg,
-    gap: SPACING.sm,
-    paddingBottom: SPACING.sm,
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
     alignItems: 'center',
   },
   listChip: {
-    // Chips sit on one line and keep their own width; the row scrolls instead
-    // of the chips stretching to fill it.
     flexShrink: 0,
     justifyContent: 'center',
-    height: 34,
-    paddingHorizontal: 14,
-    borderRadius: RADII.pill,
-    backgroundColor: COLORS.white,
+    height: 36,
+    paddingHorizontal: 16,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.divider,
+    borderColor: colors.border,
   },
-  listChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  listChipText: { fontSize: 13, color: COLORS.secondaryText, fontWeight: '600' },
-  listChipTextActive: { color: COLORS.white },
+  listChipActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
+  listChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  listChipTextActive: { color: colors.surface },
   listChipGhost: {
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: RADII.pill,
-    backgroundColor: COLORS.primaryLight,
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radii.pill,
+    backgroundColor: colors.mintBg,
   },
-  listChipGhostText: { color: COLORS.primary, fontSize: 13, fontWeight: '700' },
-  summaryCard: {
-    marginHorizontal: SPACING.lg, marginTop: SPACING.xs, marginBottom: SPACING.sm,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
-  },
-  summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  // The one column that absorbs whatever width is left. `minWidth: 0` is what
-  // lets it actually shrink — without it a long string sets the column's floor
-  // and the fixed-width things beside it get pushed off the screen.
+  listChipGhostText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  summaryRow: { flexDirection: 'row', gap: spacing.sm },
   rowMain: { flex: 1, minWidth: 0 },
-  // The amount is money: it reads as a unit, so it keeps its intrinsic width
-  // rather than being squeezed, and the column beside it truncates instead.
-  budgetBlock: { alignItems: 'flex-end', flexShrink: 0 },
-  // Holds the empty-list placeholder in the space between the summary card and
-  // the compose bar, so shrinking it does not just leave a larger gap behind.
   emptyFill: { flex: 1, justifyContent: 'center' },
-  summaryIconWrap: { width: 42, height: 42, borderRadius: RADII.icon, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  summaryCount: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  summaryDone: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
-  budgetAmount: { fontSize: 20, fontWeight: '800', color: COLORS.primaryDark },
-  budgetLabel: { fontSize: 11, color: COLORS.secondaryText, textTransform: 'uppercase', letterSpacing: 0.3 },
-  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6, marginTop: SPACING.sm },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, marginTop: spacing.sm },
   groupLabel: {
-    fontSize: 12, fontWeight: '700', color: COLORS.secondaryText, textTransform: 'uppercase',
+    fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase',
     letterSpacing: 0.4, flexShrink: 1,
   },
-  card: { backgroundColor: COLORS.white, borderRadius: RADII.card, paddingHorizontal: SPACING.md, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
-  check: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: COLORS.divider, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.white },
-  checkOn: { backgroundColor: COLORS.success, borderColor: COLORS.success },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   checkBtn: { paddingVertical: 4 },
-  itemName: { fontSize: 15, fontWeight: '500', color: COLORS.text },
-  itemNameOn: { color: COLORS.secondaryText, textDecorationLine: 'line-through' },
-  itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
-  price: { fontSize: 14, fontWeight: '700', color: COLORS.text },
-  priceOn: { color: COLORS.secondaryText, textDecorationLine: 'line-through' },
-  clearBtn: { alignSelf: 'center', paddingVertical: SPACING.md },
-  clearBtnText: { color: COLORS.danger, fontSize: 13, fontWeight: '700' },
+  itemName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  itemNameOn: { color: colors.textSecondary, textDecorationLine: 'line-through' },
+  itemMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  price: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  priceOn: { color: colors.textSecondary, textDecorationLine: 'line-through' },
+  clearBtn: { alignSelf: 'center', paddingVertical: spacing.lg },
+  clearBtnText: { color: colors.danger, fontSize: 13, fontWeight: '700' },
   composeBar: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   composeInput: {
-    flex: 1, height: 44, borderRadius: RADII.input, backgroundColor: COLORS.mutedBg,
-    paddingHorizontal: 14, fontSize: 15, color: COLORS.text,
-    // A fixed height plus Android's default font padding squeezes the text box,
-    // so the placeholder rendered clipped / off-centre there while looking fine
-    // on iOS. Reset the vertical padding and centre the text explicitly to get
-    // the same result on both platforms. (`padding: 0` in inventory.tsx is the
-    // same workaround for its search field.)
-    paddingVertical: 0, includeFontPadding: false, textAlignVertical: 'center',
+    flex: 1,
+    height: 46,
+    borderRadius: radii.md,
+    backgroundColor: colors.screenBg,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 0,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   addBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, height: 44, paddingHorizontal: 16,
-    borderRadius: RADII.pill, backgroundColor: COLORS.primary, justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 46,
+    paddingHorizontal: 18,
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
   },
-  addBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  addBtnText: { color: colors.surface, fontWeight: '700', fontSize: 14 },
 });

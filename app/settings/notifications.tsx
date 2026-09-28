@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert, Switch } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/lib/supabase';
-import { COLORS, SPACING, RADII } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { Bell, ChefHat, ShoppingCart, BarChart3 } from 'lucide-react-native';
-import { NavHeader, PillButton } from '../../src/components/ui';
+import { NavHeader, PillButton, IconBadge, SectionHeader, colorWithOpacity } from '../../src/components/ui';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 const DAYS = [1, 3, 5, 7];
 
 export default function NotificationSettingsScreen() {
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const [expirationNotifications, setExpirationNotifications] = useState(true);
   const [daysBefore, setDaysBefore] = useState(3);
@@ -64,11 +66,13 @@ export default function NotificationSettingsScreen() {
   return (
     <View style={styles.container}>
       <NavHeader title="Notifications" subtitle="Choose what you want to hear about" />
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg }}>
+      <ScrollView contentContainerStyle={{ paddingVertical: spacing.xl, paddingHorizontal: gutter }}>
         <View style={styles.card}>
           {rows.map((r, i) => (
             <View key={r.label} style={[styles.settingRow, i < rows.length - 1 && styles.sep]}>
-              <View style={styles.iconWrap}><r.icon size={18} color={COLORS.primary} strokeWidth={2.1} /></View>
+              <IconBadge color={colors.primary} size={40}>
+                <r.icon size={18} color={colors.primary} strokeWidth={2.1} />
+              </IconBadge>
               <View style={{ flex: 1 }}>
                 <Text style={styles.settingLabel}>{r.label}</Text>
                 <Text style={styles.settingSub}>{r.sub}</Text>
@@ -76,8 +80,8 @@ export default function NotificationSettingsScreen() {
               <Switch
                 value={r.value}
                 onValueChange={r.set}
-                trackColor={{ false: COLORS.disabled, true: COLORS.secondary }}
-                thumbColor={COLORS.white}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={colors.surface}
               />
             </View>
           ))}
@@ -85,7 +89,7 @@ export default function NotificationSettingsScreen() {
 
         {expirationNotifications && (
           <View style={styles.daysCard}>
-            <Text style={styles.daysTitle}>Alert me</Text>
+            <SectionHeader title="Alert me" />
             <View style={styles.dayRow}>
               {DAYS.map((d) => (
                 <View key={d} style={{ alignItems: 'center' }}>
@@ -102,34 +106,32 @@ export default function NotificationSettingsScreen() {
           </View>
         )}
 
-        <PillButton title="Save Settings" onPress={handleSave} loading={loading} style={{ marginTop: SPACING.md }} />
+        <PillButton title="Save Settings" onPress={handleSave} loading={loading} style={{ marginTop: spacing.md }} />
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   card: {
-    backgroundColor: COLORS.white, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 4,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface, borderRadius: radii.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs,
+    ...shadow.card,
   },
-  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  sep: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
-  iconWrap: { width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  settingLabel: { fontSize: 15, fontWeight: '600', color: COLORS.text },
-  settingSub: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 14 },
+  sep: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  settingLabel: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  settingSub: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
   daysCard: {
-    backgroundColor: COLORS.white, borderRadius: 12, padding: 16, marginTop: SPACING.md,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg, marginTop: spacing.md,
+    ...shadow.card,
   },
-  daysTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
   dayRow: { flexDirection: 'row', justifyContent: 'space-around' },
   dayChip: {
-    width: 44, height: 44, borderRadius: RADII.pill, textAlignVertical: 'center',
+    width: 44, height: 44, borderRadius: radii.pill, textAlignVertical: 'center',
     textAlign: 'center', overflow: 'hidden', fontSize: 16, fontWeight: '700',
-    backgroundColor: COLORS.mutedBg, color: COLORS.secondaryText, lineHeight: 44,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12), color: colors.textSecondary, lineHeight: 44,
   },
-  dayChipActive: { backgroundColor: COLORS.primary, color: COLORS.white },
-  dayLabel: { fontSize: 10, color: COLORS.secondaryText, marginTop: 6 },
+  dayChipActive: { backgroundColor: colors.primaryDark, color: colors.surface },
+  dayLabel: { fontSize: 10, color: colors.textSecondary, marginTop: 6 },
 });

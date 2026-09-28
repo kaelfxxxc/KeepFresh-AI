@@ -4,17 +4,25 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import { InventoryItem } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { AlertTriangle, ChevronRight, CalendarClock, CheckCircle2 } from 'lucide-react-native';
-import { Segmented, StatusBadge, EmptyState } from '../../src/components/ui';
+import type { LucideProps } from 'lucide-react-native';
+import {
+  FilterChipRow, StatusPill, EmptyState, IconBadge, SectionHeader,
+} from '../../src/components/ui';
 import { LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 type Horizon = 'today' | 'week' | 'month';
+type Tone = 'success' | 'warning' | 'danger';
 
 export default function AlertsScreen() {
+  // The page gutter: the usual margin on a phone, and the slack that centres
+  // the column once the screen is wider than `CONTENT_MAX_WIDTH`.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
   // The bottom nav floats over this screen, so the list has to end above it.
@@ -93,6 +101,19 @@ export default function AlertsScreen() {
   const expiringTotal = groups.today.length + groups.week.length + groups.month.length;
   const nothingAtAll = expiringTotal === 0 && lowStockItems.length === 0;
 
+  const toneToStatus = (tone: Tone): 'fresh' | 'expiringSoon' | 'expired' => {
+    if (tone === 'success') return 'fresh';
+    if (tone === 'warning') return 'expiringSoon';
+    return 'expired';
+  };
+
+  /**
+   * The tone an item's icon badge takes, by the same rule as its pill: red once
+   * it is out of date, amber inside the week, green while there is still time.
+   */
+  const toneColor = (tone: Tone) =>
+    tone === 'danger' ? colors.danger : tone === 'warning' ? colors.warning : colors.primary;
+
   const badgeFor = (item: InventoryItem) => {
     const exp = getExpirationStatus(item.expiration_date);
     const d = daysUntil(item.expiration_date);
@@ -110,24 +131,29 @@ export default function AlertsScreen() {
    */
   const renderRow = (
     item: InventoryItem,
-    icon: React.ReactNode,
+    Icon: React.ComponentType<LucideProps>,
     meta: string,
-    badge: { label: string; tone: 'success' | 'warning' | 'danger' }
-  ) => (
-    <Pressable
-      key={item.id}
-      style={({ pressed }) => [styles.rowCard, pressed && { opacity: 0.9 }]}
-      onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}
-    >
-      <View style={styles.rowIcon}>{icon}</View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.rowName} numberOfLines={1}>{item.product_name}</Text>
-        <Text style={styles.rowMeta} numberOfLines={2}>{meta}</Text>
-      </View>
-      <StatusBadge label={badge.label} tone={badge.tone} />
-      <ChevronRight size={18} color={COLORS.secondaryText} />
-    </Pressable>
-  );
+    badge: { label: string; tone: Tone }
+  ) => {
+    const tint = toneColor(badge.tone);
+    return (
+      <Pressable
+        key={item.id}
+        style={({ pressed }) => [styles.rowCard, pressed && { opacity: 0.9 }]}
+        onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}
+      >
+        <IconBadge color={tint} size={42}>
+          <Icon size={20} color={tint} strokeWidth={2.2} />
+        </IconBadge>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.rowName} numberOfLines={1}>{item.product_name}</Text>
+          <Text style={styles.rowMeta} numberOfLines={2}>{meta}</Text>
+        </View>
+        <StatusPill status={toneToStatus(badge.tone)} label={badge.label} />
+        <ChevronRight size={18} color={colors.textSecondary} />
+      </Pressable>
+    );
+  };
 
   const renderExpiring = ({ item }: { item: InventoryItem }) => {
     const d = daysUntil(item.expiration_date);
@@ -139,11 +165,7 @@ export default function AlertsScreen() {
 
     return renderRow(
       item,
-      <CalendarClock
-        size={22}
-        color={d <= 0 ? COLORS.dangerText : d <= 7 ? COLORS.warningText : COLORS.successText}
-        strokeWidth={2}
-      />,
+      CalendarClock,
       `${item.quantity} ${item.unit} · ${expiryText}`,
       badgeFor(item)
     );
@@ -158,19 +180,14 @@ export default function AlertsScreen() {
    * they do not govern and read as though they filtered it.
    */
   const header = (
-    <View style={{ gap: SPACING.md }}>
+    <View style={{ gap: spacing.md }}>
       {lowStockItems.length > 0 && (
-        <View style={{ gap: SPACING.sm }}>
-          <View style={styles.blockHeadingRow}>
-            <AlertTriangle size={14} color={COLORS.warningText} strokeWidth={2.4} />
-            <Text style={styles.blockHeading}>
-              Running low · {lowStockItems.length} item{lowStockItems.length === 1 ? '' : 's'}
-            </Text>
-          </View>
+        <View style={{ gap: spacing.sm }}>
+          <SectionHeader title={`Running low · ${lowStockItems.length} item${lowStockItems.length === 1 ? '' : 's'}`} />
           {lowStockItems.map((item) =>
             renderRow(
               item,
-              <AlertTriangle size={22} color={COLORS.warningText} strokeWidth={2} />,
+              AlertTriangle,
               `${item.quantity} ${item.unit} left · restock soon`,
               { label: 'Low', tone: 'warning' }
             )
@@ -178,25 +195,32 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      <Segmented
-        value={horizon}
-        onChange={setHorizon}
-        options={[
-          { label: 'Today', value: 'today', count: groups.today.length },
-          { label: 'Next 7 Days', value: 'week', count: groups.week.length },
-          { label: 'This Month', value: 'month', count: groups.month.length },
+      <FilterChipRow
+        chips={[
+          { label: 'Today', count: groups.today.length },
+          { label: 'Next 7 Days', count: groups.week.length },
+          { label: 'This Month', count: groups.month.length },
         ]}
+        activeChip={
+          horizon === 'today' ? 'Today' :
+          horizon === 'week' ? 'Next 7 Days' : 'This Month'
+        }
+        onSelect={(label) => setHorizon(
+          label === 'Today' ? 'today' :
+          label === 'Next 7 Days' ? 'week' : 'month'
+        )}
+        style={{ marginTop: spacing.md }}
       />
 
       {!loading && list.length > 0 && (
-        <Text style={styles.sectionHeading}>{HEADINGS[horizon]}</Text>
+        <SectionHeader title={HEADINGS[horizon]} />
       )}
     </View>
   );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <Text style={styles.title}>Alerts</Text>
         <Text style={styles.subtitle}>Running low and nearing expiry, in one place</Text>
       </View>
@@ -206,8 +230,8 @@ export default function AlertsScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderExpiring}
         ListHeaderComponent={header}
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: SPACING.lg, paddingBottom: contentInset, gap: SPACING.sm }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAlerts(); }} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: gutter, paddingBottom: contentInset, gap: spacing.sm }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAlerts(); }} colors={[colors.primary]} tintColor={colors.primary} />}
         ListEmptyComponent={
           loading ? null : (
             // Held in the space left under the header so the message sits in the
@@ -236,33 +260,18 @@ export default function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: { paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
-  subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
-  // No horizontal padding: this now renders inside the list, whose content
-  // container already insets the page.
-  sectionHeading: {
-    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    textTransform: 'uppercase', letterSpacing: 0.4,
-  },
-  blockHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  blockHeading: {
-    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    textTransform: 'uppercase', letterSpacing: 0.4,
-  },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  header: { paddingBottom: spacing.md },
+  title: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  subtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   rowCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md, ...SHADOW.card,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.md, ...shadow.card,
   },
   // Takes the room the header left behind and centres the message in it. The
   // horizontal centring is still EmptyState's own.
   emptyFill: { flexGrow: 1, justifyContent: 'center' },
-  rowIcon: {
-    width: 42, height: 42, borderRadius: RADII.icon,
-    backgroundColor: COLORS.mutedBg, alignItems: 'center', justifyContent: 'center',
-  },
-  rowName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  rowMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 3 },
+  rowName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  rowMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 3 },
 });

@@ -13,12 +13,20 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight, RefreshCw, WifiOff } from 'lucide-react-native';
+import Svg, { Circle, Rect, G, Path } from 'react-native-svg';
+import Animated, {
+  useSharedValue, useAnimatedStyle, useAnimatedProps, withTiming, withSpring, FadeInDown,
+} from 'react-native-reanimated';
+import {
+  ChevronLeft, ChevronRight, Eye, EyeOff, Crown, Check, X, ArrowRight, RefreshCw, WifiOff,
+  CheckCircle2, XCircle, Sparkles, Lightbulb, MoreVertical, Plus, Minus, Info,
+} from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
-import { COLORS, RADII, SHADOW, SPACING, FONTS } from '../theme';
+import { COLORS, colors, radii, spacing, shadow, statusSurface, overlay } from '../theme';
 import { categoryIcon } from '../utils/categoryIcons';
 import { directImageUri, resolveItemImageUri } from '../services/inventoryImageService';
 import { resolveAvatarUri } from '../services/avatarService';
@@ -26,33 +34,99 @@ import { resolveAvatarUri } from '../services/avatarService';
 type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'wasted';
 
+// One status palette for the whole app.
+//
+// These four used to be Bootstrap's badge pairs (#D4EDDA/#155724 and friends) —
+// a second green, a second amber and a second red sitting beside the ones the
+// palette defines, so a "To Buy" badge and a "Fresh" pill a row apart read as
+// two different greens. Amber and red now come from `statusSurface`, the same
+// object `statusStyles` below uses for the freshness pills, so a badge and a
+// pill a row apart are the same tint by construction rather than by two values
+// happening to match.
 const toneMap: Record<Tone, { bg: string; fg: string }> = {
-  success: { bg: COLORS.successBg, fg: COLORS.successText },
-  warning: { bg: COLORS.warningBg, fg: COLORS.warningText },
-  danger: { bg: COLORS.dangerBg, fg: COLORS.dangerText },
-  neutral: { bg: COLORS.neutralBg, fg: COLORS.neutralText },
+  success: { bg: colorWithOpacity(colors.primary, 0.15), fg: colors.primary },
+  warning: { bg: statusSurface.warning.bg, fg: colors.warning },
+  danger: { bg: statusSurface.danger.bg, fg: colors.danger },
+  neutral: { bg: colorWithOpacity(colors.textSecondary, 0.12), fg: colors.textSecondary },
   // Brand green, for a badge that states something the user asked for rather
   // than something the app is warning them about — "To Buy" on a flagged item.
-  primary: { bg: COLORS.primaryLight, fg: COLORS.primary },
+  primary: { bg: colors.mintBg, fg: colors.primary },
   // Thrown away. Deliberately not `danger`: red is reserved for the two states
-  // that still want something from the user today.
+  // that still want something from the user today. The palette has no fourth
+  // hue to hand it, so this is the one tone still outside it — kept because a
+  // glance at History has to separate "act on this" from "this is over", and
+  // grey would fold it into Consumed.
   wasted: { bg: COLORS.wastedBg, fg: COLORS.wastedText },
 };
 
+/* ------------------------------------------------------------ Appear */
+/**
+ * Staggered card entrance: fade + a slight rise on mount.
+ *
+ * Every card-level component below runs through this so the whole app shares
+ * one entrance rhythm. `index` staggers siblings — a grid or list animates as a
+ * cascade rather than all at once — and is capped so a long list never leaves
+ * the last row waiting.
+ */
+export function appearEntering(animate: boolean, index = 0) {
+  if (!animate) return undefined;
+  return FadeInDown.duration(320).delay(Math.min(index, 6) * 45);
+}
+
+/** Wraps arbitrary content in the shared entrance animation. */
+export function Appear({
+  children,
+  index = 0,
+  animate = true,
+  style,
+}: {
+  children: React.ReactNode;
+  index?: number;
+  animate?: boolean;
+  style?: any;
+}) {
+  return (
+    <Animated.View entering={appearEntering(animate, index)} style={style}>
+      {children}
+    </Animated.View>
+  );
+}
+
 /* ------------------------------------------------------------------ Card */
-export function Card({ children, style, onPress }: {
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+export function Card({ children, style, onPress, index = 0, animate = true }: {
   children: React.ReactNode;
   style?: any;
   onPress?: () => void;
+  /** Position among siblings, for the staggered entrance. */
+  index?: number;
+  /** Set false for rows inside a recycled list, where a mount animation would replay on scroll. */
+  animate?: boolean;
 }) {
+  const entering = appearEntering(animate, index);
+
   if (onPress) {
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.card, SHADOW.card, style, pressed && { opacity: 0.92 }]}>
+      <AnimatedPressable
+        entering={entering}
+        onPress={onPress}
+        style={({ pressed }: { pressed: boolean }) => [
+          styles.card,
+          shadow.card,
+          style,
+          pressed && styles.cardPressed,
+        ]}
+      >
         {children}
-      </Pressable>
+      </AnimatedPressable>
     );
   }
-  return <View style={[styles.card, SHADOW.card, style]}>{children}</View>;
+  return (
+    <Animated.View entering={entering} style={[styles.card, shadow.card, style]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 /* ------------------------------------------------------------- Buttons */
@@ -77,15 +151,15 @@ export function PillButton({
   style?: any;
   textStyle?: any;
 }) {
-  const bg = variant === 'primary' ? COLORS.primary
-    : variant === 'danger' ? COLORS.danger
+  const bg = variant === 'primary' ? colors.primary
+    : variant === 'danger' ? colors.danger
     : 'transparent';
-  const border = variant === 'outline' || variant === 'dangerOutline' ? (variant === 'dangerOutline' ? COLORS.danger : COLORS.primary) : 'transparent';
+  const border = variant === 'outline' || variant === 'dangerOutline' ? (variant === 'dangerOutline' ? colors.danger : colors.primary) : 'transparent';
   const fg = variant === 'primary' || variant === 'danger'
-    ? COLORS.white
-    : variant === 'dangerOutline' ? COLORS.danger
-    : variant === 'subtle' ? COLORS.primary
-    : COLORS.primary;
+    ? colors.surface
+    : variant === 'dangerOutline' ? colors.danger
+    : variant === 'subtle' ? colors.primary
+    : colors.primary;
 
   return (
     <Pressable
@@ -197,9 +271,9 @@ export function Field({
     <View style={[styles.fieldWrap, containerStyle]}>
       {!!label && <Text style={styles.fieldLabel}>{label}</Text>}
       <View style={styles.fieldBox}>
-        {Icon && <Icon size={18} color={COLORS.secondaryText} strokeWidth={2} style={styles.fieldIcon} />}
+        {Icon && <Icon size={18} color={colors.textSecondary} strokeWidth={2} style={styles.fieldIcon} />}
         <TextInput
-          placeholderTextColor={COLORS.secondaryText}
+          placeholderTextColor={colors.textSecondary}
           {...inputProps}
           secureTextEntry={secure ? hidden : false}
           multiline={multiline}
@@ -208,9 +282,9 @@ export function Field({
         {secure && (
           <Pressable onPress={() => setHidden((h) => !h)} hitSlop={10} style={styles.eye}>
             {hidden ? (
-              <EyeOff size={18} color={COLORS.secondaryText} />
+              <EyeOff size={18} color={colors.textSecondary} />
             ) : (
-              <Eye size={18} color={COLORS.secondaryText} />
+              <Eye size={18} color={colors.textSecondary} />
             )}
           </Pressable>
         )}
@@ -305,7 +379,7 @@ export function QuantityPrompt({
                 returnKeyType="done"
                 onSubmitEditing={confirm}
                 placeholder="0"
-                placeholderTextColor={COLORS.secondaryText}
+                placeholderTextColor={colors.textSecondary}
                 style={styles.promptInput}
               />
               {!!unit && <Text style={styles.promptUnit}>{unit}</Text>}
@@ -372,16 +446,16 @@ export function ActionMenu({ visible, title, actions, onClose }: {
                   setTimeout(action.onPress, 0);
                 }}
                 accessibilityRole="button"
-                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: COLORS.mutedBg }]}
+                style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: colorWithOpacity(colors.textSecondary, 0.12) }]}
               >
                 {Icon && (
                   <Icon
                     size={19}
-                    color={action.danger ? COLORS.dangerText : COLORS.text}
+                    color={action.danger ? colors.danger : colors.textPrimary}
                     strokeWidth={2}
                   />
                 )}
-                <Text style={[styles.menuRowText, action.danger && { color: COLORS.dangerText }]}>
+                <Text style={[styles.menuRowText, action.danger && { color: colors.danger }]}>
                   {action.label}
                 </Text>
               </Pressable>
@@ -391,7 +465,7 @@ export function ActionMenu({ visible, title, actions, onClose }: {
             title="Cancel"
             variant="outline"
             onPress={onClose}
-            style={{ marginTop: SPACING.sm }}
+            style={{ marginTop: spacing.sm }}
           />
         </Pressable>
       </Pressable>
@@ -400,7 +474,7 @@ export function ActionMenu({ visible, title, actions, onClose }: {
 }
 
 /* ------------------------------------------------------------- Icons */
-export function IconButton({ icon: Icon, onPress, size = 20, color = COLORS.text, bg, style, badge }: {
+export function IconButton({ icon: Icon, onPress, size = 20, color = colors.textPrimary, bg, style, badge }: {
   icon: IconComp;
   onPress?: () => void;
   size?: number;
@@ -494,7 +568,7 @@ export function AvatarCircle({ uri, initials, size = 42, onPress }: {
  * category is resolved through `resolveCategory`, which tolerates the several
  * spellings that exist in stored data — see src/utils/categoryIcons.ts.
  */
-export function ItemImage({ uri, category, size = 52, radius = RADII.image, style }: {
+export function ItemImage({ uri, category, size = 52, radius = radii.md, style }: {
   uri?: string | null;
   category?: string | null;
   size?: number;
@@ -542,12 +616,12 @@ export function ItemImage({ uri, category, size = 52, radius = RADII.image, styl
       style={[
         {
           width: size, height: size, borderRadius: radius,
-          backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: colors.mintBg, alignItems: 'center', justifyContent: 'center',
         },
         style,
       ]}
     >
-      <Icon size={Math.round(size * 0.46)} color={COLORS.primary} strokeWidth={1.8} />
+      <Icon size={Math.round(size * 0.46)} color={colors.primary} strokeWidth={1.8} />
     </View>
   );
 }
@@ -571,7 +645,7 @@ export function PageHeader({ title, subtitle, action, insetTop = 0 }: {
 }
 
 /* ---------------------------------------------- Header for pushed screens */
-export function NavHeader({ title, subtitle, onBack, right, tint = COLORS.text }: {
+export function NavHeader({ title, subtitle, onBack, right, tint = colors.textPrimary }: {
   title: string;
   subtitle?: string;
   onBack?: () => void;
@@ -601,18 +675,18 @@ export function ListRow({ icon: Icon, label, hint, onPress, danger, chevron = tr
   chevron?: boolean;
   right?: React.ReactNode;
 }) {
-  const color = danger ? COLORS.danger : COLORS.text;
+  const color = danger ? colors.danger : colors.textPrimary;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: COLORS.mutedBg }]}>
-      <View style={[styles.rowIcon, { backgroundColor: danger ? COLORS.dangerBg : COLORS.primaryLight }]}>
-        <Icon size={19} color={danger ? COLORS.dangerText : COLORS.primary} strokeWidth={2} />
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: colorWithOpacity(colors.textSecondary, 0.12) }]}>
+      <View style={[styles.rowIcon, { backgroundColor: danger ? colorWithOpacity(colors.danger, 0.14) : colors.mintBg }]}>
+        <Icon size={19} color={danger ? colors.danger : colors.primary} strokeWidth={2} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.rowLabel, { color }]}>{label}</Text>
         {!!hint && <Text style={styles.rowHint}>{hint}</Text>}
       </View>
       {right}
-      {chevron && <ChevronRight size={18} color={COLORS.secondaryText} />}
+      {chevron && <ChevronRight size={18} color={colors.textSecondary} />}
     </Pressable>
   );
 }
@@ -650,7 +724,7 @@ export function EmptyState({ icon: Icon, title, hint, actionLabel, onAction, com
         <View style={[styles.emptyIconWrap, compact && styles.emptyIconWrapCompact]}>
           <Icon
             size={compact ? 24 : 34}
-            color={COLORS.primary}
+            color={colors.primary}
             strokeWidth={compact ? 1.8 : 1.6}
           />
         </View>
@@ -661,7 +735,7 @@ export function EmptyState({ icon: Icon, title, hint, actionLabel, onAction, com
         <PillButton
           title={actionLabel}
           onPress={onAction}
-          style={{ marginTop: compact ? SPACING.sm : SPACING.md }}
+          style={{ marginTop: compact ? spacing.sm : spacing.md }}
         />
       )}
     </View>
@@ -700,7 +774,7 @@ export function Segmented<T extends string>({ options, value, onChange }: {
 }
 
 /* --------------------------------------------------------- Progress */
-export function Bar({ fraction, color = COLORS.primary, bg = COLORS.primaryLight, height = 8, style }: {
+export function Bar({ fraction, color = colors.primary, bg = colors.mintBg, height = 8, style }: {
   fraction: number;
   color?: string;
   bg?: string;
@@ -773,7 +847,7 @@ export function QuantityStepper({
 
       <View style={[styles.stepperValueWrap, compact && styles.stepperValueWrapCompact]}>
         {busy ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : (
           <Text
             style={[styles.stepperValue, compact && { fontSize: 15 }]}
@@ -834,7 +908,7 @@ export function UsageMeter({
   const unlimited = limit <= 0;
   const fraction = unlimited ? 0 : Math.min(used / limit, 1);
   const tone =
-    unlimited || fraction < 0.8 ? COLORS.primary : fraction < 1 ? COLORS.warning : COLORS.danger;
+    unlimited || fraction < 0.8 ? colors.primary : fraction < 1 ? colors.warning : colors.danger;
 
   return (
     <View style={[{ gap: 8 }, style]}>
@@ -901,7 +975,7 @@ export function UpgradeNotice({
   return (
     <View style={[styles.upgradeNotice, style]}>
       <View style={styles.upgradeIcon}>
-        <Crown size={18} color={COLORS.primary} strokeWidth={2.2} />
+        <Crown size={18} color={colors.primary} strokeWidth={2.2} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={styles.upgradeTitle}>{title}</Text>
@@ -911,12 +985,12 @@ export function UpgradeNotice({
           style={({ pressed }) => [styles.upgradeCta, pressed && { opacity: 0.8 }]}
         >
           <Text style={styles.upgradeCtaText}>{ctaLabel}</Text>
-          <ArrowRight size={14} color={COLORS.white} strokeWidth={2.4} />
+          <ArrowRight size={14} color={colors.surface} strokeWidth={2.4} />
         </Pressable>
       </View>
       {onDismiss && (
         <Pressable onPress={onDismiss} hitSlop={8} style={styles.upgradeClose}>
-          <X size={16} color={COLORS.secondaryText} />
+          <X size={16} color={colors.textSecondary} />
         </Pressable>
       )}
     </View>
@@ -976,9 +1050,9 @@ export function FeatureLock({
     <View style={styles.lock}>
       <View style={styles.lockIconWrap}>
         {Icon ? (
-          <Icon size={32} color={COLORS.primary} strokeWidth={1.7} />
+          <Icon size={32} color={colors.primary} strokeWidth={1.7} />
         ) : (
-          <Crown size={32} color={COLORS.primary} strokeWidth={1.7} />
+          <Crown size={32} color={colors.primary} strokeWidth={1.7} />
         )}
       </View>
       <Text style={styles.lockTitle}>{title}</Text>
@@ -988,7 +1062,7 @@ export function FeatureLock({
         <View style={styles.lockBullets}>
           {bullets.map((bullet) => (
             <View key={bullet} style={styles.lockBulletRow}>
-              <Check size={15} color={COLORS.primary} strokeWidth={2.6} />
+              <Check size={15} color={colors.primary} strokeWidth={2.6} />
               <Text style={styles.lockBulletText}>{bullet}</Text>
             </View>
           ))}
@@ -1004,7 +1078,7 @@ export function FeatureLock({
         icon={CtaIcon}
         disabled={busy}
         onPress={onPress}
-        style={{ alignSelf: 'stretch', marginTop: SPACING.lg }}
+        style={{ alignSelf: 'stretch', marginTop: spacing.lg }}
       />
     </View>
   );
@@ -1051,20 +1125,1005 @@ export function PlanCheckLock({
   );
 }
 
+/* ------------------------------------------------- Status pill */
+export type Status = 'fresh' | 'expiringSoon' | 'expired' | 'active';
+
+const statusStyles: Record<Status, { bg: string; fg: string; defaultLabel: string }> = {
+  fresh: { bg: colors.mintBg, fg: colors.primary, defaultLabel: 'Fresh' },
+  expiringSoon: { bg: statusSurface.warning.bg, fg: colors.warning, defaultLabel: 'Expires Soon' },
+  expired: { bg: statusSurface.danger.bg, fg: colors.danger, defaultLabel: 'Expired' },
+  active: { bg: colors.primaryDark, fg: colors.surface, defaultLabel: 'Active' },
+};
+
+export function StatusPill({
+  status,
+  label,
+  style,
+}: {
+  status: Status;
+  label?: string;
+  style?: any;
+}) {
+  const conf = statusStyles[status] || statusStyles.fresh;
+  const text = label ?? conf.defaultLabel;
+  return (
+    <View style={[styles.statusPill, { backgroundColor: conf.bg }, style]}>
+      <Text style={[styles.statusPillText, { color: conf.fg }]} numberOfLines={1}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Icon badge */
+export function colorWithOpacity(color: string, alpha: number): string {
+  if (!color) return `rgba(27, 122, 77, ${alpha})`;
+  if (color.startsWith('#')) {
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.substring(0, 2), 16);
+    const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.substring(2, 4), 16);
+    const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
+}
+
+export function IconBadge({
+  color = colors.primary,
+  size = 40,
+  children,
+  style,
+}: {
+  color?: string;
+  size?: number;
+  children: React.ReactNode;
+  style?: any;
+}) {
+  return (
+    <View
+      style={[
+        styles.iconBadge,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colorWithOpacity(color, 0.15),
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Stat card */
+export function StatCard({
+  icon: Icon,
+  title,
+  value,
+  caption,
+  iconBg = colors.primary,
+  style,
+  onPress,
+  index = 0,
+  animate = true,
+}: {
+  icon: IconComp;
+  title: string;
+  value: string | number;
+  caption?: string;
+  iconBg?: string;
+  style?: any;
+  onPress?: () => void;
+  index?: number;
+  animate?: boolean;
+}) {
+  const content = (
+    <Animated.View entering={appearEntering(animate, index)} style={[styles.statCard, style]}>
+      <View style={styles.statCardRow}>
+        <IconBadge color={iconBg} size={40}>
+          <Icon size={20} color={iconBg} strokeWidth={2.2} />
+        </IconBadge>
+        <View style={styles.statCardText}>
+          <Text style={styles.statCardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text
+            style={[styles.statCardValue, typeof value === 'string' && styles.statCardValueText]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}
+          >
+            {value}
+          </Text>
+          {!!caption && (
+            <Text style={styles.statCardCaption} numberOfLines={1}>
+              {caption}
+            </Text>
+          )}
+        </View>
+      </View>
+    </Animated.View>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.statCardPressable, pressed && styles.cardPressed]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+  return content;
+}
+
+/* ------------------------------------------------- Highlight card */
+export function HighlightCard({
+  label,
+  value,
+  caption,
+  actionLabel,
+  onActionPress,
+  secondaryIcon: SecondaryIcon,
+  secondaryText,
+  secondaryBadge,
+  style,
+  index = 0,
+  animate = true,
+}: {
+  label: string;
+  value: string | number;
+  caption?: string;
+  actionLabel?: string;
+  onActionPress?: () => void;
+  secondaryIcon?: IconComp;
+  secondaryText?: string;
+  secondaryBadge?: string;
+  style?: any;
+  index?: number;
+  animate?: boolean;
+}) {
+  return (
+    <Animated.View entering={appearEntering(animate, index)} style={[styles.highlightCard, style]}>
+      {/* Header row: small dot + label + right-aligned action link */}
+      <View style={styles.highlightHeader}>
+        <View style={styles.highlightLabelRow}>
+          <View style={styles.highlightDot} />
+          <Text style={styles.highlightLabel}>{label}</Text>
+        </View>
+        {!!actionLabel && !!onActionPress && (
+          <Pressable onPress={onActionPress} hitSlop={8}>
+            <Text style={styles.highlightAction}>{actionLabel}</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Large statNumber */}
+      <Text style={styles.highlightValue}>{value}</Text>
+      {!!caption && <Text style={styles.highlightCaption}>{caption}</Text>}
+
+      {/* Divider (colors.border 1px) & secondary row with icon + text + trailing badge */}
+      {(SecondaryIcon || secondaryText || secondaryBadge) && (
+        <>
+          <View style={styles.highlightDivider} />
+          <View style={styles.highlightSecondaryRow}>
+            <View style={styles.highlightSecondaryLeft}>
+              {SecondaryIcon && (
+                <IconBadge color={colors.primary} size={28}>
+                  <SecondaryIcon size={16} color={colors.primary} strokeWidth={2.4} />
+                </IconBadge>
+              )}
+              {!!secondaryText && (
+                <Text style={styles.highlightSecondaryText} numberOfLines={1}>
+                  {secondaryText}
+                </Text>
+              )}
+            </View>
+            {!!secondaryBadge && (
+              <StatusPill status="fresh" label={secondaryBadge} />
+            )}
+          </View>
+        </>
+      )}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------- Progress bar */
+export function ProgressBar({
+  value,
+  max = 100,
+  colorRamp = true,
+  color,
+  height = 7,
+  style,
+}: {
+  value: number;
+  max?: number;
+  colorRamp?: boolean;
+  color?: string;
+  height?: number;
+  style?: any;
+}) {
+  const clampedRatio = Math.min(1, Math.max(0, max > 0 ? value / max : 0));
+  const progressAnim = useSharedValue(0);
+
+  useEffect(() => {
+    progressAnim.value = withTiming(clampedRatio, { duration: 600 });
+  }, [clampedRatio]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    width: `${progressAnim.value * 100}%`,
+  }));
+
+  let barColor = color;
+  if (!barColor) {
+    if (colorRamp) {
+      if (clampedRatio > 0.6) {
+        barColor = colors.primary;
+      } else if (clampedRatio > 0.25) {
+        barColor = colors.warning;
+      } else {
+        barColor = colors.danger;
+      }
+    } else {
+      barColor = colors.primary;
+    }
+  }
+
+  return (
+    <View style={[styles.progressTrack, { height, borderRadius: radii.pill }, style]}>
+      <Animated.View
+        style={[
+          styles.progressFill,
+          { height, borderRadius: radii.pill, backgroundColor: barColor },
+          animatedStyle,
+        ]}
+      />
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Inventory list item */
+export function InventoryListItem({
+  name,
+  quantity,
+  unit = 'pcs',
+  location,
+  expiryDate,
+  status = 'fresh',
+  progressRatio = 1,
+  imageUri,
+  category,
+  onIncrement,
+  onDecrement,
+  onAction,
+  actionLabel = 'Consume',
+  onMenu,
+  onPress,
+  style,
+}: {
+  name: string;
+  quantity: number;
+  unit?: string;
+  location?: string;
+  expiryDate?: string;
+  status?: Status;
+  progressRatio?: number;
+  imageUri?: string | null;
+  category?: string | null;
+  onIncrement?: () => void;
+  onDecrement?: () => void;
+  onAction?: () => void;
+  actionLabel?: string;
+  onMenu?: () => void;
+  onPress?: () => void;
+  style?: any;
+}) {
+  const statusColor =
+    status === 'fresh' ? colors.primary
+    : status === 'expiringSoon' ? colors.warning
+    : status === 'expired' ? colors.danger
+    : colors.primaryDark;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => [
+        styles.inventoryItemCard,
+        { borderLeftColor: statusColor },
+        style,
+        pressed && onPress && styles.cardPressed,
+      ]}
+    >
+      {/* Row 1: circular emoji/icon avatar + name (bold) + <StatusPill> top-right */}
+      <View style={styles.inventoryRow1}>
+        <View style={styles.inventoryAvatarWrap}>
+          <ItemImage uri={imageUri} category={category} size={42} />
+        </View>
+        <Text style={styles.inventoryItemName}>
+          {name}
+        </Text>
+        <StatusPill status={status} />
+      </View>
+
+      {/* Row 2: caption meta text (qty • location • expiry) */}
+      <View style={styles.inventoryRow2}>
+        <Text style={styles.inventoryMetaText} numberOfLines={2}>
+          {quantity} {unit}
+          {location ? ` • ${location}` : ''}
+          {expiryDate ? ` • ${expiryDate}` : ''}
+        </Text>
+      </View>
+
+      {/* ProgressBar below meta */}
+      <ProgressBar
+        value={progressRatio}
+        max={1}
+        colorRamp
+        style={{ marginVertical: spacing.sm }}
+      />
+
+      <View style={styles.inventoryDivider} />
+
+      {/* Row 3: quantity stepper (− qty + in rounded outline pill) left, primary action button right, ⋮ icon button far right */}
+      <View style={styles.inventoryRow3}>
+        <View style={styles.inventoryStepper}>
+          <Pressable
+            onPress={onDecrement}
+            hitSlop={8}
+            style={styles.inventoryStepperBtn}
+            accessibilityLabel="Decrease quantity"
+          >
+            <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />
+          </Pressable>
+          <Text style={styles.inventoryStepperVal}>
+            {quantity} {unit}
+          </Text>
+          <Pressable
+            onPress={onIncrement}
+            hitSlop={8}
+            style={styles.inventoryStepperBtn}
+            accessibilityLabel="Increase quantity"
+          >
+            <Plus size={14} color={colors.primary} strokeWidth={2.5} />
+          </Pressable>
+        </View>
+
+        <View style={styles.inventoryRow3Right}>
+          {onAction && (
+            <Pressable
+              onPress={onAction}
+              style={({ pressed }) => [
+                styles.inventoryActionBtn,
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={styles.inventoryActionBtnText}>{actionLabel}</Text>
+            </Pressable>
+          )}
+          {onMenu && (
+            <Pressable
+              onPress={onMenu}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.inventoryMenuBtn,
+                pressed && { opacity: 0.6 },
+              ]}
+              accessibilityLabel="More options"
+            >
+              <MoreVertical size={20} color={colors.textSecondary} strokeWidth={2.2} />
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+/* ------------------------------------------------- Filter chip row */
+
+/**
+ * One chip. Springs slightly as it is pressed, so the row acknowledges the tap
+ * before the filter changes underneath it.
+ */
+function FilterChip({
+  label,
+  count,
+  active,
+  onPress,
+  variant,
+  activeTone,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  onPress: () => void;
+  variant: 'pill' | 'card';
+  activeTone: 'mint' | 'dark';
+}) {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: variant === 'card' ? 1 : scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={() => {
+        if (variant !== 'card') scale.value = withSpring(1.02, { damping: 14, stiffness: 260 });
+      }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 14, stiffness: 260 }); }}
+      style={[
+        variant === 'card' ? styles.filterChipCard : styles.filterChip,
+        active
+          ? variant === 'card'
+            ? activeTone === 'dark' ? styles.filterChipCardActiveDark : styles.filterChipCardActive
+            : styles.filterChipActive
+          : variant === 'card' ? styles.filterChipCardInactive : styles.filterChipInactive,
+        animatedStyle,
+      ]}
+    >
+      <Text
+        style={[
+          styles.filterChipText,
+          variant === 'card' && styles.filterChipCardText,
+          active
+            ? variant === 'card'
+              ? activeTone === 'dark' ? styles.filterChipCardTextActiveDark : styles.filterChipCardTextActive
+              : styles.filterChipTextActive
+            : styles.filterChipTextInactive,
+        ]}
+      >
+        {label}
+      </Text>
+      {typeof count === 'number' && (
+        <View
+          style={[
+            styles.filterChipCount,
+            variant === 'card' && styles.filterChipCardCount,
+            active && variant !== 'card' && { backgroundColor: colorWithOpacity(colors.surface, 0.25) },
+            active && variant === 'card' && {
+              backgroundColor: activeTone === 'dark' ? colors.mintBg : colors.mintBg,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.filterChipCountText,
+              active && variant !== 'card' && { color: colors.surface },
+              active && variant === 'card' && { color: activeTone === 'dark' ? colors.primaryDark : colors.primaryDark },
+            ]}
+          >
+            {count}
+          </Text>
+        </View>
+      )}
+    </AnimatedPressable>
+  );
+}
+
+export function FilterChipRow({
+  chips,
+  activeChip,
+  onSelect,
+  style,
+  contentStyle,
+  variant = 'pill',
+  activeTone = 'mint',
+}: {
+  chips: { label: string; count?: number; value?: string }[];
+  activeChip: string;
+  onSelect: (val: string) => void;
+  style?: any;
+  /**
+   * Merged over the row's own content styles. The default gutter keeps the row
+   * usable on its own; a screen whose other blocks sit at a wider margin passes
+   * its gutter here so the chips line up with the header above them rather than
+   * sitting eight points to the left of it.
+   */
+  contentStyle?: any;
+  variant?: 'pill' | 'card';
+  activeTone?: 'mint' | 'dark';
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={[styles.filterChipRow, contentStyle]}
+      style={[styles.filterChipScroll, style]}
+    >
+      {chips.map((chip) => {
+        const val = chip.value ?? chip.label;
+        return (
+          <FilterChip
+            key={val}
+            label={chip.label}
+            count={chip.count}
+            active={val === activeChip}
+            variant={variant}
+            activeTone={activeTone}
+            onPress={() => onSelect(val)}
+          />
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+/* ------------------------------------------------- AIBanner */
+export function AIBanner({
+  icon = 'sparkle',
+  title,
+  body,
+  ctaLabel,
+  onPressCta,
+  variant = 'mint',
+  style,
+  index = 0,
+  animate = true,
+}: {
+  icon?: 'sparkle' | 'bulb';
+  title: string;
+  body: string;
+  ctaLabel?: string;
+  onPressCta?: () => void;
+  variant?: 'mint' | 'dark';
+  style?: any;
+  index?: number;
+  animate?: boolean;
+}) {
+  const isDark = variant === 'dark';
+  const bg = isDark ? colors.primaryDark : colors.mintBg;
+  const fg = isDark ? colors.surface : colors.textPrimary;
+  const subFg = isDark ? 'rgba(255, 255, 255, 0.85)' : colors.textSecondary;
+  const iconColor = isDark ? colors.surface : colors.primary;
+
+  return (
+    <Animated.View entering={appearEntering(animate, index)} style={[styles.aiBanner, { backgroundColor: bg }, style]}>
+      <View style={styles.aiBannerHeader}>
+        <IconBadge color={iconColor} size={36}>
+          {icon === 'bulb' ? (
+            <Lightbulb size={18} color={iconColor} strokeWidth={2.4} />
+          ) : (
+            <Sparkles size={18} color={iconColor} strokeWidth={2.4} />
+          )}
+        </IconBadge>
+        <View style={styles.aiBannerTextWrap}>
+          <Text style={[styles.aiBannerTitle, { color: fg }]}>{title}</Text>
+          <Text style={[styles.aiBannerBody, { color: subFg }]}>{body}</Text>
+        </View>
+      </View>
+      {!!ctaLabel && !!onPressCta && (
+        <Pressable
+          onPress={onPressCta}
+          style={({ pressed }) => [
+            styles.aiBannerCtaPill,
+            { backgroundColor: isDark ? colors.surface : colors.primary },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Text
+            style={[
+              styles.aiBannerCtaPillText,
+              { color: isDark ? colors.primaryDark : colors.surface },
+            ]}
+          >
+            {ctaLabel}
+          </Text>
+        </Pressable>
+      )}
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------- Trend bar chart */
+
+/**
+ * One bar. Grows from nothing to its value on mount, so the chart draws itself
+ * when the card appears rather than being there fully formed.
+ *
+ * The track is bottom-aligned and a fixed height, so animating the bar's own
+ * height rises it from the axis.
+ */
+function TrendBar({ height, active }: { height: number; active: boolean }) {
+  const animatedHeight = useSharedValue(0);
+
+  useEffect(() => {
+    animatedHeight.value = withTiming(height, { duration: 600 });
+  }, [height]);
+
+  const animatedStyle = useAnimatedStyle(() => ({ height: animatedHeight.value }));
+
+  return (
+    <View style={styles.trendBarTrack}>
+      <Animated.View
+        style={[
+          styles.trendBar,
+          { backgroundColor: active ? colors.primary : colors.border },
+          animatedStyle,
+        ]}
+      />
+    </View>
+  );
+}
+
+export function TrendBarChart({
+  data,
+  currentIndex,
+  labels,
+  maxValue,
+  index = 0,
+  animate = true,
+  style,
+}: {
+  data: number[];
+  currentIndex?: number;
+  labels?: string[];
+  maxValue?: number;
+  /** Position among siblings, for the staggered entrance. */
+  index?: number;
+  animate?: boolean;
+  style?: any;
+}) {
+  if (!data || data.length === 0) return null;
+  const max = maxValue ?? Math.max(...data, 1);
+
+  return (
+    <Animated.View
+      entering={appearEntering(animate, index)}
+      style={[styles.trendChart, style]}
+    >
+      <View style={styles.trendBars}>
+        {data.map((value, index) => {
+          const active = index === currentIndex;
+          const barHeight = Math.max(6, (value / max) * 76);
+          return (
+            <View key={index} style={styles.trendColumn}>
+              {active ? (
+                <View style={styles.trendBadge}>
+                  <Text style={styles.trendBadgeText}>{value}</Text>
+                </View>
+              ) : (
+                <View style={{ height: 20 }} />
+              )}
+              <TrendBar height={barHeight} active={active} />
+              <Text
+                style={[
+                  styles.trendLabel,
+                  active && styles.trendLabelActive,
+                ]}
+              >
+                {labels?.[index] ?? ''}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------- Donut progress */
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+export function DonutProgress({
+  percentage,
+  size = 140,
+  strokeWidth = 12,
+  style,
+}: {
+  percentage: number;
+  size?: number;
+  strokeWidth?: number;
+  style?: any;
+}) {
+  const progress = Math.max(0, Math.min(percentage, 100));
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (circumference * progress) / 100;
+
+  // Starts un-drawn (offset of a full circumference = nothing showing) and
+  // sweeps to the target, so the ring fills in when the card appears.
+  const animatedOffset = useSharedValue(circumference);
+
+  useEffect(() => {
+    animatedOffset.value = withTiming(strokeDashoffset, { duration: 900 });
+  }, [strokeDashoffset, circumference]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: animatedOffset.value,
+  }));
+
+  return (
+    <View style={[styles.donutContainer, { width: size, height: size }, style]}>
+      <Svg width={size} height={size}>
+        <G rotation="-90" origin={`${size / 2}, ${size / 2}`}>
+          {/* Remainder — a soft red, so what is left over reads as the risk half
+              of the pair rather than as more of the same green. */}
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colorWithOpacity(colors.danger, 0.16)}
+            strokeWidth={strokeWidth}
+            fill="none"
+          />
+          {/* Utilized green stroke */}
+          <AnimatedCircle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.primary}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${circumference} ${circumference}`}
+            animatedProps={animatedProps}
+            strokeLinecap="round"
+            fill="none"
+          />
+        </G>
+      </Svg>
+      <View style={styles.donutCenterText}>
+        <Text style={styles.donutPercentage}>{Math.round(progress)}%</Text>
+        <Text style={styles.donutSub}>Utilized</Text>
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Permissions table */
+export function PermissionsTable({
+  roles,
+  columns,
+  style,
+}: {
+  roles: {
+    name: string;
+    dotColor?: string;
+    permissions: boolean[];
+  }[];
+  columns: string[];
+  style?: any;
+}) {
+  return (
+    <View style={[styles.permissionsCard, style]}>
+      {/* Header */}
+      <View style={styles.permissionsHead}>
+        <Text style={[styles.permissionsColHeader, { flex: 1.4 }]}>Role</Text>
+        {columns.map((col, idx) => (
+          <Text key={idx} style={styles.permissionsColHeader} numberOfLines={1}>
+            {col}
+          </Text>
+        ))}
+      </View>
+      {/* Rows */}
+      {roles.map((role, rIdx) => (
+        <View
+          key={role.name}
+          style={[
+            styles.permissionsRow,
+            rIdx === roles.length - 1 && { borderBottomWidth: 0 },
+          ]}
+        >
+          <View style={[styles.permissionsRoleCell, { flex: 1.4 }]}>
+            <View
+              style={[
+                styles.permissionsDot,
+                { backgroundColor: role.dotColor ?? colors.primary },
+              ]}
+            />
+            <Text style={styles.permissionsRoleName} numberOfLines={1}>
+              {role.name}
+            </Text>
+          </View>
+          {role.permissions.map((allowed, cIdx) => (
+            <View key={cIdx} style={styles.permissionsIconCell}>
+              {allowed ? (
+                <CheckCircle2 size={18} color={colors.primary} strokeWidth={2.4} />
+              ) : (
+                <XCircle size={18} color={colors.textSecondary} opacity={0.35} strokeWidth={2} />
+              )}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Pricing card */
+export function PricingCard({
+  planName,
+  price,
+  period = 'month',
+  description,
+  features,
+  recommended = false,
+  ctaLabel = 'Select plan',
+  onSelect,
+  disabled = false,
+  loading = false,
+  style,
+}: {
+  planName: string;
+  price: string;
+  period?: string;
+  description?: string;
+  features: string[];
+  recommended?: boolean;
+  ctaLabel?: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  style?: any;
+}) {
+  return (
+    <View
+      style={[
+        styles.pricingCard,
+        recommended && styles.pricingCardRecommended,
+        style,
+      ]}
+    >
+      {recommended && (
+        <View style={styles.pricingBadge}>
+          <Text style={styles.pricingBadgeText}>Best Value</Text>
+        </View>
+      )}
+
+      <Text style={styles.pricingPlanName}>{planName}</Text>
+      {!!description && <Text style={styles.pricingDescription}>{description}</Text>}
+
+      <View style={styles.pricingPriceRow}>
+        <Text style={styles.pricingPrice}>{price}</Text>
+        {period ? <Text style={styles.pricingPeriod}>/{period}</Text> : null}
+      </View>
+
+      <View style={styles.pricingDivider} />
+
+      <View style={styles.pricingFeatureList}>
+        {features.map((feature, idx) => (
+          <View key={idx} style={styles.pricingFeatureRow}>
+            <CheckCircle2 size={17} color={colors.primary} strokeWidth={2.4} />
+            <Text style={styles.pricingFeatureText}>{feature}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Pressable
+        onPress={onSelect}
+        disabled={disabled || loading}
+        style={({ pressed }) => [
+          styles.pricingCta,
+          recommended ? styles.pricingCtaFilled : styles.pricingCtaOutline,
+          (disabled || loading) && { opacity: 0.5 },
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={recommended ? colors.surface : colors.primaryDark} />
+        ) : (
+          <Text
+            style={[
+              styles.pricingCtaText,
+              recommended ? styles.pricingCtaTextFilled : styles.pricingCtaTextOutline,
+            ]}
+          >
+            {ctaLabel}
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Csv import box */
+export function CsvImportBox({
+  value,
+  onChangeText,
+  placeholder,
+  onInfoPress,
+  hint,
+  style,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  onInfoPress?: () => void;
+  hint?: string;
+  style?: any;
+}) {
+  return (
+    <View style={[styles.csvBoxContainer, style]}>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        multiline
+        placeholder={placeholder}
+        placeholderTextColor={colors.textSecondary}
+        style={styles.csvTextInput}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <View style={styles.csvHelperRow}>
+        <IconBadge color={colors.primary} size={24}>
+          <Info size={14} color={colors.primary} strokeWidth={2.4} />
+        </IconBadge>
+        <Text style={styles.csvHelperText}>
+          {hint ?? 'Columns: product_name, quantity, unit, category, expiration_date, price'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Section header */
+export function SectionHeader({
+  title,
+  subtitle,
+  actionLabel,
+  onActionPress,
+  rightComponent,
+  style,
+}: {
+  title: string;
+  /** One line under the title, when the section needs a reason rather than just a name. */
+  subtitle?: string;
+  actionLabel?: string;
+  onActionPress?: () => void;
+  rightComponent?: React.ReactNode;
+  style?: any;
+}) {
+  return (
+    <View style={[styles.sectionHeaderRow, subtitle ? styles.sectionHeaderRowStacked : null, style]}>
+      <View style={styles.sectionHeaderText}>
+        <Text style={styles.sectionHeaderTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.sectionHeaderSubtitle}>{subtitle}</Text> : null}
+      </View>
+      {rightComponent ? (
+        rightComponent
+      ) : actionLabel && onActionPress ? (
+        <Pressable onPress={onActionPress} hitSlop={8} style={styles.sectionHeaderActionWrap}>
+          <Text style={styles.sectionHeaderAction}>{actionLabel}</Text>
+          <ChevronRight size={14} color={colors.primary} strokeWidth={2.6} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/* ------------------------------------------------- Spacer */
+export function Spacer({
+  size = 'lg',
+  horizontal = false,
+}: {
+  size?: keyof typeof spacing | number;
+  horizontal?: boolean;
+}) {
+  const s = typeof size === 'number' ? size : spacing[size] ?? 16;
+  return <View style={{ width: horizontal ? s : 0, height: horizontal ? 0 : s }} />;
+}
+
 /* ================================================================== */
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADII.card,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.divider,
+    borderColor: colors.border,
+    minWidth: 0,
   },
+  cardPressed: { opacity: 0.94 },
   button: {
     height: 52,
-    borderRadius: RADII.pill,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: spacing.lg,
     borderWidth: 1.5,
   },
   buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -1075,20 +2134,20 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: RADII.pill,
+    borderRadius: radii.pill,
     alignSelf: 'flex-start',
   },
   badgeText: { fontSize: 12, fontWeight: '700' },
   chip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: RADII.pill,
+    borderRadius: radii.pill,
   },
-  chipActive: { backgroundColor: COLORS.primary },
-  chipInactive: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider },
+  chipActive: { backgroundColor: colors.primary },
+  chipInactive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   chipText: { fontSize: 13, fontWeight: '600' },
-  chipTextActive: { color: COLORS.white },
-  chipTextInactive: { color: COLORS.secondaryText },
+  chipTextActive: { color: colors.surface },
+  chipTextInactive: { color: colors.textSecondary },
   countBadge: {
     position: 'absolute',
     top: -2,
@@ -1097,137 +2156,137 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     paddingHorizontal: 3,
-    backgroundColor: COLORS.danger,
+    backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  countBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800' },
-  fieldWrap: { marginBottom: SPACING.md },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
+  countBadgeText: { color: colors.surface, fontSize: 9, fontWeight: '800' },
+  fieldWrap: { marginBottom: spacing.md },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
   fieldBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: RADII.input,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
     paddingHorizontal: 14,
     minHeight: 50,
   },
   fieldIcon: { marginRight: 10 },
-  fieldInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: COLORS.text, paddingLeft: 0 },
+  fieldInput: { flex: 1, paddingVertical: 14, fontSize: 15, color: colors.textPrimary, paddingLeft: 0 },
   eye: { paddingLeft: 10 },
   promptKAV: { flex: 1 },
   promptBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
   promptCard: {
     width: '100%', maxWidth: 400,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.lg,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.lg,
   },
-  promptTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
-  promptMessage: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18, marginTop: 4 },
+  promptTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
+  promptMessage: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginTop: 4 },
   promptInputBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
-    borderRadius: RADII.input, paddingHorizontal: 14, minHeight: 52,
-    marginTop: SPACING.md,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radii.sm, paddingHorizontal: 14, minHeight: 52,
+    marginTop: spacing.md,
   },
-  promptInputBoxError: { borderColor: COLORS.danger },
-  promptInput: { flex: 1, paddingVertical: 14, fontSize: 18, fontWeight: '700', color: COLORS.text },
-  promptUnit: { fontSize: 14, fontWeight: '600', color: COLORS.secondaryText },
-  promptError: { fontSize: 12, color: COLORS.dangerText, marginTop: 6 },
+  promptInputBoxError: { borderColor: colors.danger },
+  promptInput: { flex: 1, paddingVertical: 14, fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  promptUnit: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  promptError: { fontSize: 12, color: colors.danger, marginTop: 6 },
   promptChip: {
-    alignSelf: 'flex-start', marginTop: SPACING.md,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill,
-    backgroundColor: COLORS.primaryLight,
+    alignSelf: 'flex-start', marginTop: spacing.md,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill,
+    backgroundColor: colors.mintBg,
   },
-  promptChipText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
-  promptActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  promptChipText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  promptActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
   menuBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
   menuCard: {
     width: '100%', maxWidth: 400,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.md,
   },
   menuTitle: {
-    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    paddingHorizontal: SPACING.sm, paddingBottom: SPACING.sm,
+    fontSize: 13, fontWeight: '700', color: colors.textSecondary,
+    paddingHorizontal: spacing.sm, paddingBottom: spacing.sm,
   },
   // 48 rather than the 44 minimum: these rows are the destructive ones, so they
   // get a little more room than the rule requires.
   menuRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    minHeight: 48, paddingHorizontal: SPACING.sm, borderRadius: RADII.input,
+    minHeight: 48, paddingHorizontal: spacing.sm, borderRadius: radii.sm,
   },
-  menuRowText: { fontSize: 15, fontWeight: '600', color: COLORS.text },
+  menuRowText: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
   iconBtn: {
     width: 40,
     height: 40,
-    borderRadius: RADII.icon,
+    borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   avatarFallback: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitials: { color: COLORS.white, fontWeight: '800' },
+  avatarInitials: { color: colors.surface, fontWeight: '800' },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: COLORS.text },
-  pageSubtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  pageTitle: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  pageSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   navHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingBottom: SPACING.sm,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   navTitle: { fontSize: 16, fontWeight: '700' },
-  navSubtitle: { fontSize: 12, color: COLORS.secondaryText },
+  navSubtitle: { fontSize: 12, color: colors.textSecondary },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 4,
-    borderRadius: RADII.card,
+    borderRadius: radii.lg,
     gap: 14,
   },
   rowIcon: {
     width: 38,
     height: 38,
-    borderRadius: RADII.icon,
+    borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowLabel: { fontSize: 15, fontWeight: '600' },
-  rowHint: { fontSize: 12, color: COLORS.secondaryText, marginTop: 1 },
+  rowHint: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
   sectionLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
-    marginTop: SPACING.sm,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
   },
-  sectionLabel: { fontSize: 14, fontWeight: '700', color: COLORS.text },
-  empty: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
-  emptyCompact: { padding: SPACING.md, gap: 5 },
+  sectionLabel: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  empty: { alignItems: 'center', padding: spacing.xl, gap: 8 },
+  emptyCompact: { padding: spacing.md, gap: 5 },
   emptyIconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.mintBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -1237,27 +2296,27 @@ const styles = StyleSheet.create({
   // with alignItems, which only centres a line that fits. A title long enough to
   // wrap would fill the box and then sit left inside it, under a hint that was
   // still centred — the one way this block could read as off-centre.
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   emptyTitleCompact: { fontSize: 14 },
-  emptyHint: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18 },
+  emptyHint: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18 },
   emptyHintCompact: { fontSize: 12, lineHeight: 16 },
-  segRow: { flexDirection: 'row', gap: SPACING.sm },
-  seg: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADII.pill },
-  segActive: { backgroundColor: COLORS.primary },
-  segInactive: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider },
+  segRow: { flexDirection: 'row', gap: spacing.sm },
+  seg: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radii.pill },
+  segActive: { backgroundColor: colors.primary },
+  segInactive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   segText: { fontSize: 13, fontWeight: '600' },
-  segTextActive: { color: COLORS.white },
-  segTextInactive: { color: COLORS.secondaryText },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.divider, marginVertical: SPACING.sm },
+  segTextActive: { color: colors.surface },
+  segTextInactive: { color: colors.textSecondary },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.sm },
 
   /* Quantity ± */
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: COLORS.divider,
-    borderRadius: RADII.pill,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
     paddingHorizontal: 4,
     paddingVertical: 4,
     gap: 2,
@@ -1266,87 +2325,748 @@ const styles = StyleSheet.create({
   stepperBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.mutedBg,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12),
   },
-  stepperBtnPlus: { backgroundColor: COLORS.primaryLight },
+  stepperBtnPlus: { backgroundColor: colors.mintBg },
   stepperBtnDisabled: { opacity: 0.4 },
-  stepperGlyph: { fontSize: 20, fontWeight: '800', color: COLORS.text, lineHeight: 24 },
-  stepperGlyphPlus: { color: COLORS.primary },
+  stepperGlyph: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, lineHeight: 24 },
+  stepperGlyphPlus: { color: colors.primary },
   stepperValueWrap: { minWidth: 46, alignItems: 'center', justifyContent: 'center' },
   stepperValueWrapCompact: { minWidth: 34 },
-  stepperValue: { fontSize: 17, fontWeight: '800', color: COLORS.text },
-  stepperUnit: { fontSize: 10, color: COLORS.secondaryText, marginTop: -2 },
+  stepperValue: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  stepperUnit: { fontSize: 10, color: colors.textSecondary, marginTop: -2 },
 
   /* Usage meter */
   meterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  meterLabel: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
+  meterLabel: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   meterValue: { fontSize: 13, fontWeight: '800' },
 
   /* Upgrade notice */
   upgradeNotice: {
     flexDirection: 'row',
     gap: 12,
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: RADII.card,
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.accentLight,
-    padding: SPACING.md,
+    borderColor: colorWithOpacity(colors.primary, 0.25),
+    padding: spacing.md,
   },
   upgradeIcon: {
     width: 36,
     height: 36,
-    borderRadius: RADII.icon,
-    backgroundColor: COLORS.white,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  upgradeTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
-  upgradeMessage: { fontSize: 12.5, color: COLORS.secondaryText, lineHeight: 17 },
+  upgradeTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  upgradeMessage: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 17 },
   upgradeCta: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 6,
-    backgroundColor: COLORS.primary,
+    backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: RADII.pill,
+    borderRadius: radii.pill,
     marginTop: 8,
   },
-  upgradeCtaText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
+  upgradeCtaText: { color: colors.surface, fontSize: 13, fontWeight: '700' },
   upgradeClose: { padding: 2 },
 
   /* Feature lock */
-  lock: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
+  lock: { alignItems: 'center', padding: spacing.xl, gap: 8 },
   lockIconWrap: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: COLORS.primaryLight,
+    backgroundColor: colors.mintBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
   },
-  lockTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, textAlign: 'center' },
+  lockTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, textAlign: 'center' },
   lockMessage: {
     fontSize: 13.5,
-    color: COLORS.secondaryText,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 19,
   },
-  lockBullets: { alignSelf: 'stretch', marginTop: SPACING.md, gap: 10 },
+  lockBullets: { alignSelf: 'stretch', marginTop: spacing.md, gap: 10 },
   lockBulletRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lockBulletText: { flex: 1, fontSize: 13.5, color: COLORS.text },
+  lockBulletText: { flex: 1, fontSize: 13.5, color: colors.textPrimary },
   // The requirement, set apart from the description above it: primary-coloured
   // and bold so it reads as the condition on the page rather than one more line
   // about what the feature would do.
   lockRequirement: {
-    marginTop: SPACING.md,
+    marginTop: spacing.md,
     fontSize: 14,
     fontWeight: '800',
-    color: COLORS.primary,
+    color: colors.primary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  /* Status pill */
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    alignSelf: 'flex-start',
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  /* Icon badge */
+  iconBadge: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  /* Stat card */
+  statCardPressable: {
+    flex: 1,
+    minWidth: 0,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    ...shadow.card,
+  },
+  statCardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  statCardText: { flex: 1, gap: 2 },
+  statCardTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  statCardValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  statCardValueText: {
+    fontSize: 16,
+    lineHeight: 20,
+    letterSpacing: 0,
+  },
+  statCardCaption: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+
+  /* Highlight card */
+  highlightCard: {
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  highlightHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  highlightLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  highlightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  highlightLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  highlightAction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  highlightValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  highlightCaption: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  highlightDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.xs,
+  },
+  highlightSecondaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  highlightSecondaryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  highlightSecondaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    flex: 1,
+  },
+
+  /* Progress bar */
+  progressTrack: {
+    width: '100%',
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+  },
+
+  /* Inventory list item */
+  inventoryItemCard: {
+    width: '100%',
+    minWidth: 0,
+    alignSelf: 'stretch',
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    borderLeftWidth: 4,
+    ...shadow.card,
+    gap: spacing.xs,
+  },
+  inventoryRow1: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    minWidth: 0,
+  },
+  inventoryAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    overflow: 'hidden',
+  },
+  inventoryItemName: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  inventoryRow2: {
+    marginTop: 2,
+    minWidth: 0,
+  },
+  inventoryMetaText: {
+    flexShrink: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '400',
+    color: colors.textSecondary,
+  },
+  inventoryDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  inventoryRow3: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  inventoryStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    backgroundColor: colors.surface,
+    gap: 8,
+    flexShrink: 1,
+  },
+  inventoryStepperBtn: {
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inventoryStepperVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    minWidth: 32,
+    textAlign: 'center',
+  },
+  inventoryRow3Right: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+    flexShrink: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
+  },
+  inventoryActionBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radii.pill,
+    flexShrink: 1,
+  },
+  inventoryActionBtnText: {
+    color: colors.surface,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inventoryMenuBtn: {
+    padding: 6,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Filter chip row */
+  filterChipScroll: {
+    flexGrow: 0,
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: 2,
+    paddingHorizontal: spacing.lg,
+    minHeight: 34,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: radii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterChipCard: {
+    height: 30,
+    flexShrink: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primaryDark,
+  },
+  filterChipInactive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipCardActive: {
+    backgroundColor: colors.mintBg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  filterChipCardActiveDark: {
+    backgroundColor: colors.primaryDark,
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+  },
+  filterChipCardInactive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterChipCardText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+  },
+  filterChipTextActive: {
+    color: colors.surface,
+  },
+  filterChipTextInactive: {
+    color: colors.textSecondary,
+  },
+  filterChipCardTextActive: {
+    color: colors.primaryDark,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  filterChipCardTextActiveDark: {
+    color: colors.surface,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  filterChipCount: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12),
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  filterChipCardCount: {
+    backgroundColor: colors.mintBg,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+  },
+  filterChipCountText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+
+  /* AI Banner */
+  aiBanner: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  aiBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  aiBannerTextWrap: {
+    flex: 1,
+    gap: 3,
+  },
+  aiBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  aiBannerBody: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  aiBannerCtaPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radii.pill,
+  },
+  aiBannerCtaPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  /* Trend bar chart */
+  trendChart: {
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+  },
+  trendBars: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 110,
+    paddingHorizontal: spacing.sm,
+  },
+  trendColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  trendBadge: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: radii.pill,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  trendBadgeText: {
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  trendBarTrack: {
+    height: 76,
+    width: 22,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  trendBar: {
+    width: 22,
+    borderRadius: 11,
+  },
+  trendLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  trendLabelActive: {
+    color: colors.primaryDark,
+    fontWeight: '800',
+  },
+
+  /* Donut progress */
+  donutContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  donutCenterText: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutPercentage: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  donutSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginTop: -2,
+  },
+
+  /* Permissions table */
+  permissionsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    ...shadow.card,
+  },
+  permissionsHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  permissionsColHeader: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  permissionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  permissionsRoleCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  permissionsDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  permissionsRoleName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  permissionsIconCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Pricing card */
+  pricingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    ...shadow.card,
+    position: 'relative',
+    marginVertical: spacing.sm,
+  },
+  pricingCardRecommended: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  pricingBadge: {
+    position: 'absolute',
+    top: -12,
+    right: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radii.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  pricingBadgeText: {
+    color: colors.surface,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  pricingPlanName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  pricingDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  pricingPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: spacing.md,
+  },
+  pricingPrice: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  pricingPeriod: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginLeft: 4,
+  },
+  pricingDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.lg,
+  },
+  pricingFeatureList: {
+    gap: 12,
+    marginBottom: spacing.xl,
+  },
+  pricingFeatureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pricingFeatureText: {
+    fontSize: 13.5,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  pricingCta: {
+    height: 48,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  pricingCtaFilled: {
+    backgroundColor: colors.primaryDark,
+  },
+  pricingCtaOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: colors.primaryDark,
+  },
+  pricingCtaText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  pricingCtaTextFilled: {
+    color: colors.surface,
+  },
+  pricingCtaTextOutline: {
+    color: colors.primaryDark,
+  },
+
+  /* Csv import box */
+  csvBoxContainer: {
+    gap: spacing.sm,
+  },
+  csvTextInput: {
+    minHeight: 140,
+    backgroundColor: colors.screenBg,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: colors.textPrimary,
+    textAlignVertical: 'top',
+  },
+  csvHelperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  csvHelperText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+
+  /* Section header */
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: spacing.md,
+  },
+  // With a subtitle the right-hand action centres on the pair, which reads off;
+  // the row aligns to the top instead and lets the text block take the slack.
+  sectionHeaderRowStacked: {
+    alignItems: 'flex-start',
+  },
+  sectionHeaderText: {
+    flex: 1,
+  },
+  sectionHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  sectionHeaderSubtitle: {
+    fontSize: 12.5,
+    color: colors.textSecondary,
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  sectionHeaderActionWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  sectionHeaderAction: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });
 

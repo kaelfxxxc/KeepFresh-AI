@@ -4,12 +4,13 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
-import { COLORS, SPACING, RADII } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { Sparkles, ScanBarcode, PencilLine, PackagePlus } from 'lucide-react-native';
-import { NavHeader, PillButton, StatusBadge } from '../../src/components/ui';
+import { NavHeader, PillButton, StatusBadge, IconBadge, colorWithOpacity } from '../../src/components/ui';
 import { categoryIcon, categoryLabel } from '../../src/utils/categoryIcons';
 import { directImageUri, isLocalFileUri, resolveItemImageUri, uploadItemImage } from '../../src/services/inventoryImageService';
 import type { ReviewInfo } from '../../src/services/barcodeService';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 type ScanSource = 'photo' | 'lookup' | 'inventory';
 
@@ -63,6 +64,9 @@ const row = (label: string, value: string) => (
 );
 
 export default function ProductInfoScreen() {
+  // The photo hero stays full-bleed; the detail cards, the notes and the pinned
+  // action bar centre together below it.
+  const { gutter } = usePageGutter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ barcode?: string; source?: string; productData?: string }>();
   const { profile } = useAuth();
@@ -195,7 +199,7 @@ export default function ProductInfoScreen() {
       <NavHeader title="Product Information" />
       <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
         {/* Photo / product-image hero */}
-        <View style={styles.hero}>
+        <View style={[styles.hero, { marginHorizontal: gutter }]}>
           {showImage ? (
             <Image
               source={{ uri: heroSource as string }}
@@ -204,13 +208,15 @@ export default function ProductInfoScreen() {
               onError={() => setImgBroken(true)}
             />
           ) : (
-            <HeroIcon size={68} color={COLORS.primary} strokeWidth={1.5} />
+            <IconBadge color={colors.primary} size={104}>
+              <HeroIcon size={48} color={colors.primary} strokeWidth={1.5} />
+            </IconBadge>
           )}
           <View style={styles.aiBadge}>
             {source === 'photo' ? (
-              <Sparkles size={12} color={COLORS.primaryDark} strokeWidth={2.4} />
+              <Sparkles size={12} color={colors.primaryDark} strokeWidth={2.4} />
             ) : (
-              <ScanBarcode size={12} color={COLORS.primaryDark} strokeWidth={2.4} />
+              <ScanBarcode size={12} color={colors.primaryDark} strokeWidth={2.4} />
             )}
             <Text style={styles.aiBadgeText}>
               {source === 'photo' ? 'AI VERIFIED' : autoFilled ? 'BARCODE RESULT' : 'PRODUCT INFO'}
@@ -218,7 +224,7 @@ export default function ProductInfoScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
+        <View style={[styles.card, { marginHorizontal: gutter }]}>
           <Text style={styles.itemName}>{info.product_name || 'Unidentified product'}</Text>
           {row('Brand', info.brand || '—')}
           {row('Category', info.category ? categoryLabel(info.category) : '—')}
@@ -229,7 +235,7 @@ export default function ProductInfoScreen() {
 
         {/* Extra detail from the product database — read-only, informative */}
         {hasDetails && (
-          <View style={styles.card}>
+          <View style={[styles.card, { marginHorizontal: gutter }]}>
             {!!info.description && (
               <>
                 <Text style={styles.detailTitle}>About this product</Text>
@@ -248,14 +254,14 @@ export default function ProductInfoScreen() {
         )}
 
         {!info.product_name ? (
-          <View style={styles.infoNote}>
+          <View style={[styles.infoNote, { marginHorizontal: gutter }]}>
             <StatusBadge label={source === 'photo' ? 'Detected from photo' : 'No product data'} tone="warning" />
             <Text style={styles.infoNoteText}>
               Nothing could be pre-filled. Tap Edit Information to enter the product details yourself.
             </Text>
           </View>
         ) : autoFilled ? (
-          <View style={styles.infoNote}>
+          <View style={[styles.infoNote, { marginHorizontal: gutter }]}>
             <StatusBadge label="Auto-filled" tone="warning" />
             <Text style={styles.infoNoteText}>
               Details were looked up from the product database. Review them below and tap Edit Information to correct
@@ -265,7 +271,7 @@ export default function ProductInfoScreen() {
         ) : null}
       </ScrollView>
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.md }]}>
+      <View style={[styles.bottomBar, { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.md }]}>
         <PillButton
           title="Edit Information"
           variant="outline"
@@ -286,40 +292,40 @@ export default function ProductInfoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   hero: {
-    height: 210, margin: SPACING.lg, marginBottom: 0, borderRadius: RADII.card,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+    height: 210, marginVertical: spacing.xl, marginBottom: 0, borderRadius: radii.lg,
+    backgroundColor: colors.mintBg, alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   heroImage: { width: '100%', height: '100%' },
   aiBadge: {
     position: 'absolute', top: 12, left: 12,
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(255,255,255,0.92)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 50,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colorWithOpacity(colors.surface, 0.92), paddingHorizontal: 10, paddingVertical: 5, borderRadius: radii.pill,
   },
-  aiBadgeText: { fontSize: 11, fontWeight: '800', color: COLORS.primaryDark, letterSpacing: 0.6 },
+  aiBadgeText: { fontSize: 11, fontWeight: '800', color: colors.primaryDark, letterSpacing: 0.6 },
   card: {
-    margin: SPACING.lg, backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.lg,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    marginVertical: spacing.xl, backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.lg,
+    ...shadow.card,
   },
-  itemName: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.sm },
+  itemName: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.sm },
   attrRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
   },
-  attrLabel: { fontSize: 13, color: COLORS.secondaryText },
-  attrValue: { fontSize: 14, color: COLORS.text, fontWeight: '600', flex: 1, textAlign: 'right', marginLeft: SPACING.md },
-  detailTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
-  detailTitleSpaced: { marginTop: SPACING.md },
-  detailBody: { fontSize: 13, color: COLORS.secondaryText, lineHeight: 20 },
-  infoNote: { marginHorizontal: SPACING.lg, gap: 8 },
-  infoNoteText: { fontSize: 13, color: COLORS.secondaryText, lineHeight: 19 },
+  attrLabel: { fontSize: 13, color: colors.textSecondary },
+  attrValue: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', flex: 1, textAlign: 'right', marginLeft: spacing.md },
+  detailTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.xs },
+  detailTitleSpaced: { marginTop: spacing.md },
+  detailBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+  infoNote: { gap: spacing.sm },
+  infoNoteText: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
   bottomBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
-    flexDirection: 'row', gap: SPACING.sm,
-    backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    flexDirection: 'row', gap: spacing.sm,
+    backgroundColor: colors.surface, paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
   },
 });

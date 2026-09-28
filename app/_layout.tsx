@@ -10,6 +10,11 @@ import { TrialExpiryNotice } from '../src/components/TrialExpiryNotice';
 import { notificationService } from '../src/services/notificationService';
 import { useNotificationTaps } from '../src/hooks/useNotificationTaps';
 
+// The launch surface. This is the native splash colour from app.json, not a
+// design token: the OS paints it before any JS runs and app.json cannot import
+// this file, so the two have to be the same green by hand. Pointing it at
+// `colors.primaryDark` would leave a visible seam between the native splash and
+// the first React frame.
 const DEEP_GREEN = '#168A45';
 
 /**

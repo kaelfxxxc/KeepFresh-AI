@@ -23,21 +23,17 @@ import { router } from 'expo-router';
 import { Boxes, Pencil, Trash2, Plus, Home } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, RADII, SPACING } from '../src/theme';
-import {
-  NavHeader,
-  Card,
-  PillButton,
-  Field,
-  EmptyState,
-  UpgradeNotice,
-  StatusBadge,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow, overlay } from '../theme';
+import { NavHeader, Card, PillButton, Field, EmptyState, UpgradeNotice, StatusPill, ProgressBar, IconBadge } from '../src/components/ui';
 import { storageAreaService, STORAGE_KINDS, storageEmoji } from '../src/services/storageAreaService';
 import { gateUseMultipleStorage, describeEntitlementError } from '../src/services/entitlementService';
 import type { StorageArea, StorageKind } from '../src/types';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 
 export default function StorageAreasScreen() {
+  // The page gutter: the usual margin on a phone, and the slack that centres
+  // the column once the screen is wider than `CONTENT_MAX_WIDTH`.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const { entitlements, refresh } = useSubscription();
 
@@ -102,13 +98,13 @@ export default function StorageAreasScreen() {
       <NavHeader title="Storage Areas" subtitle={subtitleFor(areas.length, limit)} onBack={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: SPACING.xxl }}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxl }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); refresh(); }}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
@@ -117,13 +113,13 @@ export default function StorageAreasScreen() {
             title={addGate.title}
             message={addGate.message}
             onPress={() => router.push('/subscription')}
-            style={{ marginBottom: SPACING.md }}
+            style={{ marginBottom: spacing.md }}
           />
         )}
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator color={COLORS.primary} />
+            <ActivityIndicator color={colors.primary} />
           </View>
         ) : areas.length === 0 ? (
           <EmptyState
@@ -134,34 +130,69 @@ export default function StorageAreasScreen() {
             onAction={addGate.allowed ? () => setCreating(true) : undefined}
           />
         ) : (
-          <View style={{ gap: SPACING.sm }}>
-            {areas.map((area) => (
-              <Card key={area.id} style={styles.areaCard}>
-                <View style={styles.areaRow}>
-                  <View style={styles.areaIcon}>
-                    <Text style={styles.areaEmoji}>{storageEmoji(area)}</Text>
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.areaName} numberOfLines={1}>{area.name}</Text>
-                    <Text style={styles.areaMeta} numberOfLines={1}>
-                      {labelForKind(area.kind)} · {counts[area.id] ?? 0} item{(counts[area.id] ?? 0) === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  {area.is_default && <StatusBadge label="Default" tone="success" icon={Home} />}
-                </View>
+          <View style={{ gap: spacing.md }}>
+            {areas.map((area) => {
+              const count = counts[area.id] ?? 0;
+              const estCapacity = 25;
+              const pct = Math.min(100, Math.round((count / estCapacity) * 100));
+              const statusPillType = area.is_default
+                ? 'active'
+                : count > 20
+                  ? 'expired'
+                  : count > 10
+                    ? 'expiringSoon'
+                    : 'fresh';
 
-                <View style={styles.areaActions}>
-                  <Pressable style={styles.areaAction} onPress={() => setEditing(area)}>
-                    <Pencil size={15} color={COLORS.primary} strokeWidth={2.2} />
-                    <Text style={styles.areaActionText}>Rename</Text>
-                  </Pressable>
-                  <Pressable style={styles.areaAction} onPress={() => removeArea(area)}>
-                    <Trash2 size={15} color={COLORS.danger} strokeWidth={2.2} />
-                    <Text style={[styles.areaActionText, { color: COLORS.danger }]}>Delete</Text>
-                  </Pressable>
-                </View>
-              </Card>
-            ))}
+              return (
+                <Card key={area.id} style={styles.areaCard}>
+                  <View style={styles.areaRow}>
+                    <View style={styles.areaIcon}>
+                      <Text style={styles.areaEmoji}>{storageEmoji(area)}</Text>
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <Text style={styles.areaName} numberOfLines={1}>{area.name}</Text>
+                        <StatusPill
+                          status={statusPillType}
+                          label={area.is_default ? 'DEFAULT' : count > 20 ? 'NEAR FULL' : `${count} ITEMS`}
+                        />
+                      </View>
+                      <Text style={styles.areaMeta} numberOfLines={1}>
+                        {labelForKind(area.kind)} · {count} item{count === 1 ? '' : 's'} stored
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ marginTop: spacing.sm }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={styles.capacityLabel}>Storage load</Text>
+                      <Text style={styles.capacityPercent}>{pct}% capacity</Text>
+                    </View>
+                    <ProgressBar
+                      value={count}
+                      max={estCapacity}
+                      colorRamp={true}
+                      height={6}
+                    />
+                  </View>
+
+                  <View style={styles.areaActions}>
+                    <Pressable style={styles.areaAction} onPress={() => setEditing(area)}>
+                      <IconBadge color={colors.primary} size={28}>
+                        <Pencil size={14} color={colors.primary} strokeWidth={2.4} />
+                      </IconBadge>
+                      <Text style={styles.areaActionText}>Rename</Text>
+                    </Pressable>
+                    <Pressable style={styles.areaAction} onPress={() => removeArea(area)}>
+                      <IconBadge color={colors.danger} size={28}>
+                        <Trash2 size={14} color={colors.danger} strokeWidth={2.4} />
+                      </IconBadge>
+                      <Text style={[styles.areaActionText, { color: colors.danger }]}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </Card>
+              );
+            })}
           </View>
         )}
 
@@ -171,7 +202,7 @@ export default function StorageAreasScreen() {
             icon={addGate.allowed ? Plus : Boxes}
             variant={addGate.allowed ? 'primary' : 'outline'}
             onPress={() => (addGate.allowed ? setCreating(true) : router.push('/subscription'))}
-            style={{ marginTop: SPACING.lg }}
+            style={{ marginTop: spacing.lg }}
           />
         )}
 
@@ -321,49 +352,60 @@ function subtitleFor(count: number, limit: number | null): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingBox: { paddingVertical: SPACING.xl, alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  loadingBox: { paddingVertical: spacing.xl, alignItems: 'center' },
 
-  areaCard: { padding: SPACING.md },
+  areaCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
   areaRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   areaIcon: {
-    width: 44, height: 44, borderRadius: RADII.icon,
-    backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.mintBg, alignItems: 'center', justifyContent: 'center',
   },
   areaEmoji: { fontSize: 20 },
-  areaName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  areaMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  areaName: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  areaMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  capacityLabel: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
+  capacityPercent: { fontSize: 11, fontWeight: '700', color: colors.primary },
   areaActions: {
-    flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.lg,
-    marginTop: SPACING.sm, paddingTop: SPACING.sm,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.lg,
+    marginTop: spacing.md, paddingTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
   areaAction: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  areaActionText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  areaActionText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 
   footnote: {
-    fontSize: 12, color: COLORS.secondaryText, lineHeight: 17,
-    marginTop: SPACING.lg, paddingHorizontal: 2,
+    fontSize: 12, color: colors.textSecondary, lineHeight: 17,
+    marginTop: spacing.lg, paddingHorizontal: 2,
   },
 
   backdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
   sheet: {
     width: '100%', maxWidth: 420,
-    backgroundColor: COLORS.white, borderRadius: RADII.card, padding: SPACING.lg,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
+    ...shadow.card,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.md },
-  sheetLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
-  kindWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.md },
+  sheetLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
+  kindWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   kindChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADII.pill,
-    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.pill,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  kindChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  kindChipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
-  kindChipTextActive: { color: COLORS.white },
-  sheetError: { fontSize: 12, color: COLORS.dangerText, marginTop: SPACING.sm },
-  sheetActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  kindChipActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
+  kindChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  kindChipTextActive: { color: colors.surface },
+  sheetError: { fontSize: 12, color: colors.danger, marginTop: spacing.sm },
+  sheetActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
 });

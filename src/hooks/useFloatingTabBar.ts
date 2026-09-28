@@ -1,6 +1,6 @@
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SPACING } from '../theme';
+import { spacing } from '../../theme';
 
 /**
  * Geometry for the floating bottom navigation.
@@ -42,11 +42,11 @@ export function useFloatingTabBar() {
   const { width } = useWindowDimensions();
 
   const compact = width < COMPACT_WIDTH;
-  const sideInset = compact ? SPACING.sm + 4 : SPACING.md;
+  const sideInset = compact ? spacing.sm + 4 : spacing.md;
   // On a device with no home indicator `insets.bottom` is 0, and a bar sitting
   // flush against the bottom edge stops reading as floating at all — hence the
   // floor. It is the gap under the bar that does the work, not the rounding.
-  const bottomOffset = Math.max(insets.bottom, SPACING.sm + 2);
+  const bottomOffset = Math.max(insets.bottom, spacing.sm + 2);
   const barWidth = Math.min(width - sideInset * 2, TAB_BAR_MAX_WIDTH);
 
   return {
@@ -63,6 +63,6 @@ export function useFloatingTabBar() {
      * the bar, the gap beneath it, and a little air so the last row does not end
      * flush against the bar's top edge.
      */
-    contentInset: TAB_BAR_HEIGHT + bottomOffset + SPACING.md,
+    contentInset: TAB_BAR_HEIGHT + bottomOffset + spacing.md,
   };
 }

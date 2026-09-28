@@ -132,7 +132,41 @@ export async function invokeScanFunction(
  * opening the camera to show the upgrade prompt instead of the failure.
  */
 export async function lookupBarcode(barcode: string): Promise<LookupResult> {
-  return invokeScanFunction('barcode-lookup', { barcode });
+  try {
+    const response = await fetch(
+      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
+    );
+    if (!response.ok) return { status: 'unavailable' };
+
+    const data = await response.json() as {
+      status?: number;
+      product?: {
+        product_name?: string;
+        brands?: string;
+        image_url?: string;
+      };
+    };
+
+    if (data.status !== 1) return { status: 'not_found' };
+
+    return {
+      status: 'found',
+      product: {
+        barcode,
+        title: data.product?.product_name || null,
+        brand: data.product?.brands || null,
+        manufacturer: null,
+        category: null,
+        description: null,
+        ingredients: null,
+        image_url: data.product?.image_url || null,
+        size: null,
+      },
+    };
+  } catch (error) {
+    console.error('Open Food Facts lookup error:', error);
+    return { status: 'unavailable' };
+  }
 }
 
 /* ---------------------------------------------------------- pure helpers */

@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Home, Package, ChefHat, Bell, User } from 'lucide-react-native';
-import { COLORS, RADII, SHADOW } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 
 // 5-tab bottom navigation per the v2 UI reference. Grocery & Analytics are
@@ -25,8 +25,8 @@ export default function TabLayout() {
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.secondaryText,
+        tabBarActiveTintColor: colors.primaryDark,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle:
           route.name.startsWith('inventory/')
             ? { display: 'none' } // full-screen add/details forms
@@ -47,11 +47,20 @@ export default function TabLayout() {
           options={{
             tabBarLabel: label,
             tabBarIcon: ({ focused }) => (
-              <Icon
-                size={22}
-                color={focused ? COLORS.primary : COLORS.secondaryText}
-                strokeWidth={focused ? 2.4 : 1.9}
-              />
+              <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                <Icon
+                  size={22}
+                  color={focused ? colors.primaryDark : colors.textSecondary}
+                  strokeWidth={focused ? 2.4 : 1.9}
+                />
+                {focused && (
+                  <View style={{
+                    width: 8, height: 8, borderRadius: 4,
+                    backgroundColor: colors.primary,
+                    marginTop: 2,
+                  }} />
+                )}
+              </View>
             ),
           }}
         />
@@ -76,17 +85,13 @@ const styles = StyleSheet.create({
    */
   tabBar: {
     position: 'absolute',
-    backgroundColor: COLORS.white,
-    borderRadius: RADII.pill,
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
     borderTopWidth: 0,
-    // Both paddings are set explicitly because react-navigation otherwise
-    // injects its own: it adds the home-indicator inset as `paddingBottom`,
-    // which inside a fixed 64px bar would squeeze the icons and clip the labels.
-    // The inset is spent as the gap *below* the bar instead.
-    paddingTop: 8,
-    paddingBottom: 8,
-    paddingHorizontal: 4,
-    ...SHADOW.card,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    ...shadow.card,
   },
   tabBarLabel: {
     fontSize: 11,

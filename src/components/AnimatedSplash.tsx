@@ -7,6 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { shadow } from '../../theme';
 
 // KeepFresh AI - launch splash
 //
@@ -28,6 +29,11 @@ import {
 // square - so the artwork is masked to a circle at build time instead and the
 // view tree never clips. The paper disc below only supplies the drop shadow.
 
+// The launch surface, and the paper field inside the lockup artwork. Neither is
+// a design token: DEEP_GREEN is the native splash colour from app.json, painted
+// by the OS before any JS runs, and PAPER is sampled from the PNG itself. Both
+// have to match artwork this file cannot read, so they are literal here and
+// documented rather than routed through the palette.
 const DEEP_GREEN = '#168A45';
 const PAPER = '#FAFBF5';
 const LOGO = require('../../assets/images/keepfresh-splash-disc.png');

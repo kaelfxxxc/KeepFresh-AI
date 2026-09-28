@@ -33,19 +33,8 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, RADII, SPACING } from '../src/theme';
-import {
-  NavHeader,
-  Card,
-  PillButton,
-  Field,
-  EmptyState,
-  StatusBadge,
-  FeatureLock,
-  PlanCheckLock,
-  AvatarCircle,
-  SectionLabel,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow, statusSurface, overlay } from '../theme';
+import { NavHeader, Card, PillButton, Field, EmptyState, FeatureLock, PlanCheckLock, AvatarCircle, SectionLabel, PermissionsTable, StatusPill, SectionHeader } from '../src/components/ui';
 import {
   organizationService,
   ROLE_PERMISSIONS,
@@ -54,6 +43,7 @@ import {
   type OrganizationWithMembership,
 } from '../src/services/organizationService';
 import type { OrgRole } from '../src/types';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 
 const ROLE_ICON: Record<OrgRole, typeof Shield> = {
   owner: ShieldCheck,
@@ -65,6 +55,9 @@ const ROLE_ICON: Record<OrgRole, typeof Shield> = {
 const ASSIGNABLE: Exclude<OrgRole, 'owner'>[] = ['manager', 'staff'];
 
 export default function StaffScreen() {
+  // The page gutter: the usual margin on a phone, and the slack that centres
+  // the column once the screen is wider than `CONTENT_MAX_WIDTH`.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
 
@@ -206,18 +199,18 @@ export default function StaffScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: SPACING.xxl }}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxl }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); }}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
         {loading ? (
-          <View style={styles.loadingBox}><ActivityIndicator color={COLORS.primary} /></View>
+          <View style={styles.loadingBox}><ActivityIndicator color={colors.primary} /></View>
         ) : !org ? (
           <EmptyState
             icon={Building2}
@@ -240,7 +233,7 @@ export default function StaffScreen() {
             <SectionLabel right={<Text style={styles.count}>{members.length}</Text>}>
               Team
             </SectionLabel>
-            <View style={{ gap: SPACING.sm }}>
+            <View style={{ gap: spacing.sm }}>
               {members.map((member) => {
                 const RoleIcon = ROLE_ICON[member.role];
                 const isMe = member.user_id === profile?.id;
@@ -261,10 +254,21 @@ export default function StaffScreen() {
                           {member.profile?.email ?? member.invited_email ?? '—'}
                         </Text>
                       </View>
-                      <StatusBadge
-                        label={roleLabel(member.role)}
-                        tone={member.role === 'owner' ? 'success' : member.role === 'manager' ? 'warning' : 'neutral'}
-                        icon={RoleIcon}
+                      <StatusPill
+                        status={
+                          member.status !== 'active'
+                            ? 'expiringSoon'
+                            : member.role === 'owner'
+                              ? 'active'
+                              : member.role === 'manager'
+                                ? 'fresh'
+                                : 'active'
+                        }
+                        label={
+                          member.status !== 'active'
+                            ? 'INVITED'
+                            : roleLabel(member.role).toUpperCase()
+                        }
                       />
                     </View>
 
@@ -297,7 +301,7 @@ export default function StaffScreen() {
                           </Pressable>
                         ))}
                         <Pressable style={styles.removeBtn} onPress={() => removeMember(member)}>
-                          <Trash2 size={15} color={COLORS.danger} strokeWidth={2.2} />
+                          <Trash2 size={15} color={colors.danger} strokeWidth={2.2} />
                         </Pressable>
                       </View>
                     )}
@@ -311,50 +315,48 @@ export default function StaffScreen() {
                 title="Invite by email"
                 icon={UserPlus}
                 onPress={() => setInviting(true)}
-                style={{ marginTop: SPACING.lg }}
+                style={{ marginTop: spacing.lg }}
               />
             )}
 
-            {/* What each role may do — the permission matrix, visible. */}
-            <View style={{ marginTop: SPACING.xl }}>
-              <SectionLabel>What each role can do</SectionLabel>
-              <Card style={styles.matrixCard}>
-                <View style={styles.matrixHead}>
-                  <Text style={[styles.matrixCell, styles.matrixRoleCol]}> </Text>
-                  <Text style={styles.matrixCol}>Staff</Text>
-                  <Text style={styles.matrixCol}>Reports</Text>
-                  <Text style={styles.matrixCol}>Edit</Text>
-                  <Text style={styles.matrixCol}>Delete</Text>
-                </View>
-                {(['owner', 'manager', 'staff'] as OrgRole[]).map((role, index) => {
-                  const permissions = ROLE_PERMISSIONS[role];
-                  const flags = [
-                    permissions.manageStaff,
-                    permissions.viewReports,
-                    permissions.editInventory,
-                    permissions.deleteInventory,
-                  ];
-                  return (
-                    <View
-                      key={role}
-                      style={[styles.matrixRow, index === 2 && { borderBottomWidth: 0 }]}
-                    >
-                      <Text style={[styles.matrixCell, styles.matrixRoleCol, styles.matrixRoleName]}>
-                        {permissions.label}
-                      </Text>
-                      {flags.map((allowed, flagIndex) => (
-                        <View key={flagIndex} style={styles.matrixCol}>
-                          {allowed ? (
-                            <Check size={15} color={COLORS.primary} strokeWidth={3} />
-                          ) : (
-                            <X size={15} color={COLORS.secondaryText} strokeWidth={2.4} />
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  );
-                })}
-              </Card>
+            {/* What each role may do — PermissionsTable */}
+            <View style={{ marginTop: spacing.xl }}>
+              <SectionHeader title="What each role can do" />
+              <PermissionsTable
+                columns={['Staff', 'Reports', 'Edit', 'Delete']}
+                roles={[
+                  {
+                    name: 'Owner',
+                    dotColor: colors.primary,
+                    permissions: [
+                      ROLE_PERMISSIONS.owner.manageStaff,
+                      ROLE_PERMISSIONS.owner.viewReports,
+                      ROLE_PERMISSIONS.owner.editInventory,
+                      ROLE_PERMISSIONS.owner.deleteInventory,
+                    ],
+                  },
+                  {
+                    name: 'Manager',
+                    dotColor: colors.warning,
+                    permissions: [
+                      ROLE_PERMISSIONS.manager.manageStaff,
+                      ROLE_PERMISSIONS.manager.viewReports,
+                      ROLE_PERMISSIONS.manager.editInventory,
+                      ROLE_PERMISSIONS.manager.deleteInventory,
+                    ],
+                  },
+                  {
+                    name: 'Staff',
+                    dotColor: colors.textSecondary,
+                    permissions: [
+                      ROLE_PERMISSIONS.staff.manageStaff,
+                      ROLE_PERMISSIONS.staff.viewReports,
+                      ROLE_PERMISSIONS.staff.editInventory,
+                      ROLE_PERMISSIONS.staff.deleteInventory,
+                    ],
+                  },
+                ]}
+              />
               <Text style={styles.footnote}>
                 These are enforced in the database, not just here — a staff device cannot promote
                 itself or delete stock.
@@ -570,66 +572,88 @@ function NameModal({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingBox: { paddingVertical: SPACING.xxl, alignItems: 'center' },
-  count: { fontSize: 13, fontWeight: '700', color: COLORS.secondaryText },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  loadingBox: { paddingVertical: spacing.xxl, alignItems: 'center' },
+  count: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
 
-  noticeCard: { padding: SPACING.md, backgroundColor: COLORS.warningBg, borderColor: COLORS.warningBg },
-  noticeText: { fontSize: 12.5, color: COLORS.warningText, lineHeight: 17 },
+  noticeCard: {
+    padding: spacing.md,
+    backgroundColor: statusSurface.warning.bg,
+    borderColor: statusSurface.warning.border,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    ...shadow.card,
+  },
+  noticeText: { fontSize: 12.5, color: statusSurface.warning.text, lineHeight: 17 },
 
-  memberCard: { padding: SPACING.md },
+  memberCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  memberName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  memberEmail: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
-  pendingNote: { fontSize: 11.5, color: COLORS.warningText, marginTop: SPACING.sm },
+  memberName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  memberEmail: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  pendingNote: { fontSize: 11.5, color: colors.warning, marginTop: spacing.sm },
   memberActions: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    marginTop: SPACING.sm, paddingTop: SPACING.sm,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginTop: spacing.md, paddingTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
   roleBtn: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADII.pill,
-    backgroundColor: COLORS.mutedBg,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.pill,
+    backgroundColor: colors.screenBg,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  roleBtnActive: { backgroundColor: COLORS.primaryLight },
-  roleBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.secondaryText },
-  roleBtnTextActive: { color: COLORS.primary },
+  roleBtnActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
+  roleBtnText: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
+  roleBtnTextActive: { color: colors.primary },
   removeBtn: { marginLeft: 'auto', padding: 6 },
 
-  matrixCard: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm },
+  // Keep matrix styles (fallback, won't be used now since PermissionsTable replaced it)
+  matrixCard: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   matrixHead: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider,
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   matrixRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider,
+    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  matrixCell: { fontSize: 11, fontWeight: '700', color: COLORS.secondaryText, textTransform: 'uppercase' },
-  matrixRoleCol: { flex: 1.3, textTransform: 'none' },
-  matrixRoleName: { fontSize: 13.5, fontWeight: '700', color: COLORS.text },
+  matrixCell: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase' },
+  matrixRoleCol: { flex: 1.3 },
+  matrixRoleName: { fontSize: 13.5, fontWeight: '700', color: colors.textPrimary },
   matrixCol: { flex: 1, textAlign: 'center', alignItems: 'center' },
 
-  footnote: { fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16, marginTop: SPACING.sm, paddingHorizontal: 2 },
+  footnote: { fontSize: 11.5, color: colors.textSecondary, lineHeight: 16, marginTop: spacing.sm, paddingHorizontal: 2 },
 
   backdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
-  sheet: { width: '100%', maxWidth: 440, backgroundColor: COLORS.white, borderRadius: RADII.card, padding: SPACING.lg },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  sheetHint: { fontSize: 12.5, color: COLORS.secondaryText, marginTop: 4, marginBottom: SPACING.md, lineHeight: 17 },
-  sheetLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text, marginBottom: 6 },
-  roleOptions: { gap: SPACING.sm },
+  sheet: {
+    width: '100%', maxWidth: 440,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
+    ...shadow.card,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  sheetHint: { fontSize: 12.5, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.md, lineHeight: 17 },
+  sheetLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 },
+  roleOptions: { gap: spacing.sm },
   roleOption: {
-    borderWidth: 1, borderColor: COLORS.divider, borderRadius: RADII.input,
-    padding: SPACING.md,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radii.md,
+    padding: spacing.md,
   },
-  roleOptionActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
-  roleOptionTitle: { fontSize: 14, fontWeight: '800', color: COLORS.text },
-  roleOptionTitleActive: { color: COLORS.primary },
-  roleOptionDesc: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2, lineHeight: 16 },
-  roleOptionDescActive: { color: COLORS.primaryDark },
-  sheetError: { fontSize: 12, color: COLORS.dangerText, marginTop: SPACING.sm },
-  sheetActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  roleOptionActive: { borderColor: colors.primary, backgroundColor: colors.mintBg },
+  roleOptionTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  roleOptionTitleActive: { color: colors.primary },
+  roleOptionDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2, lineHeight: 16 },
+  roleOptionDescActive: { color: colors.primaryDark },
+  sheetError: { fontSize: 12, color: colors.danger, marginTop: spacing.sm },
+  sheetActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
 });

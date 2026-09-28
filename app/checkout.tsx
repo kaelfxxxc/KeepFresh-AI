@@ -4,8 +4,8 @@ import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ShieldCheck, RefreshCw, RotateCcw } from 'lucide-react-native';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, SPACING } from '../src/theme';
-import { NavHeader, PillButton } from '../src/components/ui';
+import { colors, spacing } from '../src/theme';
+import { NavHeader, PillButton, IconBadge } from '../src/components/ui';
 import { paymentService } from '../src/services/paymentService';
 
 /** Where PayMongo sends the browser once the payment page is finished. */
@@ -199,7 +199,7 @@ export default function CheckoutScreen() {
           <PillButton
             title="Back to plans"
             onPress={returnToPlans}
-            style={{ marginTop: SPACING.lg, alignSelf: 'stretch' }}
+            style={{ marginTop: spacing.lg, alignSelf: 'stretch' }}
           />
         </View>
       </View>
@@ -221,13 +221,19 @@ export default function CheckoutScreen() {
 
       <View style={styles.statusBar}>
         {phase === 'confirming' ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
+          <ActivityIndicator size="small" color={colors.primary} />
         ) : phase === 'done' ? (
-          <ShieldCheck size={18} color={COLORS.primary} strokeWidth={2.4} />
+          <IconBadge color={colors.primary} size={28}>
+            <ShieldCheck size={15} color={colors.primary} strokeWidth={2.4} />
+          </IconBadge>
         ) : phase === 'pending' ? (
-          <RefreshCw size={18} color={COLORS.warning} strokeWidth={2.4} />
+          <IconBadge color={colors.warning} size={28}>
+            <RefreshCw size={15} color={colors.warning} strokeWidth={2.4} />
+          </IconBadge>
         ) : (
-          <ShieldCheck size={18} color={COLORS.secondaryText} strokeWidth={2.2} />
+          <IconBadge color={colors.textSecondary} size={28}>
+            <ShieldCheck size={15} color={colors.textSecondary} strokeWidth={2.2} />
+          </IconBadge>
         )}
         <Text style={styles.statusText}>{message}</Text>
       </View>
@@ -244,7 +250,7 @@ export default function CheckoutScreen() {
         startInLoadingState
         renderLoading={() => (
           <View style={styles.loading}>
-            <ActivityIndicator color={COLORS.primary} />
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.loadingText}>Opening PayMongo…</Text>
           </View>
         )}
@@ -312,38 +318,38 @@ function fallbackUrlFromIntent(url: string): string | null {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.background },
-  webview: { flex: 1, backgroundColor: COLORS.background },
-  centered: { flex: 1, justifyContent: 'center', padding: SPACING.lg },
+  root: { flex: 1, backgroundColor: colors.screenBg },
+  webview: { flex: 1, backgroundColor: colors.surface },
+  centered: { flex: 1, justifyContent: 'center', padding: spacing.xl },
 
-  title: { fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm },
-  body: { fontSize: 14, color: COLORS.secondaryText, lineHeight: 20 },
+  title: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
+  body: { fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
 
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    backgroundColor: COLORS.surface,
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.divider,
+    borderBottomColor: colors.border,
   },
-  statusText: { flex: 1, fontSize: 12.5, color: COLORS.secondaryText, lineHeight: 17 },
+  statusText: { flex: 1, fontSize: 12.5, color: colors.textSecondary, lineHeight: 17 },
 
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
-  loadingText: { color: COLORS.secondaryText, fontSize: 13 },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  loadingText: { color: colors.textSecondary, fontSize: 13 },
 
   actions: {
     flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-    backgroundColor: COLORS.surface,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.divider,
+    borderTopColor: colors.border,
   },
 
-  cancelLink: { paddingVertical: SPACING.md, alignItems: 'center', backgroundColor: COLORS.surface },
-  cancelLinkText: { color: COLORS.secondaryText, fontSize: 13, textDecorationLine: 'underline' },
+  cancelLink: { paddingVertical: spacing.md, alignItems: 'center', backgroundColor: colors.surface },
+  cancelLinkText: { color: colors.textSecondary, fontSize: 13, textDecorationLine: 'underline' },
 });

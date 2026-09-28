@@ -16,15 +16,15 @@ import {
 } from '../../../src/types';
 import { getExpirationStatus } from '../../../src/utils/expiration';
 import { addDaysKey } from '../../../src/utils/dateKey';
-import { COLORS, SPACING, RADII } from '../../../src/theme';
+import { colors, radii, spacing, shadow } from '../../../src/theme';
 import {
   CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote,
   Heart, Bell, Boxes, History, ChevronDown,
 } from 'lucide-react-native';
-import {
-  NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt, Chip,
-} from '../../../src/components/ui';
+import type { LucideProps } from 'lucide-react-native';
+import { NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt, Chip, IconBadge, colorWithOpacity } from '../../../src/components/ui';
 import { DatePickerModal } from '../../../src/components/DatePicker';
+import { usePageGutter } from '../../../src/hooks/useContentLayout';
 
 /** Canned offsets offered beside the expiration date. */
 const DATE_CHIPS: { label: string; days: number }[] = [
@@ -36,6 +36,7 @@ const DATE_CHIPS: { label: string; days: number }[] = [
 ];
 
 export default function InventoryDetailsScreen() {
+  const { gutter } = usePageGutter();
   const params = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
@@ -271,9 +272,21 @@ export default function InventoryDetailsScreen() {
 
   const date = (s?: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not set');
 
-  const attr = (icon: any, label: string, value: string) => (
+  /**
+   * One attribute line: an optional tinted icon badge, the label, the value.
+   *
+   * Rows without an icon still hold the badge's width, so the labels stay in one
+   * column down the card instead of stepping left on every iconless row.
+   */
+  const attr = (Icon: React.ComponentType<LucideProps> | null, label: string, value: string) => (
     <View style={styles.attrRow}>
-      {icon}
+      {Icon ? (
+        <IconBadge color={colors.primary} size={28}>
+          <Icon size={14} color={colors.primary} strokeWidth={2.4} />
+        </IconBadge>
+      ) : (
+        <View style={styles.attrIconSpacer} />
+      )}
       <Text style={styles.attrLabel}>{label}</Text>
       <Text style={styles.attrValue}>{value}</Text>
     </View>
@@ -291,25 +304,30 @@ export default function InventoryDetailsScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: onNeedToBuy }}
             accessibilityLabel={onNeedToBuy ? 'Remove from Need to Buy' : 'Add to Need to Buy'}
-            style={[styles.headerIcon, onNeedToBuy && styles.headerIconActive]}
+            style={[
+              styles.headerIcon,
+              // Same 15% tint recipe as IconBadge, so the header control reads as
+              // the same kind of object as every other icon in the app.
+              { backgroundColor: colorWithOpacity(onNeedToBuy ? colors.danger : colors.textSecondary, 0.15) },
+            ]}
           >
             {savingList ? (
-              <ActivityIndicator size="small" color={COLORS.danger} />
+              <ActivityIndicator size="small" color={colors.danger} />
             ) : (
               <Heart
                 size={20}
                 strokeWidth={2.2}
-                color={onNeedToBuy ? COLORS.danger : COLORS.secondaryText}
-                fill={onNeedToBuy ? COLORS.danger : 'transparent'}
+                color={onNeedToBuy ? colors.danger : colors.textSecondary}
+                fill={onNeedToBuy ? colors.danger : 'transparent'}
               />
             )}
           </Pressable>
         }
       />
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 140 }}>
+      <ScrollView contentContainerStyle={{ paddingVertical: spacing.xl, paddingHorizontal: gutter, paddingBottom: 140 }}>
 
         <View style={styles.hero}>
-          <ItemImage uri={item.image_url} category={item.category} size={108} radius={30} style={{ marginBottom: SPACING.md }} />
+          <ItemImage uri={item.image_url} category={item.category} size={108} radius={30} style={{ marginBottom: spacing.md }} />
           <Text style={styles.name}>{item.product_name}</Text>
           <StatusBadge
             label={item.status === 'available' ? expBadge.label : item.status === 'consumed' ? 'Consumed' : 'Wasted'}
@@ -325,13 +343,13 @@ export default function InventoryDetailsScreen() {
         </View>
 
         <View style={styles.card}>
-          {attr(<Tag size={16} color={COLORS.primary} strokeWidth={2} />, 'Brand', item.brand || '—')}
-          {attr(<Tag size={16} color={COLORS.primary} strokeWidth={2} />, 'Category', item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : '—')}
+          {attr(Tag, 'Brand', item.brand || '—')}
+          {attr(Tag, 'Category', item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : '—')}
           {attr(null, 'Quantity', `${item.quantity} ${item.unit}`)}
-          {attr(<CalendarDays size={16} color={COLORS.primary} strokeWidth={2} />, 'Expiration', date(item.expiration_date))}
-          {attr(<CalendarDays size={16} color={COLORS.primary} strokeWidth={2} />, 'Added', date(item.purchase_date))}
-          {attr(<Barcode size={16} color={COLORS.primary} strokeWidth={2} />, 'Barcode', item.barcode || '—')}
-          {attr(<StickyNote size={16} color={COLORS.primary} strokeWidth={2} />, 'Notes', item.notes || 'No notes')}
+          {attr(CalendarDays, 'Expiration', date(item.expiration_date))}
+          {attr(CalendarDays, 'Added', date(item.purchase_date))}
+          {attr(Barcode, 'Barcode', item.barcode || '—')}
+          {attr(StickyNote, 'Notes', item.notes || 'No notes')}
           {attr(null, 'Price', item.price != null ? `₱${item.price.toFixed(2)}` : '—')}
         </View>
 
@@ -339,9 +357,11 @@ export default function InventoryDetailsScreen() {
             the spec asks for both on the item, not buried in settings. */}
         <View style={styles.card}>
           <View style={styles.cardHead}>
-            <CalendarDays size={16} color={COLORS.primary} strokeWidth={2.2} />
+            <IconBadge color={colors.primary} size={28}>
+              <CalendarDays size={14} color={colors.primary} strokeWidth={2.4} />
+            </IconBadge>
             <Text style={styles.cardTitle}>Expiration & alerts</Text>
-            {busy && <ActivityIndicator size="small" color={COLORS.primary} />}
+            {busy && <ActivityIndicator size="small" color={colors.primary} />}
           </View>
           {/* The date itself is the control, exactly as on Add Item: tap it to
               open the calendar. The chips below stay as the shortcuts for the
@@ -359,7 +379,7 @@ export default function InventoryDetailsScreen() {
             <Text style={[styles.cardValue, styles.dateRowText]}>
               {date(item.expiration_date)}
             </Text>
-            <ChevronDown size={17} color={COLORS.secondaryText} strokeWidth={2.2} />
+            <ChevronDown size={17} color={colors.textSecondary} strokeWidth={2.2} />
           </Pressable>
 
           <View style={styles.chipWrap}>
@@ -378,8 +398,10 @@ export default function InventoryDetailsScreen() {
 
           {!!item.expiration_date && (
             <>
-              <View style={[styles.cardHead, { marginTop: SPACING.md }]}>
-                <Bell size={16} color={COLORS.primary} strokeWidth={2.2} />
+              <View style={[styles.cardHead, { marginTop: spacing.md }]}>
+                <IconBadge color={colors.primary} size={28}>
+                  <Bell size={14} color={colors.primary} strokeWidth={2.4} />
+                </IconBadge>
                 <Text style={styles.cardTitle}>Remind me</Text>
               </View>
               <View style={styles.chipWrap}>
@@ -401,7 +423,9 @@ export default function InventoryDetailsScreen() {
         {areas.length > 0 && (
           <View style={styles.card}>
             <View style={styles.cardHead}>
-              <Boxes size={16} color={COLORS.primary} strokeWidth={2.2} />
+              <IconBadge color={colors.primary} size={28}>
+                <Boxes size={14} color={colors.primary} strokeWidth={2.4} />
+              </IconBadge>
               <Text style={styles.cardTitle}>Storage area</Text>
             </View>
             <View style={styles.chipWrap}>
@@ -425,7 +449,9 @@ export default function InventoryDetailsScreen() {
         {history.length > 0 && (
           <View style={styles.card}>
             <View style={styles.cardHead}>
-              <History size={16} color={COLORS.primary} strokeWidth={2.2} />
+              <IconBadge color={colors.primary} size={28}>
+                <History size={14} color={colors.primary} strokeWidth={2.4} />
+              </IconBadge>
               <Text style={styles.cardTitle}>History</Text>
             </View>
             {history.map((entry, index) => (
@@ -448,7 +474,9 @@ export default function InventoryDetailsScreen() {
 
         {item.status === 'available' && (
           <View style={styles.warningTip}>
-            <AlertTriangle size={15} color={COLORS.warningText} strokeWidth={2.2} />
+            <IconBadge color={colors.warning} size={28}>
+              <AlertTriangle size={14} color={colors.warning} strokeWidth={2.4} />
+            </IconBadge>
             <Text style={styles.warningTipText}>
               {exp === 'expired' || exp === 'today'
                 ? 'This item is at risk — use it today or record it as waste.'
@@ -460,7 +488,7 @@ export default function InventoryDetailsScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + SPACING.md }]}>
+      <View style={[styles.bottomBar, { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.md }]}>
         {item.status === 'available' ? (
           <>
             <PillButton title="Mark as Waste" variant="dangerOutline" icon={Trash2} onPress={markWaste} style={{ flex: 1 }} />
@@ -507,49 +535,53 @@ export default function InventoryDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   headerIcon: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: COLORS.mutedBg, alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerIconActive: { backgroundColor: COLORS.dangerBg },
-  hero: { alignItems: 'center', paddingVertical: SPACING.lg },
-  name: { fontSize: 22, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.sm },
+  hero: { alignItems: 'center', paddingVertical: spacing.lg },
+  name: { fontSize: 22, fontWeight: '800', color: colors.textPrimary, marginBottom: spacing.sm },
   card: {
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    paddingHorizontal: SPACING.lg, marginTop: SPACING.sm,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg, marginTop: spacing.md,
+    ...shadow.card,
   },
-  attrRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider },
-  attrLabel: { flex: 1, fontSize: 13, color: COLORS.secondaryText, marginLeft: 2 },
-  attrValue: { fontSize: 14, color: COLORS.text, fontWeight: '600', textAlign: 'right', flex: 1.4 },
-  warningTip: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: COLORS.warningBg, borderRadius: RADII.input, padding: SPACING.md, marginTop: SPACING.md },
-  warningTipText: { flex: 1, fontSize: 13, color: COLORS.warningText, lineHeight: 19 },
+  attrIconSpacer: { width: 28 },
+  attrRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  attrLabel: { flex: 1, fontSize: 13, color: colors.textSecondary, marginLeft: 2 },
+  attrValue: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', textAlign: 'right', flex: 1.4 },
+  warningTip: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colorWithOpacity(colors.warning, 0.15), borderRadius: radii.sm,
+    padding: spacing.md, marginTop: spacing.md,
+  },
+  warningTipText: { flex: 1, fontSize: 13, color: colors.warning, lineHeight: 19 },
   bottomBar: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    backgroundColor: COLORS.white, paddingHorizontal: SPACING.lg, paddingTop: SPACING.md,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.divider,
+    position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surface, paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border,
   },
-  deleteLink: { paddingHorizontal: SPACING.xs },
-  deleteLinkText: { color: COLORS.danger, fontSize: 13, fontWeight: '700' },
+  deleteLink: { paddingHorizontal: spacing.xs },
+  deleteLinkText: { color: colors.danger, fontSize: 13, fontWeight: '700' },
 
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 13 },
-  cardTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: COLORS.text },
-  cardValue: { fontSize: 14, color: COLORS.secondaryText, marginTop: 4, marginBottom: SPACING.sm },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: 13 },
+  cardTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  cardValue: { fontSize: 14, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.sm },
   // The date and its chevron are one tappable row, so the vertical spacing moves
   // off the text and onto the row that now spans the card.
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: SPACING.sm },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: spacing.sm },
   dateRowPressed: { opacity: 0.7 },
   dateRowText: { flex: 1, marginTop: 0, marginBottom: 0 },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, paddingBottom: 13 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingBottom: 13 },
   historyRow: {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.divider,
+    borderBottomColor: colors.border,
   },
   historyRowLast: { borderBottomWidth: 0 },
-  historyAction: { fontSize: 13.5, color: COLORS.text, fontWeight: '600' },
-  historyTime: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 2 },
+  historyAction: { fontSize: 13.5, color: colors.textPrimary, fontWeight: '600' },
+  historyTime: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
 });
 
 /**

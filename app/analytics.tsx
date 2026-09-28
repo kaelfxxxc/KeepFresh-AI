@@ -24,21 +24,13 @@ import {
   Pressable,
 } from 'react-native';
 import { router } from 'expo-router';
-import Svg, { Circle } from 'react-native-svg';
 import { Wallet, PiggyBank, TrendingDown, PackageX, CalendarClock, PieChart } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, SPACING, RADII } from '../src/theme';
-import {
-  NavHeader,
-  Segmented,
-  StatusBadge,
-  Card,
-  UpgradeNotice,
-  FeatureLock,
-  PlanCheckLock,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow, statusSurface } from '../src/theme';
+import { NavHeader, Segmented, StatusBadge, UpgradeNotice, FeatureLock, PlanCheckLock, DonutProgress, StatCard, AIBanner, ProgressBar, SectionHeader, StatusPill, colorWithOpacity, IconBadge } from '../src/components/ui';
 import { wasteReportService } from '../src/services/wasteReportService';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 import type { ReportWindow, WasteReport } from '../src/types';
 
 const peso = (n: number) => `₱${Math.round(n).toLocaleString()}`;
@@ -53,6 +45,13 @@ const WINDOW_LABEL: Record<ReportWindow, string> = {
 export default function AnalyticsScreen() {
   const { profile } = useAuth();
   const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
+
+  // Every block on this screen used to carry its own `marginHorizontal`, which
+  // meant the gutter was written out eight times — and the Segmented control at
+  // the top had already drifted to a narrower one than the cards under it. The
+  // scroll view pads instead, so the column is defined once and centred as a
+  // whole once it hits the content cap.
+  const { gutter } = usePageGutter();
 
   const [range, setRange] = useState<ReportWindow>('monthly');
   const [report, setReport] = useState<WasteReport | null>(null);
@@ -117,28 +116,23 @@ export default function AnalyticsScreen() {
     );
   }
 
-  const donutSize = 170;
-  const stroke = 16;
-  const r = (donutSize - stroke) / 2;
-  const C = 2 * Math.PI * r;
-  const usedFrac = report ? Math.min(Math.max(report.savingsPercent / 100, 0), 1) : 0;
   const trendMax = report ? Math.max(...report.trend.map((t) => t.value), 1) : 1;
 
   return (
     <View style={styles.container}>
       <NavHeader title="Reports" subtitle="Food waste & savings" />
       <ScrollView
-        contentContainerStyle={{ paddingBottom: SPACING.xxl }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl, paddingHorizontal: gutter }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); load(); }}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
-        <View style={{ paddingHorizontal: SPACING.lg, marginBottom: SPACING.md }}>
+        <View style={{ marginBottom: spacing.md }}>
           <Segmented
             value={range}
             onChange={setRange}
@@ -152,96 +146,92 @@ export default function AnalyticsScreen() {
         </View>
 
         {loading ? (
-          <View style={styles.loadingBox}><ActivityIndicator color={COLORS.primary} /></View>
+          <View style={styles.loadingBox}><ActivityIndicator color={colors.primary} /></View>
         ) : error ? (
-          <Text style={[styles.muted, { paddingHorizontal: SPACING.lg }]}>{error}</Text>
+          <Text style={styles.muted}>{error}</Text>
         ) : !report ? null : (
           <>
             {/* Donut + flanking stats */}
             <View style={styles.donutCard}>
-              <View style={styles.donutWrap}>
-                <Svg width={donutSize} height={donutSize}>
-                  <Circle cx={donutSize / 2} cy={donutSize / 2} r={r} stroke={COLORS.primaryLight} strokeWidth={stroke} fill="none" />
-                  <Circle
-                    cx={donutSize / 2} cy={donutSize / 2} r={r}
-                    stroke={COLORS.secondary} strokeWidth={stroke} fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={`${C * usedFrac} ${C}`}
-                    transform={`rotate(-90 ${donutSize / 2} ${donutSize / 2})`}
-                  />
-                </Svg>
-                <View style={styles.donutCenter}>
-                  <Text style={styles.donutPct}>{report.savingsPercent}%</Text>
-                  <Text style={styles.donutLabel}>Food Used</Text>
-                </View>
-              </View>
+              <DonutProgress percentage={report.savingsPercent} size={150} />
 
-              <StatusBadge label={WINDOW_LABEL[report.window]} tone="neutral" style={{ marginTop: SPACING.md }} />
+              <StatusPill status="fresh" label={WINDOW_LABEL[report.window]} style={{ marginTop: spacing.md }} />
 
               <View style={styles.flankRow}>
                 <View style={styles.flank}>
-                  <View style={[styles.flankDot, { backgroundColor: COLORS.success }]} />
+                  <View style={[styles.flankDot, { backgroundColor: colors.primary }]} />
                   <Text style={styles.flankValue}>{report.itemsConsumed}</Text>
                   <Text style={styles.flankLabel}>items used</Text>
                 </View>
                 <View style={styles.flankSep} />
                 <View style={styles.flank}>
-                  <View style={[styles.flankDot, { backgroundColor: COLORS.danger }]} />
+                  <View style={[styles.flankDot, { backgroundColor: colors.danger }]} />
                   <Text style={styles.flankValue}>{report.itemsWasted}</Text>
                   <Text style={styles.flankLabel}>items wasted</Text>
                 </View>
                 <View style={styles.flankSep} />
                 <View style={styles.flank}>
-                  <View style={[styles.flankDot, { backgroundColor: COLORS.warning }]} />
+                  <View style={[styles.flankDot, { backgroundColor: colors.warning }]} />
                   <Text style={styles.flankValue}>{report.wastePercent}%</Text>
                   <Text style={styles.flankLabel}>waste rate</Text>
                 </View>
               </View>
             </View>
 
+            {/* AI Summary Banner */}
+            <AIBanner
+              index={1}
+              icon="bulb"
+              title="AI Waste Reduction Insight"
+              body={
+                report.wastePercent > 20
+                  ? `Your waste rate is ${report.wastePercent}%. Try prioritizing meals with ${report.topProducts[0]?.name ?? 'expiring items'} to cut down losses.`
+                  : `Outstanding job! You've used ${report.savingsPercent}% of your food and saved ${peso(report.estimatedSavings)}.`
+              }
+              variant={report.wastePercent > 20 ? 'mint' : 'dark'}
+            />
+
             {/* The two money figures, stated plainly. */}
             <View style={styles.moneyRow}>
-              <Card style={styles.moneyCard}>
-                <View style={styles.moneyIcon}>
-                  <TrendingDown size={18} color={COLORS.dangerText} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.moneyValue}>{peso(report.wastedValue)}</Text>
-                <Text style={styles.moneyLabel}>Wasted</Text>
-              </Card>
-              <Card style={styles.moneyCard}>
-                <View style={[styles.moneyIcon, { backgroundColor: COLORS.successBg }]}>
-                  <PiggyBank size={18} color={COLORS.successText} strokeWidth={2.2} />
-                </View>
-                <Text style={styles.moneyValue}>{peso(report.estimatedSavings)}</Text>
-                <Text style={styles.moneyLabel}>Saved by using it</Text>
-              </Card>
+              <StatCard
+                index={2}
+                icon={TrendingDown}
+                title="Wasted"
+                value={peso(report.wastedValue)}
+                iconBg={colors.danger}
+              />
+              <StatCard
+                index={3}
+                icon={PiggyBank}
+                title="Saved by using it"
+                value={peso(report.estimatedSavings)}
+                iconBg={colors.primary}
+              />
             </View>
 
             {/* Waste breakdown by category */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Waste by category</Text>
-            </View>
+            <SectionHeader title="Waste by category" />
             <View style={styles.card}>
               {report.byCategory.length === 0 ? (
                 <Text style={styles.muted}>Nothing was thrown away in this period 🎉</Text>
               ) : (
                 report.byCategory.map((row, index) => (
-                  <View key={row.label} style={index === report.byCategory.length - 1 ? undefined : { marginBottom: 12 }}>
+                  <View key={row.label} style={index === report.byCategory.length - 1 ? undefined : { marginBottom: 14 }}>
                     <View style={styles.barHead}>
                       <Text style={styles.barName}>
                         {row.label.charAt(0).toUpperCase() + row.label.slice(1)}
-                        <Text style={styles.barCount}> · {row.count}</Text>
+                        <Text style={styles.barCount}> · {row.count} items</Text>
                       </Text>
                       <Text style={styles.barValue}>{peso(row.value)}</Text>
                     </View>
-                    <View style={styles.track}>
-                      <View
-                        style={[
-                          styles.fill,
-                          { width: `${(row.value / (report.byCategory[0].value || 1)) * 100}%` },
-                        ]}
-                      />
-                    </View>
+                    <ProgressBar
+                      value={row.value}
+                      max={report.byCategory[0]?.value || 1}
+                      colorRamp={false}
+                      color={colors.warning}
+                      height={8}
+                      style={{ marginTop: 6 }}
+                    />
                   </View>
                 ))
               )}
@@ -250,10 +240,7 @@ export default function AnalyticsScreen() {
             {/* Biggest individual losses */}
             {report.topProducts.length > 0 && (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Biggest losses</Text>
-                  <PackageX size={16} color={COLORS.secondaryText} strokeWidth={2} />
-                </View>
+                <SectionHeader title="Biggest losses" />
                 <View style={styles.card}>
                   {report.topProducts.map((product, index) => (
                     <View
@@ -275,12 +262,11 @@ export default function AnalyticsScreen() {
 
             {/* Trend — plain Views rather than a chart library, so it renders
                 identically offline and adds no dependency. */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                {report.window === 'daily' ? 'Last 7 days' : report.window === 'weekly' ? 'Last 8 weeks' : report.window === 'monthly' ? 'Last 6 months' : 'This year'}
-              </Text>
-              <CalendarClock size={16} color={COLORS.secondaryText} strokeWidth={2} />
-            </View>
+            <SectionHeader
+              title={report.window === 'daily' ? 'Last 7 days' : report.window === 'weekly' ? 'Last 8 weeks' : report.window === 'monthly' ? 'Last 6 months' : 'This year'}
+              rightComponent={<CalendarClock size={16} color={colors.textSecondary} strokeWidth={2} />}
+             
+            />
             <View style={styles.card}>
               <View style={styles.trendRow}>
                 {report.trend.map((bucket) => (
@@ -303,10 +289,11 @@ export default function AnalyticsScreen() {
             {/* ---- Advanced tier --------------------------------------------- */}
             {advanced ? (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Why it was binned</Text>
-                  <StatusBadge label="Pro" tone="success" />
-                </View>
+                <SectionHeader
+                  title="Why it was binned"
+                  rightComponent={<StatusBadge label="Pro" tone="success" />}
+                 
+                />
                 <View style={styles.card}>
                   {(report.byReason ?? []).length === 0 ? (
                     <Text style={styles.muted}>No reasons recorded yet — they are captured when you mark an item as waste.</Text>
@@ -333,7 +320,7 @@ export default function AnalyticsScreen() {
                 {report.projectedYearlyWaste != null && (
                   <View style={styles.projectionCard}>
                     <View style={styles.savingsIcon}>
-                      <Wallet size={22} color={COLORS.primaryDark} strokeWidth={2.1} />
+                      <Wallet size={22} color={colors.primaryDark} strokeWidth={2.1} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.savingsAmount}>{peso(report.projectedYearlyWaste)}</Text>
@@ -350,18 +337,20 @@ export default function AnalyticsScreen() {
                 message="See why items go to waste, the average per period, and a yearly projection of what the habit costs."
                 ctaLabel="See Pro"
                 onPress={() => router.push('/subscription')}
-                style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.lg }}
+                style={{ marginTop: spacing.lg }}
               />
             )}
 
             {/* Savings, in the existing green card */}
             <View style={styles.savingsCard}>
-              <View style={styles.savingsIcon}><PiggyBank size={22} color={COLORS.primaryDark} strokeWidth={2.1} /></View>
+              <View style={styles.savingsIcon}><PiggyBank size={22} color={colors.primaryDark} strokeWidth={2.1} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.savingsAmount}>{peso(report.estimatedSavings)}</Text>
                 <Text style={styles.savingsLabel}>Estimated value saved by eating what you had</Text>
               </View>
-              <Wallet size={18} color={COLORS.primaryDark} strokeWidth={2} />
+              <IconBadge color={colors.primaryDark} size={36}>
+                <Wallet size={18} color={colors.primaryDark} strokeWidth={2} />
+              </IconBadge>
             </View>
 
             <Text style={styles.footnote}>
@@ -376,82 +365,82 @@ export default function AnalyticsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingBox: { paddingVertical: SPACING.xxl, alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  loadingBox: { paddingVertical: spacing.xxl, alignItems: 'center' },
 
   donutCard: {
-    marginHorizontal: SPACING.lg, backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.lg, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
   },
   donutWrap: { alignItems: 'center', justifyContent: 'center' },
-  donutCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  donutPct: { fontSize: 34, fontWeight: '800', color: COLORS.text },
-  donutLabel: { fontSize: 12, color: COLORS.secondaryText, fontWeight: '600' },
-  flankRow: { flexDirection: 'row', alignItems: 'center', marginTop: SPACING.lg, alignSelf: 'stretch' },
+  donutCenter: { marginTop: 8, alignItems: 'center' },
+  donutLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  flankRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg, alignSelf: 'stretch' },
   flank: { flex: 1, alignItems: 'center' },
   flankDot: { width: 10, height: 10, borderRadius: 5, marginBottom: 4 },
-  flankValue: { fontSize: 20, fontWeight: '800', color: COLORS.text },
-  flankLabel: { fontSize: 11.5, color: COLORS.secondaryText },
-  flankSep: { width: StyleSheet.hairlineWidth, height: 40, backgroundColor: COLORS.divider },
+  flankValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
+  flankLabel: { fontSize: 11.5, color: colors.textSecondary },
+  flankSep: { width: 1, height: 40, backgroundColor: colors.border },
 
-  moneyRow: { flexDirection: 'row', gap: SPACING.sm, paddingHorizontal: SPACING.lg, marginTop: SPACING.md },
-  moneyCard: { flex: 1, padding: SPACING.md, gap: 6 },
-  moneyIcon: {
-    width: 34, height: 34, borderRadius: RADII.icon,
-    backgroundColor: COLORS.dangerBg, alignItems: 'center', justifyContent: 'center',
-  },
-  moneyValue: { fontSize: 19, fontWeight: '800', color: COLORS.text },
-  moneyLabel: { fontSize: 11.5, color: COLORS.secondaryText },
+  moneyRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
 
-  sectionHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: SPACING.lg, marginTop: SPACING.lg, marginBottom: SPACING.sm,
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
   card: {
-    backgroundColor: COLORS.white, borderRadius: RADII.card, marginHorizontal: SPACING.lg,
-    padding: SPACING.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
   },
-  muted: { color: COLORS.secondaryText, fontSize: 13, lineHeight: 18 },
+  muted: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
 
   barHead: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-  barName: { fontSize: 13, fontWeight: '600', color: COLORS.text, flex: 1, marginRight: 8 },
-  barCount: { fontSize: 11.5, color: COLORS.secondaryText, fontWeight: '500' },
-  barValue: { fontSize: 13, fontWeight: '700', color: COLORS.text },
-  track: { height: 8, borderRadius: 4, backgroundColor: COLORS.primaryLight, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 4, backgroundColor: COLORS.primary },
+  barName: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: 8 },
+  barCount: { fontSize: 11.5, color: colors.textSecondary, fontWeight: '500' },
+  barValue: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  track: { height: 8, borderRadius: 4, backgroundColor: colors.mintBg, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 4, backgroundColor: colors.primary },
 
   productRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider,
+    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  productName: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  productMeta: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 1 },
-  productValue: { fontSize: 14, fontWeight: '700', color: COLORS.dangerText },
+  productName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  productMeta: { fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
+  productValue: { fontSize: 14, fontWeight: '700', color: colors.danger },
 
-  trendRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 130 },
+  trendRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 130 },
   trendCol: { flex: 1, alignItems: 'center', height: '100%' },
   trendTrack: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  trendFill: { width: '100%', backgroundColor: COLORS.primary, borderRadius: 4 },
-  trendFillEmpty: { backgroundColor: COLORS.divider },
-  trendLabel: { fontSize: 9.5, color: COLORS.secondaryText, marginTop: 5 },
+  trendFill: { width: '100%', backgroundColor: colors.primary, borderRadius: 4 },
+  trendFillEmpty: { backgroundColor: colors.border },
+  trendLabel: { fontSize: 10, color: colors.textSecondary, marginTop: 5 },
 
   projectionCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
-    backgroundColor: COLORS.warningBg, borderRadius: RADII.card, padding: SPACING.lg,
+    marginTop: spacing.lg,
+    backgroundColor: statusSurface.warning.bg, borderRadius: radii.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: statusSurface.warning.border,
+    ...shadow.card,
   },
   savingsCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: SPACING.lg, marginTop: SPACING.lg,
-    backgroundColor: COLORS.greenGradientTop, borderRadius: RADII.card, padding: SPACING.lg,
+    marginTop: spacing.lg,
+    backgroundColor: colors.mintBg, borderRadius: radii.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
+    ...shadow.card,
   },
-  savingsIcon: { width: 44, height: 44, borderRadius: RADII.icon, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
-  savingsAmount: { fontSize: 24, fontWeight: '800', color: COLORS.primaryDark },
-  savingsLabel: { fontSize: 12, color: COLORS.primaryDark, marginTop: 1, opacity: 0.8 },
+  savingsIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colorWithOpacity(colors.surface, 0.85), alignItems: 'center', justifyContent: 'center' },
+  savingsAmount: { fontSize: 24, fontWeight: '800', color: colors.primaryDark },
+  savingsLabel: { fontSize: 12, color: colors.primaryDark, marginTop: 1, opacity: 0.85 },
 
   footnote: {
-    fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16,
-    paddingHorizontal: SPACING.lg, marginTop: SPACING.lg,
+    fontSize: 11.5, color: colors.textSecondary, lineHeight: 16,
+    marginTop: spacing.lg,
   },
 });

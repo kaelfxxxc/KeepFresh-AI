@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Alert } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/lib/supabase';
-import { COLORS, SPACING, RADII } from '../../src/theme';
-import { NavHeader } from '../../src/components/ui';
+import { colors, radii, spacing } from '../../src/theme';
+import { NavHeader, SectionHeader } from '../../src/components/ui';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 const GROUPS: { title: string; key: 'weight_unit' | 'volume_unit' | 'currency' | 'language'; options: string[] }[] = [
   { title: 'Weight Unit', key: 'weight_unit', options: ['g', 'kg', 'oz', 'lb'] },
@@ -13,6 +14,7 @@ const GROUPS: { title: string; key: 'weight_unit' | 'volume_unit' | 'currency' |
 ];
 
 export default function PreferencesScreen() {
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const [prefs, setPrefs] = useState<Record<string, string>>({
     weight_unit: 'g', volume_unit: 'ml', currency: 'PHP', language: 'English',
@@ -44,10 +46,10 @@ export default function PreferencesScreen() {
   return (
     <View style={styles.container}>
       <NavHeader title="Units & Preferences" subtitle="How measurements are shown to you" />
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg }}>
+      <ScrollView contentContainerStyle={{ paddingVertical: spacing.xl, paddingHorizontal: gutter }}>
         {GROUPS.map((g) => (
           <View key={g.key} style={styles.group}>
-            <Text style={styles.groupTitle}>{g.title}</Text>
+            <SectionHeader title={g.title} />
             <View style={styles.options}>
               {g.options.map((opt) => {
                 const active = prefs[g.key] === opt;
@@ -75,15 +77,16 @@ export default function PreferencesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  group: { marginBottom: SPACING.lg },
-  groupTitle: { fontSize: 13, fontWeight: '700', color: COLORS.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm },
-  options: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
-  option: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: RADII.pill, borderWidth: 1.5 },
-  optionActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  optionInactive: { backgroundColor: COLORS.white, borderColor: COLORS.divider },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  group: { marginBottom: spacing.lg },
+  options: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  option: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: radii.pill, borderWidth: 1.5 },
+  // Active reads as the darkest green in the palette, the same rule the filter
+  // chips follow, so a chosen option looks chosen everywhere.
+  optionActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
+  optionInactive: { backgroundColor: colors.surface, borderColor: colors.border },
   optionText: { fontSize: 14, fontWeight: '600' },
-  optionTextActive: { color: COLORS.white },
-  optionTextInactive: { color: COLORS.secondaryText },
-  note: { fontSize: 12, color: COLORS.secondaryText, lineHeight: 18, marginTop: SPACING.sm },
+  optionTextActive: { color: colors.surface },
+  optionTextInactive: { color: colors.textSecondary },
+  note: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginTop: spacing.sm },
 });

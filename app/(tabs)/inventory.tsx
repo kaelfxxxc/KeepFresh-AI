@@ -11,18 +11,14 @@ import { storageAreaService } from '../../src/services/storageAreaService';
 import { subscribeToTables, applyRealtimeEvent } from '../../src/lib/realtime';
 import { useAuth } from '../../src/context/AuthContext';
 import { useSubscription } from '../../src/context/SubscriptionContext';
-import { COLORS, SPACING, RADII, SHADOW } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { InventoryItem, StorageArea } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import { useContentLayout } from '../../src/hooks/useContentLayout';
-// The one icon left on this screen. Scanning has no word that reads as a
-// scanning action at a glance, so it keeps its glyph and its label together.
-import { Plus, ScanLine } from 'lucide-react-native';
-import {
-  StatusBadge, EmptyState, ItemImage, QuantityPrompt, QuantityStepper,
-  UpgradeNotice, ActionMenu,
-} from '../../src/components/ui';
+import { Plus, ScanLine, Search } from 'lucide-react-native';
+import { EmptyState, QuantityPrompt, UpgradeNotice, ActionMenu, InventoryListItem, FilterChipRow, colorWithOpacity } from '../../src/components/ui';
+import type { Status } from '../../src/components/ui';
 
 /**
  * What the list is showing.
@@ -573,115 +569,49 @@ export default function InventoryScreen() {
   };
 
   const renderItem = ({ item }: { item: InventoryItem }) => {
-    const badge = statusOf(item);
     const area = areas.find((a) => a.id === item.storage_area_id);
-    // A consumed or wasted item is a historical record; changing its quantity
-    // would rewrite what happened, so the stepper is withheld rather than
-    // clamped to zero. Its heart and its ⋯ menu stay: both are still meaningful
-    // statements about an item that is gone.
     const canStep = item.status === 'available';
     const quantity = Number(item.quantity ?? 0);
 
+    const exp = getExpirationStatus(item.expiration_date);
+    const pillStatus: Status =
+      item.status === 'consumed' || item.status === 'wasted' ? 'active'
+      : (exp === 'expired' || exp === 'today') ? 'expired'
+      : exp === 'expiring_soon' ? 'expiringSoon'
+      : 'fresh';
+
+    let progressRatio = 1;
+    if (item.expiration_date) {
+      const expDate = new Date(item.expiration_date).getTime();
+      const now = Date.now();
+      const daysLeft = (expDate - now) / 86400000;
+      progressRatio = Math.max(0, Math.min(1, daysLeft / 14));
+    }
+
     return (
-      <View style={[styles.rowCard, listColumns > 1 && styles.rowCardColumn]}>
-        <Pressable style={styles.rowMain} onPress={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })}>
-          <ItemImage uri={item.image_url} category={item.category} size={52} radius={RADII.image} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.itemName} numberOfLines={1} maxFontSizeMultiplier={1.3}>{item.product_name}</Text>
-            <Text style={styles.itemMeta} numberOfLines={1} maxFontSizeMultiplier={1.4}>
-              {quantity} {item.unit}
-              {area ? ` · ${area.name}` : ''}
-              {item.brand ? ` · ${item.brand}` : ''}
-            </Text>
-            {/* The date only. Urgency is the badge's job, and printing it on both
-                lines said the same thing twice in a row. */}
-            <Text style={styles.itemExpiry} numberOfLines={1} maxFontSizeMultiplier={1.4}>
-              {item.expiration_date
-                ? `Best before ${formatDayMonth(item.expiration_date)}`
-                : 'No expiration date'}
-            </Text>
-          </View>
-          <StatusBadge label={badge.label} tone={badge.tone} />
-        </Pressable>
-
-        {/* One row, not two: the stepper and the actions answer the same
-            question ("do something with this item"), and stacking them with a
-            rule between cost every card a line of height for nothing. */}
-        <View style={styles.rowFooter}>
-          {canStep ? (
-            <QuantityStepper
-              value={quantity}
-              unit={item.unit}
-              busy={steppingId === item.id}
-              compact
-              onStep={(delta) => stepQuantity(item, delta)}
-            />
-          ) : (
-            <View />
-          )}
-
-          <View style={styles.rowActions}>
-            {/* The same flag, worded the same way, as the control on the item
-                screen — one action, two places to reach it from. It stays on
-                the card rather than moving into the menu: it is the only way
-                into the Need to Buy chip, and burying the input to a whole
-                filter behind an overflow would make that chip look broken.
-                It reads as a labelled button now rather than a heart, which is
-                also what a screen reader was already being told. */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.textBtn,
-                item.need_to_buy && styles.textBtnActive,
-                pressed && { opacity: 0.6 },
-              ]}
-              onPress={() => toggleNeedToBuy(item)}
-              hitSlop={2}
-              accessibilityRole="button"
-              accessibilityState={{ selected: item.need_to_buy }}
-              accessibilityLabel={
-                item.need_to_buy
-                  ? `Remove ${item.product_name} from Need to Buy`
-                  : `Add ${item.product_name} to Need to Buy`
-              }
-            >
-              <Text
-                style={[styles.textBtnLabel, item.need_to_buy && styles.textBtnLabelActive]}
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.3}
-              >
-                {item.need_to_buy ? 'On the list' : 'Need more'}
-              </Text>
-            </Pressable>
-
-            {canStep && (
-              <Pressable
-                style={({ pressed }) => [styles.useBtn, pressed && { opacity: 0.75 }]}
-                onPress={() => handleConsume(item)}
-                hitSlop={2}
-                accessibilityRole="button"
-                accessibilityLabel={`Use ${item.product_name}`}
-              >
-                <Text style={styles.useBtnText} maxFontSizeMultiplier={1.3}>Use</Text>
-              </Pressable>
-            )}
-
-            {/* Delete and waste live in here rather than on the card face. Both
-                are irreversible from this screen, and the card face is where a
-                thumb rests while scrolling. */}
-            <Pressable
-              style={({ pressed }) => [styles.textBtn, pressed && { opacity: 0.6 }]}
-              onPress={() => setMenuTarget(item)}
-              hitSlop={2}
-              accessibilityRole="button"
-              accessibilityLabel={`More actions for ${item.product_name}`}
-            >
-              <Text style={styles.textBtnLabel} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-                More
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+      <InventoryListItem
+        name={item.product_name}
+        quantity={quantity}
+        unit={item.unit}
+        location={area?.name}
+        expiryDate={
+          item.expiration_date
+            ? `Best before ${formatDayMonth(item.expiration_date)}`
+            : undefined
+        }
+        status={pillStatus}
+        progressRatio={progressRatio}
+        imageUri={item.image_url}
+        category={item.category}
+        onIncrement={canStep ? () => stepQuantity(item, 1) : undefined}
+        onDecrement={canStep ? () => stepQuantity(item, -1) : undefined}
+        onAction={canStep ? () => handleConsume(item) : undefined}
+        actionLabel="Use"
+        onMenu={() => setMenuTarget(item)}
+        onPress={() =>
+          router.push({ pathname: '/inventory/details', params: { id: item.id } })
+        }
+      />
     );
   };
 
@@ -746,9 +676,14 @@ export default function InventoryScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <View style={styles.headerTitleBlock}>
-          <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-            My Inventory
-          </Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
+              My Inventory
+            </Text>
+            <View style={styles.itemCountPill}>
+              <Text style={styles.itemCountText}>{stockCount} items</Text>
+            </View>
+          </View>
           {/* Stock on the shelf, not every row ever written. Counting consumed
               and wasted items here made the headline disagree with the list
               underneath it, which shows none of them by default. */}
@@ -766,7 +701,7 @@ export default function InventoryScreen() {
             accessibilityRole="button"
             accessibilityLabel="Scan a product"
           >
-            <ScanLine size={17} color={COLORS.primary} strokeWidth={2.3} />
+            <ScanLine size={17} color={colors.primary} strokeWidth={2.3} />
             <Text style={styles.scanBtnText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               Scan
             </Text>
@@ -777,7 +712,7 @@ export default function InventoryScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add an item"
           >
-            <Plus size={17} color={COLORS.white} strokeWidth={2.8} />
+            <Plus size={17} color={colors.surface} strokeWidth={2.8} />
             <Text style={styles.addFabText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
               Add Item
             </Text>
@@ -789,12 +724,13 @@ export default function InventoryScreen() {
         <View style={styles.searchBox}>
           {/* The magnifier that used to sit here is gone with the rest of the
               icons — the placeholder already says what the field is for. */}
+          <Search size={18} color={colors.textSecondary} strokeWidth={2} />
           <TextInput
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
             placeholder="Search food, brand or category"
-            placeholderTextColor={COLORS.secondaryText}
+            placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
           />
         </View>
@@ -803,16 +739,48 @@ export default function InventoryScreen() {
             pixels below it, with no way to tell from the icon what it did. */}
       </View>
 
-      <FilterTabs active={filter} counts={filterCounts} onChange={setFilter} gutter={gutter} />
+      <FilterChipRow
+        chips={FILTERS.map((f) => ({
+          label: f.label,
+          value: f.key,
+          count: filterCounts[f.key],
+        }))}
+        activeChip={filter}
+        onSelect={(key) => setFilter(key as Filter)}
+        variant="card"
+        activeTone="dark"
+        contentStyle={{
+          paddingHorizontal: gutter,
+          paddingVertical: 0,
+          minHeight: 34,
+          gap: compact ? spacing.xs : spacing.sm,
+        }}
+        style={{
+          flexGrow: 0,
+          marginBottom: compact ? spacing.xs : spacing.sm,
+        }}
+      />
 
-      {/* Storage areas, under the tabs they narrow. Hidden when the only chip
-          would be "All areas" — a filter row with one option is not a filter. */}
+      {/* Storage areas, under the tabs they narrow */}
       {areaChips.length > 1 && (
-        <AreaFilterRow
-          chips={areaChips}
-          active={areaActive}
-          onChange={setAreaFilter}
-          gutter={gutter}
+        <FilterChipRow
+          chips={areaChips.map((c) => ({
+            label: c.name,
+            value: c.key,
+          }))}
+          activeChip={areaActive}
+          onSelect={setAreaFilter}
+          variant="card"
+          contentStyle={{
+            paddingHorizontal: gutter,
+            paddingVertical: 0,
+            minHeight: 34,
+            gap: compact ? spacing.xs : spacing.sm,
+          }}
+          style={{
+            flexGrow: 0,
+            marginBottom: compact ? spacing.xs : spacing.sm,
+          }}
         />
       )}
 
@@ -856,14 +824,15 @@ export default function InventoryScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         numColumns={listColumns}
-        columnWrapperStyle={listColumns > 1 ? { gap: SPACING.sm } : undefined}
+        columnWrapperStyle={listColumns > 1 ? { gap: spacing.sm } : undefined}
         contentContainerStyle={{
           paddingHorizontal: gutter,
+          paddingTop: spacing.xs,
           paddingBottom: contentInset,
-          gap: SPACING.sm,
+          gap: spacing.sm,
         }}
         keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />}
         ListEmptyComponent={!loading ? emptyState() : null}
       />
 
@@ -908,51 +877,59 @@ export default function InventoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   // Wraps rather than shrinks: on a narrow screen the two buttons drop to a
   // second line together, which costs a few pixels of height to buy a
   // full-width title instead of an ellipsised one.
   header: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
-    gap: SPACING.sm, paddingBottom: SPACING.md,
+    gap: spacing.sm, paddingBottom: spacing.md,
   },
   headerTitleBlock: { flexGrow: 1, flexShrink: 1, minWidth: 150 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.text },
-  subtitle: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  title: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
+  itemCountPill: {
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  itemCountText: { color: colors.primaryDark, fontSize: 12, fontWeight: '700' },
+  subtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   addFab: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     minHeight: 44,
-    backgroundColor: COLORS.primary, paddingHorizontal: SPACING.md, paddingVertical: 10,
-    borderRadius: RADII.pill,
+    backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 10,
+    borderRadius: radii.pill,
   },
-  addFabText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  addFabText: { color: colors.surface, fontWeight: '700', fontSize: 14 },
   // Outlined, not filled: Scan is the secondary of the two, and it carries a
   // word as well as the glyph so the two actions are told apart by more than
   // colour and position.
   scanBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     minHeight: 44,
-    paddingHorizontal: SPACING.md, paddingVertical: 10,
-    borderRadius: RADII.pill,
-    backgroundColor: COLORS.primaryLight,
-    borderWidth: 1.5, borderColor: COLORS.primary,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.mintBg,
+    borderWidth: 1.5, borderColor: colors.primary,
   },
-  scanBtnText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
+  scanBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: COLORS.white, borderRadius: RADII.input,
-    borderWidth: 1, borderColor: COLORS.divider, paddingHorizontal: 14, height: 46,
+    backgroundColor: colors.surface, borderRadius: radii.sm,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, height: 46,
   },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.text, padding: 0 },
+  searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
   // Four tabs no longer fit on one line at 375pt ("Need to Buy" is a wide
   // label), so they wrap rather than scroll. Wrapping keeps every tab visible
   // and costs nothing to lay out; a sideways strip would hide whichever filter
   // did not fit, which is the one thing a filter row must not do.
   tabRow: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch',
-    gap: SPACING.md, marginBottom: SPACING.xs,
+    gap: spacing.md, marginBottom: spacing.xs,
   },
   // The underline is drawn on the tab itself rather than as a separate rule
   // under the row, so it sits under the tab that is active wherever the row has
@@ -967,37 +944,37 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2.5,
     borderBottomColor: 'transparent',
   },
-  tabActive: { borderBottomColor: COLORS.primary },
-  tabLabel: { fontSize: 14.5, fontWeight: '600', color: COLORS.secondaryText },
-  tabLabelActive: { color: COLORS.primary, fontWeight: '800' },
+  tabActive: { borderBottomColor: colors.primary },
+  tabLabel: { fontSize: 14.5, fontWeight: '600', color: colors.textSecondary },
+  tabLabelActive: { color: colors.primary, fontWeight: '800' },
   tabCount: {
     minWidth: 22, height: 20, paddingHorizontal: 6, borderRadius: 10,
-    backgroundColor: COLORS.mutedBg,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12),
     alignItems: 'center', justifyContent: 'center',
   },
-  tabCountActive: { backgroundColor: COLORS.primaryLight },
-  tabCountText: { fontSize: 11.5, fontWeight: '700', color: COLORS.secondaryText },
-  tabCountTextActive: { color: COLORS.primary },
+  tabCountActive: { backgroundColor: colors.mintBg },
+  tabCountText: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary },
+  tabCountTextActive: { color: colors.primary },
   // One line tall, and explicitly not a flex child that grows: a horizontal
   // ScrollView will otherwise stretch and take the space the list needs.
   areaRowScroll: { flexGrow: 0 },
-  areaRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingVertical: 2 },
+  areaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 2 },
   // 38 drawn + hitSlop 3 on each side clears the 44 touch minimum without the
   // row standing taller than the tabs it sits under.
   areaChip: {
-    minHeight: 38, paddingHorizontal: 14, borderRadius: RADII.pill,
+    minHeight: 38, paddingHorizontal: 14, borderRadius: radii.pill,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.white,
-    borderWidth: 1, borderColor: COLORS.divider,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
-  areaChipActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  areaChipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondaryText },
-  areaChipTextActive: { color: COLORS.primary, fontWeight: '700' },
+  areaChipActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
+  areaChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  areaChipTextActive: { color: colors.primary, fontWeight: '700' },
   // Right-aligned, because the count it used to sit opposite is gone and the
   // control reads as an action on the search box above it.
   clearRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
-    marginBottom: SPACING.sm,
+    marginBottom: spacing.sm,
   },
   // Padded to a 44-high touch area even though it reads as a small text link —
   // it is the way back out of a search that found nothing, so it is worth the room.
@@ -1005,43 +982,43 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 10, minHeight: 44,
   },
-  clearBtnText: { fontSize: 12.5, fontWeight: '700', color: COLORS.primary },
-  notice: { marginBottom: SPACING.md },
+  clearBtnText: { fontSize: 12.5, fontWeight: '700', color: colors.primary },
+  notice: { marginBottom: spacing.md },
   rowCard: {
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.md, ...SHADOW.card,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.md, ...shadow.card,
   },
   // In the two-column list every cell in a row has to claim an equal share, or
   // the last card on an odd-length row sits at half width.
   rowCardColumn: { flex: 1 },
   rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  itemName: { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  itemMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
-  itemExpiry: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
+  itemName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  itemMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  itemExpiry: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   // The stepper and the actions share one line. `flexWrap` is the safety valve
   // for a narrow screen or a large accessibility font: rather than clipping a
   // control, the row drops the actions onto a second line.
   rowFooter: {
     flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
-    justifyContent: 'space-between', gap: SPACING.sm, marginTop: SPACING.sm,
+    justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.sm,
   },
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginLeft: 'auto' },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginLeft: 'auto' },
   // A word where a glyph used to be. 44 high clears the touch minimum on its
   // own, so these no longer need the hitSlop the 40pt icon squares relied on.
   textBtn: {
-    minHeight: 44, paddingHorizontal: 8, borderRadius: RADII.pill,
+    minHeight: 44, paddingHorizontal: 8, borderRadius: radii.pill,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: COLORS.divider,
+    borderWidth: 1, borderColor: colors.border,
   },
-  textBtnActive: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  textBtnLabel: { fontSize: 12.5, fontWeight: '700', color: COLORS.secondaryText },
-  textBtnLabelActive: { color: COLORS.primary },
+  textBtnActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
+  textBtnLabel: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
+  textBtnLabelActive: { color: colors.primary },
   useBtn: {
     alignItems: 'center', justifyContent: 'center',
-    minHeight: 44, paddingHorizontal: 14, borderRadius: RADII.pill,
-    backgroundColor: COLORS.primary,
+    minHeight: 44, paddingHorizontal: 14, borderRadius: radii.pill,
+    backgroundColor: colors.primary,
   },
-  useBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.white },
+  useBtnText: { fontSize: 13, fontWeight: '700', color: colors.surface },
 });
 
 /**

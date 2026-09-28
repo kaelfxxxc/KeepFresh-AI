@@ -34,19 +34,8 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { useSubscription } from '../src/context/SubscriptionContext';
-import { COLORS, RADII, SPACING } from '../src/theme';
-import {
-  NavHeader,
-  Card,
-  PillButton,
-  Segmented,
-  EmptyState,
-  StatusBadge,
-  FeatureLock,
-  PlanCheckLock,
-  QuantityStepper,
-  SectionLabel,
-} from '../src/components/ui';
+import { colors, radii, spacing, shadow } from '../theme';
+import { NavHeader, Card, PillButton, Segmented, EmptyState, StatusBadge, FeatureLock, PlanCheckLock, QuantityStepper, SectionLabel } from '../src/components/ui';
 import { inventoryService } from '../src/services/inventoryService';
 import { storageAreaService, storageEmoji } from '../src/services/storageAreaService';
 import { describeEntitlementError } from '../src/services/entitlementService';
@@ -57,6 +46,7 @@ import {
   type ParsedBulkRow,
 } from '../src/services/bulkInventoryService';
 import { EXPIRATION_ALERT_OPTIONS, type InventoryItem, type StorageArea } from '../src/types';
+import { usePageGutter } from '../src/hooks/useContentLayout';
 
 type Tab = 'add' | 'edit';
 
@@ -69,6 +59,9 @@ Pork Belly,5,kg,meat,2026-10-01,420
 Rice 25kg,2,sack,grains,2027-01-15,1450`;
 
 export default function BulkInventoryScreen() {
+  // The page gutter: the usual margin on a phone, and the slack that centres
+  // the column once the screen is wider than `CONTENT_MAX_WIDTH`.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const { gates, entitlements, loading: planLoading, error: planError, refresh: refreshPlan } = useSubscription();
 
@@ -130,7 +123,7 @@ export default function BulkInventoryScreen() {
     <View style={styles.container}>
       <NavHeader title="Bulk Inventory" subtitle="Many items at once" onBack={() => router.back()} />
 
-      <View style={{ paddingHorizontal: SPACING.lg, marginBottom: SPACING.md }}>
+      <View style={{ paddingHorizontal: gutter, marginBottom: spacing.md }}>
         <Segmented
           value={tab}
           onChange={setTab}
@@ -149,6 +142,9 @@ export default function BulkInventoryScreen() {
 /* ---------------------------------------------------------------- add many */
 
 function BulkAdd() {
+  // The page gutter... keeps the two tabs of this tool aligned with the
+  // screen's own column.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -211,10 +207,10 @@ function BulkAdd() {
 
   return (
     <ScrollView
-      contentContainerStyle={{ padding: SPACING.lg, paddingBottom: SPACING.xxl }}
+      contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxl }}
       keyboardShouldPersistTaps="handled"
     >
-      <SectionLabel right={<ClipboardPaste size={15} color={COLORS.secondaryText} strokeWidth={2} />}>
+      <SectionLabel right={<ClipboardPaste size={15} color={colors.textSecondary} strokeWidth={2} />}>
         Paste your list
       </SectionLabel>
       <Card style={styles.pasteCard}>
@@ -223,7 +219,7 @@ function BulkAdd() {
           onChangeText={setText}
           multiline
           placeholder={SAMPLE}
-          placeholderTextColor={COLORS.secondaryText}
+          placeholderTextColor={colors.textSecondary}
           style={styles.pasteInput}
           autoCapitalize="none"
           autoCorrect={false}
@@ -272,16 +268,16 @@ function BulkAdd() {
             {rows.map((row) => (
               <View key={row.lineNumber} style={styles.previewRow}>
                 {row.draft ? (
-                  <Check size={14} color={COLORS.primary} strokeWidth={3} />
+                  <Check size={14} color={colors.primary} strokeWidth={3} />
                 ) : (
-                  <AlertTriangle size={14} color={COLORS.warningText} strokeWidth={2.4} />
+                  <AlertTriangle size={14} color={colors.warning} strokeWidth={2.4} />
                 )}
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.previewName} numberOfLines={1}>
                     {row.draft?.product_name ?? row.raw}
                   </Text>
                   <Text
-                    style={[styles.previewMeta, !!row.problem && { color: COLORS.warningText }]}
+                    style={[styles.previewMeta, !!row.problem && { color: colors.warning }]}
                     numberOfLines={1}
                   >
                     {row.problem ??
@@ -325,7 +321,7 @@ function BulkAdd() {
         onPress={submit}
         loading={busy}
         disabled={valid.length === 0}
-        style={{ marginTop: SPACING.lg }}
+        style={{ marginTop: spacing.lg }}
       />
       {problems.length > 0 && (
         <Text style={styles.warnNote}>
@@ -342,6 +338,9 @@ function BulkAdd() {
 type EditMode = 'fields' | 'quantity' | 'delete';
 
 function BulkEdit() {
+  // The page gutter... keeps the two tabs of this tool aligned with the
+  // screen's own column.
+  const { gutter } = usePageGutter();
   const { profile } = useAuth();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [areas, setAreas] = useState<StorageArea[]>([]);
@@ -433,7 +432,7 @@ function BulkEdit() {
   };
 
   if (loading) {
-    return <View style={styles.loadingBox}><ActivityIndicator color={COLORS.primary} /></View>;
+    return <View style={styles.loadingBox}><ActivityIndicator color={colors.primary} /></View>;
   }
 
   if (items.length === 0) {
@@ -450,13 +449,13 @@ function BulkEdit() {
 
   return (
     <ScrollView
-      contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 180 }}
+      contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: spacing.lg, paddingBottom: 180 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => { setRefreshing(true); load(); }}
-          colors={[COLORS.primary]}
-          tintColor={COLORS.primary}
+          colors={[colors.primary]}
+          tintColor={colors.primary}
         />
       }
     >
@@ -473,7 +472,7 @@ function BulkEdit() {
         {selected.size > 0 ? `${selected.size} selected` : 'Select items'}
       </SectionLabel>
 
-      <View style={{ gap: SPACING.sm }}>
+      <View style={{ gap: spacing.sm }}>
         {items.map((item) => {
           const isSelected = selected.has(item.id);
           const area = areas.find((a) => a.id === item.storage_area_id);
@@ -484,7 +483,7 @@ function BulkEdit() {
               style={[styles.selectRow, isSelected && styles.selectRowActive]}
             >
               <View style={[styles.checkbox, isSelected && styles.checkboxOn]}>
-                {isSelected && <Check size={13} color={COLORS.white} strokeWidth={3.2} />}
+                {isSelected && <Check size={13} color={colors.surface} strokeWidth={3.2} />}
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.selectName} numberOfLines={1}>{item.product_name}</Text>
@@ -628,7 +627,7 @@ function BulkEdit() {
                 />
               </View>
               <View style={styles.quantityIconRow}>
-                <ArrowUpDown size={13} color={COLORS.secondaryText} strokeWidth={2} />
+                <ArrowUpDown size={13} color={colors.textSecondary} strokeWidth={2} />
                 <Text style={styles.quantityNote}>
                   Quantities never go below zero — an item with less than the amount removed simply
                   empties.
@@ -651,7 +650,7 @@ function BulkEdit() {
                 icon={Trash2}
                 onPress={confirmDelete}
                 loading={busy}
-                style={{ marginTop: SPACING.md }}
+                style={{ marginTop: spacing.md }}
               />
             </View>
           )}
@@ -662,58 +661,87 @@ function BulkEdit() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loadingBox: { paddingVertical: SPACING.xxl, alignItems: 'center' },
+  container: { flex: 1, backgroundColor: colors.screenBg },
+  loadingBox: { paddingVertical: spacing.xxl, alignItems: 'center' },
 
-  pasteCard: { padding: SPACING.md },
-  pasteInput: {
-    minHeight: 120, fontSize: 13, color: COLORS.text,
-    textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  pasteCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
   },
-  hint: { fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16, marginTop: SPACING.sm },
-  pasteActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
+  pasteInput: {
+    minHeight: 140, fontSize: 13, color: colors.textPrimary,
+    textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    backgroundColor: colors.screenBg,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  hint: { fontSize: 11.5, color: colors.textSecondary, lineHeight: 16, marginTop: spacing.sm },
+  pasteActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 
   previewCounts: { flexDirection: 'row', gap: 6 },
-  previewCard: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs },
+  previewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
   previewRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.divider,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  previewName: { fontSize: 13.5, fontWeight: '600', color: COLORS.text },
-  previewMeta: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 1 },
-  warnNote: { fontSize: 11.5, color: COLORS.warningText, marginTop: SPACING.sm, lineHeight: 16 },
+  previewName: { fontSize: 13.5, fontWeight: '600', color: colors.textPrimary },
+  previewMeta: { fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
+  warnNote: { fontSize: 11.5, color: colors.warning, marginTop: spacing.sm, lineHeight: 16 },
 
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADII.pill,
-    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.pill,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  chipText: { fontSize: 12.5, fontWeight: '600', color: COLORS.secondaryText },
-  chipTextActive: { color: COLORS.white },
+  chipActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
+  chipText: { fontSize: 12.5, fontWeight: '600', color: colors.textSecondary },
+  chipTextActive: { color: colors.surface },
 
-  selectAll: { fontSize: 12.5, fontWeight: '700', color: COLORS.primary },
+  selectAll: { fontSize: 12.5, fontWeight: '700', color: colors.primary },
   selectRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: COLORS.white, borderRadius: RADII.card, padding: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.divider,
+    backgroundColor: colors.surface, borderRadius: radii.lg, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+    ...shadow.card,
   },
-  selectRowActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  selectRowActive: { borderColor: colors.primary, backgroundColor: colors.mintBg },
   checkbox: {
     width: 22, height: 22, borderRadius: 6,
-    borderWidth: 1.5, borderColor: COLORS.divider,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.white,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
   },
-  checkboxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  selectName: { fontSize: 14.5, fontWeight: '700', color: COLORS.text },
-  selectMeta: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 2 },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  selectName: { fontSize: 14.5, fontWeight: '700', color: colors.textPrimary },
+  selectMeta: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
 
-  actionCard: { marginTop: SPACING.lg, padding: SPACING.md },
-  actionBody: { marginTop: SPACING.md },
-  actionLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginTop: SPACING.md },
-  quantityRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginTop: SPACING.sm },
-  quantityHint: { fontSize: 13, color: COLORS.secondaryText, fontWeight: '600' },
-  quantityActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
-  quantityIconRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: SPACING.md },
-  quantityNote: { flex: 1, fontSize: 11.5, color: COLORS.secondaryText, lineHeight: 16 },
+  actionCard: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  actionBody: { marginTop: spacing.md },
+  actionLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.md },
+  quantityRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
+  quantityHint: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  quantityActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  quantityIconRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.md },
+  quantityNote: { flex: 1, fontSize: 11.5, color: colors.textSecondary, lineHeight: 16 },
 });

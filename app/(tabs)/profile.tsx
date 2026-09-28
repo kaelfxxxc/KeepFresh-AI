@@ -5,15 +5,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { uploadAvatar } from '../../src/services/avatarService';
-import { COLORS, SPACING, RADII } from '../../src/theme';
+import { colors, radii, spacing, shadow } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
   Home, Store, Crown, Refrigerator, Tag, Users, Boxes,
 } from 'lucide-react-native';
-import { AvatarCircle, ListRow, PillButton, StatusBadge } from '../../src/components/ui';
+import {
+  AvatarCircle, ListRow, PillButton, StatusBadge, StatCard, SectionHeader,
+} from '../../src/components/ui';
 import { useSubscription } from '../../src/context/SubscriptionContext';
 import { describeStatus, daysRemaining } from '../../src/services/subscriptionService';
+import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 const MENU: { label: string; icon: any; path: string; hint?: string }[] = [
   { label: 'Account Settings', icon: UserRound, path: '/settings/account', hint: 'Personal information' },
@@ -33,6 +36,10 @@ interface Tool {
 }
 
 export default function ProfileScreen() {
+  // The page gutter. This screen's blocks each carried the margin themselves;
+  // moving it to the scroll container means the column is defined once and the
+  // centered avatar block needs no exception.
+  const { gutter } = usePageGutter();
   const { profile, signOut, updateProfile } = useAuth();
   const { entitlements, gates } = useSubscription();
   const insets = useSafeAreaInsets();
@@ -124,7 +131,7 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: contentInset }}
+        contentContainerStyle={{ paddingBottom: contentInset, paddingHorizontal: gutter }}
       >
         <Text style={styles.title}>Profile</Text>
 
@@ -134,7 +141,7 @@ export default function ProfileScreen() {
             <View>
               <AvatarCircle uri={avatarUri} initials={profile?.full_name} size={96} />
               <View style={styles.camBadge}>
-                <Camera size={14} color={COLORS.white} strokeWidth={2.4} />
+                <Camera size={14} color={colors.surface} strokeWidth={2.4} />
               </View>
             </View>
           </Pressable>
@@ -142,9 +149,9 @@ export default function ProfileScreen() {
           <Text style={styles.email}>{profile?.email || ''}</Text>
           <View style={styles.accountBadge}>
             {profile?.account_type === 'establishment' ? (
-              <Store size={14} color={COLORS.primary} strokeWidth={2.2} />
+              <Store size={14} color={colors.primary} strokeWidth={2.2} />
             ) : (
-              <Home size={14} color={COLORS.primary} strokeWidth={2.2} />
+              <Home size={14} color={colors.primary} strokeWidth={2.2} />
             )}
             <Text style={styles.accountBadgeText}>
               {profile?.account_type === 'establishment' ? 'Food Establishment' : 'Household'}
@@ -154,7 +161,7 @@ export default function ProfileScreen() {
 
         {/* Plan — its own block because the status badge is the point of it. */}
         <View style={styles.block}>
-          <Text style={styles.blockLabel}>Subscription</Text>
+          <SectionHeader title="Subscription" />
           <View style={styles.menuCard}>
             <ListRow
               icon={Crown}
@@ -163,12 +170,34 @@ export default function ProfileScreen() {
               onPress={() => router.push('/subscription')}
               right={<StatusBadge label={planStatus.label} tone={planStatus.tone} />}
             />
+            {entitlements && entitlements.is_active && (
+              <View style={styles.usageRow}>
+                <StatCard
+                  index={0}
+                  icon={Home}
+                  title="Products"
+                  value={`${entitlements.products_used} / ${entitlements.max_products}`}
+                  caption="Items tracked"
+                  iconBg={colors.primary}
+                  style={styles.usageCard}
+                />
+                <StatCard
+                  icon={Tag}
+                  title="AI Scans"
+                  value={`${entitlements.ai_scans_used} / ${entitlements.max_ai_scans}`}
+                  caption="This month"
+                  iconBg={colors.warning}
+                  index={1}
+                  style={styles.usageCard}
+                />
+              </View>
+            )}
           </View>
         </View>
 
         {/* Tools — the plan-gated ones appear with the tier that unlocks them. */}
         <View style={styles.block}>
-          <Text style={styles.blockLabel}>{isEstablishment ? 'Stock & team' : 'Inventory tools'}</Text>
+          <SectionHeader title={isEstablishment ? 'Stock & team' : 'Inventory tools'} />
           <View style={styles.menuCard}>
             {tools.map((item, i) => (
               <View key={item.path}>
@@ -187,7 +216,7 @@ export default function ProfileScreen() {
 
         {/* Menu */}
         <View style={styles.block}>
-          <Text style={styles.blockLabel}>Settings</Text>
+          <SectionHeader title="Settings" />
           <View style={styles.menuCard}>
             {MENU.map((item, i) => (
               <View key={item.path}>
@@ -203,7 +232,7 @@ export default function ProfileScreen() {
           variant="dangerOutline"
           icon={LogOut}
           onPress={handleSignOut}
-          style={{ marginHorizontal: SPACING.lg, marginTop: SPACING.md }}
+          style={{ marginTop: spacing.md }}
         />
       </ScrollView>
     </View>
@@ -211,36 +240,43 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, backgroundColor: colors.screenBg },
   // The scroll view fills the wrapper; the inset lives on the wrapper's padding.
   scroll: { flex: 1 },
-  title: { fontSize: 26, fontWeight: '800', color: COLORS.text, paddingHorizontal: SPACING.lg, paddingBottom: SPACING.md },
-  identityCard: { alignItems: 'center', paddingBottom: SPACING.lg },
+  title: { fontSize: 26, fontWeight: '800', color: colors.textPrimary, paddingBottom: spacing.md },
+  identityCard: { alignItems: 'center', paddingBottom: spacing.lg },
   camBadge: {
     position: 'absolute', right: 0, bottom: 0,
-    width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.primary,
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: COLORS.background,
+    borderWidth: 2, borderColor: colors.screenBg,
   },
-  name: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm },
-  email: { fontSize: 13, color: COLORS.secondaryText, marginTop: 2 },
+  name: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.sm },
+  email: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   accountBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: SPACING.sm,
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: RADII.icon,
+    marginTop: spacing.sm,
+    backgroundColor: colors.mintBg,
+    borderRadius: radii.pill,
     paddingVertical: 5, paddingHorizontal: 12,
   },
-  accountBadgeText: { color: COLORS.primaryDark, fontSize: 13, fontWeight: '800' },
-  block: { paddingHorizontal: SPACING.lg, marginBottom: SPACING.lg },
-  blockLabel: {
-    fontSize: 13, fontWeight: '700', color: COLORS.secondaryText,
-    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.sm,
-  },
+  accountBadgeText: { color: colors.primaryDark, fontSize: 13, fontWeight: '800' },
+  block: { marginBottom: spacing.lg },
   menuCard: {
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs,
-    ...({ borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.divider } as any),
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    ...shadow.card,
   },
-  sep: { height: StyleSheet.hairlineWidth, backgroundColor: COLORS.divider, marginLeft: 52 },
+  // Side by side only while each card can hold its icon, counter and caption.
+  //
+  // These sit inside `menuCard`, which has already taken its horizontal padding,
+  // so on a phone two cards leave a text column narrower than the counter it has
+  // to print — `0 / 100` and "Items tracked" both truncated. `flexBasis` is what
+  // Yoga measures when deciding where to break a wrapping row, so the row wraps
+  // and the cards stack full width instead; they still grow to share a line
+  // whenever the screen is wide enough for both. The other StatCard grids (the
+  // dashboard) are on a bare page and print short values, so they are unaffected.
+  usageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  usageCard: { flexBasis: 200, minWidth: 200 },
+  sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 52 },
 });

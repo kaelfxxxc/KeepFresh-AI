@@ -43,8 +43,8 @@ import {
 } from 'lucide-react-native';
 import { supabase } from '../../src/lib/supabase';
 import { useSubscription } from '../../src/context/SubscriptionContext';
-import { COLORS, RADII, SPACING } from '../../src/theme';
-import { PillButton, Field } from '../../src/components/ui';
+import { colors, radii, spacing } from '../../src/theme';
+import { PillButton, Field, IconBadge, colorWithOpacity } from '../../src/components/ui';
 import {
   lookupBarcode,
   mapBarcodeCategory,
@@ -286,11 +286,13 @@ export default function GroceryScanScreen() {
 
   const gateState = (
     <View style={styles.centerState}>
-      <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+      <IconBadge color={colors.primary} size={88}>
+        <ScanBarcode size={40} color={colors.primary} strokeWidth={1.8} />
+      </IconBadge>
       <Text style={styles.stateTitle}>{gates.aiScan.title}</Text>
       <Text style={styles.stateText}>{gates.aiScan.message}</Text>
       <Pressable style={styles.primaryBtn} onPress={() => router.push('/subscription')}>
-        <Sparkles size={16} color={COLORS.white} strokeWidth={2.2} />
+        <Sparkles size={16} color={colors.surface} strokeWidth={2.2} />
         <Text style={styles.primaryBtnText}>See plans</Text>
       </Pressable>
       <Pressable style={styles.textBtn} onPress={() => openManual('', null)} hitSlop={8}>
@@ -301,7 +303,9 @@ export default function GroceryScanScreen() {
 
   const deniedState = (
     <View style={styles.centerState}>
-      <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+      <IconBadge color={colors.primary} size={88}>
+        <ScanBarcode size={40} color={colors.primary} strokeWidth={1.8} />
+      </IconBadge>
       <Text style={styles.stateTitle}>Camera access needed</Text>
       <Text style={styles.stateText}>
         To scan a product, allow camera access for KeepFresh AI in your device settings. You can
@@ -318,7 +322,7 @@ export default function GroceryScanScreen() {
 
   const loadingState = (
     <View style={styles.centerState}>
-      <ActivityIndicator color={COLORS.primary} />
+      <ActivityIndicator color={colors.primary} />
       <Text style={styles.stateText}>Requesting camera permission…</Text>
     </View>
   );
@@ -358,7 +362,9 @@ export default function GroceryScanScreen() {
 
       {!listId ? (
         <View style={styles.centerState}>
-          <ScanBarcode size={44} color={COLORS.secondaryText} strokeWidth={1.5} />
+          <IconBadge color={colors.primary} size={88}>
+            <ScanBarcode size={40} color={colors.primary} strokeWidth={1.8} />
+          </IconBadge>
           <Text style={styles.stateTitle}>No list selected</Text>
           <Text style={styles.stateText}>
             Open the grocery list you want to add to, then start the scanner from there.
@@ -384,13 +390,13 @@ export default function GroceryScanScreen() {
           onPress={() => (draft ? closeDraft() : router.back())}
           hitSlop={10}
         >
-          <X size={22} color={COLORS.white} strokeWidth={2.4} />
+          <X size={22} color={colors.surface} strokeWidth={2.4} />
         </Pressable>
       )}
 
       {loading && (
         <View style={[styles.loadingPill, { top: insets.top + 16 }]}>
-          <ActivityIndicator color={COLORS.white} size="small" />
+          <ActivityIndicator color={colors.surface} size="small" />
           <Text style={styles.loadingText}>Looking up…</Text>
         </View>
       )}
@@ -410,8 +416,10 @@ export default function GroceryScanScreen() {
         hasPermission &&
         scanningEnabled &&
         !!listId && (
-          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + SPACING.md }]}>
-            <QrCode size={26} color={COLORS.primary} strokeWidth={2} />
+          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+            <IconBadge color={colors.primary} size={56}>
+              <QrCode size={26} color={colors.primary} strokeWidth={2} />
+            </IconBadge>
             <Text style={styles.sheetTitle}>Scan into your list</Text>
             <Text style={styles.sheetSubtitle}>
               {listName ? `Adding to “${listName}”.` : 'Adding to your grocery list.'} Scan a
@@ -424,11 +432,11 @@ export default function GroceryScanScreen() {
             )}
             <View style={styles.actionRow}>
               <Pressable style={[styles.modeBtn, styles.modePrimary]} onPress={() => openManual('', null)}>
-                <PenLine size={17} color={COLORS.white} strokeWidth={2.2} />
+                <PenLine size={17} color={colors.surface} strokeWidth={2.2} />
                 <Text style={styles.modePrimaryText}>Type it in</Text>
               </Pressable>
               <Pressable style={styles.modeBtn} onPress={() => setScanned(false)}>
-                <ScanBarcode size={17} color={COLORS.primary} strokeWidth={2.2} />
+                <ScanBarcode size={17} color={colors.primary} strokeWidth={2.2} />
                 <Text style={styles.modeText}>Scan again</Text>
               </Pressable>
             </View>
@@ -465,16 +473,20 @@ function ReviewSheet({
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.reviewSheet, { paddingBottom: insetsBottom + SPACING.md }]}>
+      <View style={[styles.reviewSheet, { paddingBottom: insetsBottom + spacing.md }]}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.productHead}>
-            <View style={styles.productThumb}>
+            <IconBadge
+              color={colors.primary}
+              size={56}
+              style={{ borderRadius: radii.sm, overflow: 'hidden' }}
+            >
               {draft.imageUrl ? (
                 <Image source={{ uri: draft.imageUrl }} style={styles.thumbImage} resizeMode="contain" />
               ) : (
-                <Package size={24} color={COLORS.primary} strokeWidth={1.8} />
+                <Package size={24} color={colors.primary} strokeWidth={1.8} />
               )}
-            </View>
+            </IconBadge>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.productTitle} numberOfLines={2}>
                 {draft.name || 'New item'}
@@ -504,11 +516,11 @@ function ReviewSheet({
                 disabled={saving || draft.quantity <= 1}
                 hitSlop={6}
               >
-                <Minus size={16} color={draft.quantity <= 1 ? COLORS.secondaryText : COLORS.primary} strokeWidth={2.6} />
+                <Minus size={16} color={draft.quantity <= 1 ? colors.textSecondary : colors.primary} strokeWidth={2.6} />
               </Pressable>
               <Text style={styles.qtyValue}>{draft.quantity}</Text>
               <Pressable style={styles.stepBtn} onPress={() => step(1)} disabled={saving} hitSlop={6}>
-                <Plus size={16} color={COLORS.primary} strokeWidth={2.6} />
+                <Plus size={16} color={colors.primary} strokeWidth={2.6} />
               </Pressable>
               <Text style={styles.qtyUnit}>{draft.unit}</Text>
             </View>
@@ -535,7 +547,7 @@ function ReviewSheet({
                   disabled={saving}
                   style={[styles.chip, styles.categoryChip, active && styles.chipActive]}
                 >
-                  <Icon size={14} color={active ? COLORS.white : COLORS.secondaryText} strokeWidth={2.2} />
+                  <Icon size={14} color={active ? colors.surface : colors.textSecondary} strokeWidth={2.2} />
                   <Text style={[styles.chipText, active && styles.chipTextActive]}>
                     {CATEGORY_LABELS[key]}
                   </Text>
@@ -562,22 +574,29 @@ function ReviewSheet({
 }
 
 const CORNER = 30;
+
+// Drawn over the live camera preview, so these stay literal: a palette change
+// must not repaint the scrim sitting on top of a video feed.
+const OVERLAY_SCRIM = 'rgba(0,0,0,0.55)';
+const OVERLAY_BTN = 'rgba(0,0,0,0.45)';
+const OVERLAY_PILL = 'rgba(0,0,0,0.6)';
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
   centerState: {
-    flex: 1, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: SPACING.xl, gap: 8,
+    flex: 1, backgroundColor: colors.screenBg, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: spacing.xl, gap: spacing.md,
   },
-  stateTitle: { fontSize: 18, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm, textAlign: 'center' },
-  stateText: { fontSize: 14, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 20 },
+  stateTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.sm, textAlign: 'center' },
+  stateText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   primaryBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.primary,
-    borderRadius: RADII.pill, paddingHorizontal: SPACING.lg, paddingVertical: 12, marginTop: SPACING.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary,
+    borderRadius: radii.pill, paddingHorizontal: spacing.lg, paddingVertical: 12, marginTop: spacing.md,
   },
-  primaryBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 15 },
-  textBtn: { paddingVertical: SPACING.sm },
-  textBtnLabel: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
+  primaryBtnText: { color: colors.surface, fontWeight: '700', fontSize: 15 },
+  textBtn: { paddingVertical: spacing.sm },
+  textBtnLabel: { color: colors.primary, fontWeight: '700', fontSize: 14 },
 
   cameraWrap: { flex: 1 },
   camera: { flex: 1 },
@@ -585,80 +604,78 @@ const styles = StyleSheet.create({
     position: 'absolute', left: 0, right: 0, top: '22%', bottom: '38%',
     alignItems: 'center', justifyContent: 'center',
   },
-  corner: { position: 'absolute', width: CORNER, height: CORNER, borderColor: COLORS.scanCorner },
+  corner: { position: 'absolute', width: CORNER, height: CORNER, borderColor: '#FFFFFF' },
   cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 14 },
   cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 14 },
   cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 14 },
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 14 },
   topHint: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   hintText: {
-    color: COLORS.white, fontSize: 13, fontWeight: '600',
-    backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 50, overflow: 'hidden',
+    color: colors.surface, fontSize: 13, fontWeight: '600',
+    backgroundColor: OVERLAY_SCRIM, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: radii.pill, overflow: 'hidden',
   },
 
   closeBtn: {
-    position: 'absolute', right: SPACING.lg, width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', right: spacing.lg, width: 40, height: 40, borderRadius: radii.pill,
+    backgroundColor: OVERLAY_BTN, alignItems: 'center', justifyContent: 'center',
   },
   loadingPill: {
-    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 9, borderRadius: RADII.pill,
+    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: OVERLAY_PILL, paddingHorizontal: 16, paddingVertical: 9, borderRadius: radii.pill,
   },
-  loadingText: { color: COLORS.white, fontSize: 13, fontWeight: '600' },
+  loadingText: { color: colors.surface, fontSize: 13, fontWeight: '600' },
 
   bottomSheet: {
-    backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, alignItems: 'center',
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg,
+    paddingHorizontal: spacing.xl, paddingTop: spacing.lg, alignItems: 'center',
     marginTop: 'auto',
   },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: COLORS.text, marginTop: SPACING.sm },
-  sheetSubtitle: { fontSize: 13, color: COLORS.secondaryText, textAlign: 'center', lineHeight: 18, marginTop: 4 },
-  quota: { fontSize: 11.5, color: COLORS.secondaryText, marginTop: 6 },
-  actionRow: { flexDirection: 'row', gap: SPACING.sm, alignSelf: 'stretch', marginTop: SPACING.md },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.md },
+  sheetSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
+  quota: { fontSize: 11.5, color: colors.textSecondary, marginTop: 6 },
+  actionRow: { flexDirection: 'row', gap: spacing.sm, alignSelf: 'stretch', marginTop: spacing.md },
   modeBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    height: 48, borderRadius: 50, borderWidth: 1.5, borderColor: COLORS.primary, backgroundColor: COLORS.white,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    height: 48, borderRadius: radii.pill, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface,
   },
-  modePrimary: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  modeText: { color: COLORS.primary, fontWeight: '700', fontSize: 14 },
-  modePrimaryText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  modePrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
+  modePrimaryText: { color: colors.surface, fontWeight: '700', fontSize: 14 },
 
   reviewSheet: {
-    backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, marginTop: 'auto', maxHeight: '78%',
+    backgroundColor: colors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg,
+    paddingHorizontal: spacing.xl, paddingTop: spacing.lg, marginTop: 'auto', maxHeight: '78%',
   },
-  productHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: SPACING.md },
-  productThumb: {
-    width: 56, height: 56, borderRadius: RADII.icon, backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
+  productHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   thumbImage: { width: 48, height: 48 },
-  productTitle: { fontSize: 17, fontWeight: '800', color: COLORS.text },
-  productMeta: { fontSize: 12, color: COLORS.secondaryText, marginTop: 2 },
-  productList: { fontSize: 11.5, color: COLORS.primary, fontWeight: '600', marginTop: 3 },
+  productTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },
+  productMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  productList: { fontSize: 11.5, color: colors.primary, fontWeight: '600', marginTop: 3 },
 
-  qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: SPACING.sm },
-  qtyLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
+  qtyLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   stepBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.primaryLight,
+    width: 34, height: 34, borderRadius: radii.pill, backgroundColor: colorWithOpacity(colors.primary, 0.15),
     alignItems: 'center', justifyContent: 'center',
   },
-  stepBtnOff: { backgroundColor: COLORS.mutedBg },
-  qtyValue: { fontSize: 16, fontWeight: '800', color: COLORS.text, minWidth: 24, textAlign: 'center' },
-  qtyUnit: { fontSize: 13, color: COLORS.secondaryText },
+  stepBtnOff: { backgroundColor: colorWithOpacity(colors.textSecondary, 0.12) },
+  qtyValue: { fontSize: 16, fontWeight: '800', color: colors.textPrimary, minWidth: 24, textAlign: 'center' },
+  qtyUnit: { fontSize: 13, color: colors.textSecondary },
 
-  pickLabel: { fontSize: 13, fontWeight: '700', color: COLORS.text, marginTop: SPACING.md },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
+  pickLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginTop: spacing.md },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   chip: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADII.pill,
-    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.divider,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: radii.pill,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  // Chosen reads as the darkest green, the same rule the filter chips and the
+  // preferences screen follow.
+  chipActive: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
   categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chipText: { fontSize: 12.5, fontWeight: '600', color: COLORS.secondaryText },
-  chipTextActive: { color: COLORS.white },
+  chipText: { fontSize: 12.5, fontWeight: '600', color: colors.textSecondary },
+  chipTextActive: { color: colors.surface },
 
-  sheetActions: { flexDirection: 'row', gap: SPACING.sm, paddingTop: SPACING.md },
+  sheetActions: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
 });

@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
-import { COLORS, RADII } from '../theme';
+import { colors, radii } from '../theme';
+import { colorWithOpacity } from './ui';
 
 /**
  * The dish emoji standing in for a category. Deliberately the same vocabulary as
@@ -23,19 +24,27 @@ export function recipeEmoji(category?: string | null): string {
   }
 }
 
-/** The tint behind that emoji. */
+/**
+ * The tint behind that emoji.
+ *
+ * Three of these are pastels the palette has no name for — a rose, a sand and a
+ * sky — and that is deliberate: they label a *category*, not a status, so they
+ * must not read as the app's green/amber/red. Reusing `colors.warning` for
+ * snacks would put an "expiring" colour on a biscuit. Only the two categories
+ * that genuinely echo a palette hue borrow one.
+ */
 export function recipeTint(category?: string | null): string {
   switch (category) {
     case 'desserts':
       return '#FCE9EF';
     case 'meals':
-      return COLORS.primaryLight;
+      return colors.mintBg;
     case 'snacks':
       return '#FFF3E0';
     case 'beverages':
       return '#E8F1FD';
     default:
-      return COLORS.mutedBg;
+      return colorWithOpacity(colors.textSecondary, 0.12);
   }
 }
 
@@ -79,7 +88,7 @@ export function RecipeImage({
   category,
   width,
   height,
-  radius = RADII.image,
+  radius = radii.md,
   emojiSize,
   style,
 }: {
@@ -142,7 +151,7 @@ export function RecipeImage({
 
       {!failed && !visible && slow && (
         <View style={[StyleSheet.absoluteFill, styles.spinner]}>
-          <ActivityIndicator color={COLORS.primary} />
+          <ActivityIndicator color={colors.primary} />
         </View>
       )}
     </View>

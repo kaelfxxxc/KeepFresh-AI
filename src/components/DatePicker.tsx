@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { COLORS, RADII, SHADOW, SPACING } from '../theme';
-import { PillButton } from './ui';
+import { colors, radii, spacing, shadow, overlay } from '../theme';
+import { PillButton, colorWithOpacity } from './ui';
 import { dateKey, parseDateKey, todayKey } from '../utils/dateKey';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -131,7 +131,7 @@ export function DatePickerModal({
               accessibilityLabel="Previous month"
               style={[styles.navBtn, atFloor && styles.navBtnOff]}
             >
-              <ChevronLeft size={19} strokeWidth={2.4} color={atFloor ? COLORS.divider : COLORS.text} />
+              <ChevronLeft size={19} strokeWidth={2.4} color={atFloor ? colors.border : colors.textPrimary} />
             </Pressable>
 
             <Text style={styles.monthLabel}>{MONTHS[cursor.m]} {cursor.y}</Text>
@@ -144,7 +144,7 @@ export function DatePickerModal({
               accessibilityLabel="Next month"
               style={[styles.navBtn, atCeiling && styles.navBtnOff]}
             >
-              <ChevronRight size={19} strokeWidth={2.4} color={atCeiling ? COLORS.divider : COLORS.text} />
+              <ChevronRight size={19} strokeWidth={2.4} color={atCeiling ? colors.border : colors.textPrimary} />
             </Pressable>
           </View>
 
@@ -235,42 +235,42 @@ export function DatePickerModal({
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center', padding: SPACING.lg,
+    flex: 1, backgroundColor: overlay,
+    alignItems: 'center', justifyContent: 'center', padding: spacing.lg,
   },
   card: {
     width: '100%', maxWidth: 400,
-    backgroundColor: COLORS.white, borderRadius: RADII.card,
-    padding: SPACING.lg, ...SHADOW.card,
+    backgroundColor: colors.surface, borderRadius: radii.lg,
+    padding: spacing.lg, ...shadow.card,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   navBtn: {
-    width: 36, height: 36, borderRadius: RADII.pill,
+    width: 36, height: 36, borderRadius: radii.pill,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.mutedBg,
+    backgroundColor: colorWithOpacity(colors.textSecondary, 0.12),
   },
   navBtnOff: { backgroundColor: 'transparent' },
-  monthLabel: { fontSize: 16, fontWeight: '800', color: COLORS.text },
-  title: { fontSize: 12.5, color: COLORS.secondaryText, textAlign: 'center', marginTop: 6 },
-  weekRow: { flexDirection: 'row', marginTop: SPACING.md },
+  monthLabel: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  title: { fontSize: 12.5, color: colors.textSecondary, textAlign: 'center', marginTop: 6 },
+  weekRow: { flexDirection: 'row', marginTop: spacing.md },
   weekday: {
     flex: 1, textAlign: 'center',
-    fontSize: 11, fontWeight: '700', color: COLORS.secondaryText,
+    fontSize: 11, fontWeight: '700', color: colors.textSecondary,
   },
   grid: { marginTop: 4 },
   week: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', paddingVertical: 3 },
   day: {
-    width: 36, height: 36, borderRadius: RADII.pill,
+    width: 36, height: 36, borderRadius: radii.pill,
     alignItems: 'center', justifyContent: 'center',
   },
-  dayToday: { borderWidth: 1.5, borderColor: COLORS.primary },
-  daySelected: { backgroundColor: COLORS.primary },
-  dayText: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  dayTextToday: { color: COLORS.primary, fontWeight: '800' },
-  dayTextSelected: { color: COLORS.white, fontWeight: '800' },
-  dayTextDisabled: { color: COLORS.divider },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginTop: SPACING.lg },
+  dayToday: { borderWidth: 1.5, borderColor: colors.primary },
+  daySelected: { backgroundColor: colors.primary },
+  dayText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  dayTextToday: { color: colors.primary, fontWeight: '800' },
+  dayTextSelected: { color: colors.surface, fontWeight: '800' },
+  dayTextDisabled: { color: colors.border },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   clearBtn: { paddingHorizontal: 6, paddingVertical: 8 },
-  clearText: { fontSize: 13, fontWeight: '700', color: COLORS.danger },
+  clearText: { fontSize: 13, fontWeight: '700', color: colors.danger },
 });

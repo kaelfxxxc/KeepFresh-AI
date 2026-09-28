@@ -198,6 +198,29 @@ export const recipeService = {
     return generated > 0 ? { status: 'ok', generated } : { status: 'nothing_to_cook' };
   },
 
+  /** Remove the current AI suggestions while keeping recipes the user saved. */
+  async clearAISuggestions(userId: string): Promise<void> {
+    const { data: favourites, error: favouriteError } = await supabase
+      .from('favorite_recipes')
+      .select('recipe_id')
+      .eq('user_id', userId);
+    if (favouriteError) throw favouriteError;
+
+    const keep = (favourites ?? []).map((row: { recipe_id: string }) => row.recipe_id);
+    let query = supabase
+      .from('recipes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('source', 'ai');
+
+    if (keep.length > 0) {
+      query = query.not('id', 'in', `(${keep.map((id) => `"${id}"`).join(',')})`);
+    }
+
+    const { error } = await query;
+    if (error) throw error;
+  },
+
   /** Whether the heart on this recipe is filled. */
   async isFavorite(userId: string, recipeId: string): Promise<boolean> {
     const { data, error } = await supabase

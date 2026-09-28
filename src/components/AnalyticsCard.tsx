@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS, SPACING } from '../theme';
+import { colors, radii, spacing, shadow } from '../../theme';
 
 interface AnalyticsCardProps {
   data: { label: string; value: string | number; subtitle?: string; icon?: string };
@@ -20,15 +20,11 @@ export const AnalyticsCard = ({ data }: AnalyticsCardProps) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: SPACING.lg,
-    marginBottom: SPACING.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadow.card,
   },
   content: {
     flexDirection: 'row',
@@ -37,16 +33,16 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: COLORS.secondaryText,
+    color: colors.textSecondary,
   },
   value: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: colors.textPrimary,
   },
   subtitle: {
     fontSize: 12,
-    color: COLORS.secondaryText,
+    color: colors.textSecondary,
     marginTop: 2,
   },
 });

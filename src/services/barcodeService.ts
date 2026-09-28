@@ -1,12 +1,19 @@
-// barcodeService — talks to the barcode-lookup edge function (which keeps the
-// Barcode Lookup API key server-side) and maps its payload onto the shapes the
-// app's screens expect. Pure helpers live here so the scan screens stay thin.
+// barcodeService — looks a scanned barcode up in Open Food Facts and maps the
+// payload onto the shapes the app's screens expect. Pure helpers live here so
+// the scan screens stay thin.
+//
+// The lookup is a plain HTTPS GET the device makes itself. It used to go through
+// the `barcode-lookup` edge function, which proxied Barcode Lookup (an API that
+// needed a key and a paid plan); Open Food Facts needs neither, so the key, the
+// secret and the round trip through our own function are all gone. The function
+// is still deployed and still meters, for builds in the field that predate this
+// change — it now proxies Open Food Facts too.
 
 import { supabase } from '../lib/supabase';
 import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 import { resolveCategory } from '../utils/categoryIcons';
 
-/** Trimmed product as returned by the barcode-lookup edge function. */
+/** Trimmed product, in the one shape every scan screen reads. */
 export interface BarcodeProduct {
   barcode: string;
   title: string | null;
@@ -125,42 +132,106 @@ export async function invokeScanFunction(
 }
 
 /**
- * Ask the server to look a barcode up.
+ * The Open Food Facts fields asked for, as one comma-separated list.
  *
- * One AI scan is charged server-side per answered lookup, so `limit_reached`
- * means the plan's monthly allowance is spent. Check `gates.aiScan` before
- * opening the camera to show the upgrade prompt instead of the failure.
+ * The API returns the whole product document when `fields` is omitted — 50 to
+ * 200 KB of photos, packaging and per-country taxonomies, none of which the app
+ * reads. On a phone on mobile data that is the slowest part of a scan for no
+ * gain, so the request names exactly the fields `BarcodeProduct` is built from.
+ */
+const OFF_FIELDS = [
+  'code',
+  'product_name',
+  'generic_name',
+  'brands',
+  'quantity',
+  'ingredients_text',
+  'categories',
+  'image_front_url',
+  'image_url',
+].join(',');
+
+/**
+ * Open Food Facts asks every client to identify itself by user agent; anonymous
+ * traffic from shared addresses is what their rate limiter throttles. Purely
+ * cosmetic — the lookup answers without it.
+ */
+const OFF_USER_AGENT = 'KeepFreshAI/1.0 (https://keepfresh.ai)';
+
+/**
+ * The subset of an Open Food Facts product document the app asks for.
+ *
+ * `categories_tags` is deliberately not among them even though it is the same
+ * taxonomy in normalised English, which reads like the better source for a
+ * non-English entry. Open Food Facts tags nearly every product with its broad
+ * parent categories ("en:fruits-and-vegetables-based-foods"), and a keyword
+ * matcher cannot tell a parent from a leaf, so the tags win the match and
+ * mislabel the product — worse than the plain-language `categories` below.
+ */
+interface OffProduct {
+  product_name?: string;
+  generic_name?: string;
+  brands?: string;
+  quantity?: string;
+  ingredients_text?: string;
+  categories?: string;
+  image_front_url?: string;
+  image_url?: string;
+}
+
+/**
+ * Look a barcode up in Open Food Facts.
+ *
+ * No API key and no server in the middle: `world.openfoodfacts.org` answers
+ * unauthenticated GETs over HTTPS. Note that this means the lookup is not
+ * metered — see the plan's AI-scan allowance, which `barcode-lookup` charges but
+ * this direct call does not. Check `gates.aiScan` before opening the camera.
  */
 export async function lookupBarcode(barcode: string): Promise<LookupResult> {
   try {
     const response = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
+      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=${OFF_FIELDS}`,
+      { headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' } },
     );
+
+    // v2 answers 404 for a barcode it has never seen. That is an answer, not an
+    // outage, and the scan screen has a different thing to say about each.
+    if (response.status === 404) return { status: 'not_found' };
     if (!response.ok) return { status: 'unavailable' };
 
-    const data = await response.json() as {
-      status?: number;
-      product?: {
-        product_name?: string;
-        brands?: string;
-        image_url?: string;
-      };
-    };
+    const body = (await response.json()) as { status?: number; product?: OffProduct };
+    // `status: 0` arrives with a 200 for a malformed code. A document with no
+    // name at all is treated the same way: the review screen would open on an
+    // empty form, and a saved item with a blank name is worse than being told
+    // nothing was found.
+    const product = body.status === 1 ? body.product : undefined;
+    if (!product || !(product.product_name || product.generic_name)) {
+      return { status: 'not_found' };
+    }
 
-    if (data.status !== 1) return { status: 'not_found' };
+    // `generic_name` is a descriptive line ("Hazelnut spread with cocoa"), not a
+    // second name. It stands in for a missing product name, and otherwise fills
+    // the review screen's description block — never both, which would print the
+    // same sentence twice on one screen.
+    const title = product.product_name || product.generic_name || null;
+    const description = product.product_name ? product.generic_name || null : null;
 
     return {
       status: 'found',
       product: {
         barcode,
-        title: data.product?.product_name || null,
-        brand: data.product?.brands || null,
+        title,
+        brand: product.brands || null,
+        // Open Food Facts has no manufacturer field, and `brands` is what the
+        // review screen falls back to anyway.
         manufacturer: null,
-        category: null,
-        description: null,
-        ingredients: null,
-        image_url: data.product?.image_url || null,
-        size: null,
+        category: product.categories || null,
+        description,
+        ingredients: product.ingredients_text || null,
+        // The front-of-pack shot, not `image_url` — that one is often a photo of
+        // the label's back or the packaging lying on a table.
+        image_url: product.image_front_url || product.image_url || null,
+        size: product.quantity || null,
       },
     };
   } catch (error) {
@@ -176,10 +247,13 @@ export async function lookupBarcode(barcode: string): Promise<LookupResult> {
  *
  * The matching itself lives in `categoryIcons.resolveCategory`, which is the one
  * place in the app that knows the vocabulary. This function only strips the
- * generic market segment Barcode Lookup prepends to every grocery path
+ * generic market segment Barcode Lookup prepended to every grocery path
  * ("Food, Beverages & Tobacco > Beverages > Soda"), because leaving it in lets
  * the trailing root "Beverages" out-vote a more specific later segment
- * ("… > Dairy > Cheese" must be dairy, not beverages).
+ * ("… > Dairy > Cheese" must be dairy, not beverages). Open Food Facts sends a
+ * comma-separated list instead and never carries that prefix — the strip is left
+ * in place for the rows still stored from the old provider, and because a
+ * segment that is not there costs nothing to remove.
  */
 export function mapBarcodeCategory(rawPath: string | null | undefined): string {
   const text = (rawPath ?? '')

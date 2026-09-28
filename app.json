@@ -3,7 +3,7 @@
     "name": "KeepFresh AI",
     "slug": "keepfresh-ai",
     "owner": "alvingwapo",
-    "version": "1.0.0",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icons/keepfresh-ai-icon.png",
     "userInterfaceStyle": "light",

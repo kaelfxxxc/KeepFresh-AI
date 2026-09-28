@@ -23,7 +23,7 @@ supabase/
 │   ├── _shared/             # cors + admin client + PayMongo helpers used by all functions
 │   ├── expiration-notifier/ # daily cron: finds items expiring within each user's window, logs nudge
 │   ├── recipe-suggestions/  # real pantry-to-recipe matching (scores coverage, "can cook now?")
-│   ├── barcode-lookup/      # scan auto-fill: proxies Barcode Lookup API (key stays server-side), meters one AI scan per answered lookup
+│   ├── barcode-lookup/      # scan auto-fill: proxies Open Food Facts (no key), meters one AI scan per answered lookup
 │   ├── weekly-summary/      # 7-day stats: used / wasted / estimated savings / expiring soon
 │   ├── subscription-verify/ # activates a paid plan from a Play / App Store receipt
 │   ├── paymongo-checkout/   # opens a PayMongo hosted checkout page for a plan
@@ -148,22 +148,35 @@ supabase functions deploy expiration-notifier recipe-suggestions weekly-summary 
 - `expiration-notifier` needs no JWT so the scheduler can call it.
 - `paymongo-webhook` needs no JWT either, and for a different reason — see below.
 
-`barcode-lookup` proxies the Barcode Lookup API (api.barcodelookup.com) that
-powers the Scan screen's auto-fill. Its key must be set as a **server-side
-secret** — never prefix it with `EXPO_PUBLIC_` in `.env` (that would ship it in
-the app bundle). Copy the value already in your `.env`
-(`BARCODE_SCANNER_API_KEY`) into Supabase once:
+`barcode-lookup` proxies Open Food Facts (world.openfoodfacts.org), the open
+database behind the Scan screen's auto-fill. It needs **no secret and no key**:
+the API answers unauthenticated HTTPS GETs, so there is nothing to set and the
+app calls it straight from the device. It stays deployed on two accounts —
+builds in the field still call it, and it is the only path that meters.
 
-```bash
-supabase secrets set BARCODE_SCANNER_API_KEY="<value from .env>"
-```
-
-The same function meters **one AI scan** per answered lookup by calling
+The function meters **one AI scan** per answered lookup by calling
 `consume_ai_scan` with the caller's own token, so the monthly allowance in the
 plan (10 / 50 / 100 / 300) is enforced on the server and cannot be bypassed by
 a modified client. It answers `429 { error: "ai_scan_limit_reached" }` when the
 allowance is spent; the app turns that into the upgrade prompt. Upstream
 outages are not charged.
+
+> It previously proxied Barcode Lookup (api.barcodelookup.com), whose key lived
+> here as the `BARCODE_SCANNER_API_KEY` secret. That plan has lapsed. If the
+> secret is still set in the project, delete it — nothing reads it:
+>
+> ```bash
+> supabase secrets unset BARCODE_SCANNER_API_KEY
+> ```
+
+**Metering gap to be aware of.** The app's own barcode lookup (`lookupBarcode`
+in `src/services/barcodeService.ts`) fetches Open Food Facts directly, because
+there is no longer a key to hide and no reason to add a round trip. That call is
+**not** metered: the Scan screen still *gates* on the allowance — a plan with no
+scans left cannot open the camera — but a barcode lookup no longer *spends* one.
+The two only agree for clients that go through this function. Decide which
+behaviour is wanted and make both paths match: either point `lookupBarcode` back
+at this function, or drop the gate from the scan screen.
 
 ### Payment verification (`subscription-verify`)
 

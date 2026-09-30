@@ -77,40 +77,9 @@ function bucketLabel(instant: Moment, unit: BucketUnit): string {
   return unit === 'month' ? instant.format('MMM') : instant.format('D');
 }
 
-/** Which calendar day an instant fell on, in the app's timezone. */
-function dayInAppZone(wastedAt: string): Moment {
-  return moment.utc(wastedAt).tz(APP_TIMEZONE);
-}
-
-/**
- * The `YYYY-MM` month an instant fell in, in the app's timezone.
- *
- * The same shift the buckets use, so a row counted beside the chart and a row
- * drawn in it agree on which month they belong to.
- */
-export function monthKeyOf(wastedAt: string): string {
-  return dayInAppZone(wastedAt).format('YYYY-MM');
-}
-
-/** The `YYYY-MM` key of the month `offset` months from this one, in the app's timezone. */
-export function monthKeyIn(offset: number): string {
-  return moment.tz(todayKey(), APP_TIMEZONE).startOf('day').add(offset, 'month').format('YYYY-MM');
-}
-
-/**
- * The earliest instant a trend read has to cover.
- *
- * The card's banner compares this month against last month, and that answer does
- * not move when the range does — "Food Waste This Month" is this month whatever
- * the chart is showing. So the read starts at whichever comes first: the range
- * the user picked, or the start of last month. One query then serves the chart
- * and the banner both, and neither can be right while the other is stale.
- */
+/** The start of the selected trend range, as an ISO timestamp. */
 export function queryStartIso(startKey: string): string {
-  const rangeStart = startOfKey(startKey);
-  const lastMonth = moment.tz(todayKey(), APP_TIMEZONE).startOf('day')
-    .subtract(1, 'month').startOf('month');
-  return (rangeStart.isBefore(lastMonth) ? rangeStart : lastMonth).toISOString();
+  return startOfKey(startKey).toISOString();
 }
 
 /**

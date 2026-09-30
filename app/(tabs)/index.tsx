@@ -10,11 +10,10 @@ import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
 import { colors, radii, spacing, shadow } from '../../src/theme';
 import {
-  CalendarDays, ChevronRight, Crown, History, Package,
-  PieChart, ShoppingBasket, ShoppingCart, TrendingDown,
+  CalendarDays, ChevronRight, Crown, Package,
+  PieChart, ShoppingBasket, ShoppingCart,
 } from 'lucide-react-native';
-import type { LucideProps } from 'lucide-react-native';
-import { AvatarCircle, ItemImage, HighlightCard, StatCard, TrendBarChart, AIBanner, SectionHeader, StatusPill, colorWithOpacity } from '../../src/components/ui';
+import { AvatarCircle, ItemImage, StatCard, TrendBarChart, AIBanner, SectionHeader, StatusPill, colorWithOpacity } from '../../src/components/ui';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { DateRangePickerModal } from '../../src/components/DateRangePicker';
 import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
@@ -22,7 +21,7 @@ import { timeAgo } from '../../src/utils/timeAgo';
 import { todayKey } from '../../src/utils/dateKey';
 import {
   buildWasteTrend, defaultRange, earliestSelectableKey, formatRangeLabel,
-  monthKeyIn, monthKeyOf, queryStartIso, unitLabel,
+  queryStartIso, unitLabel,
 } from '../../src/utils/wasteTrend';
 import type { BucketUnit, TrendBucket } from '../../src/utils/wasteTrend';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
@@ -69,13 +68,6 @@ interface HomeStats {
   lowStock: number;
   expirationAlerts: number;
   recentlyConsumed: ConsumedEntry[];
-  wasteThisMonth: number;   // item count this month
-  /**
-   * Percentage change against last month, or `null` when there is no last month
-   * to compare against (nothing was binned then). Null is a real answer, not a
-   * zero: a month that went from no waste to some is not "0% change".
-   */
-  wasteDeltaPct: number | null;
   /**
    * One point per bucket of the selected range, oldest first. The bucket size
    * follows the range (`bucketUnit` says which), so the chart is always legible
@@ -109,7 +101,7 @@ export default function HomeScreen() {
   // The page gutter, not the raw screen width: on a tablet the content column
   // stops growing at `CONTENT_MAX_WIDTH` and centres. On a phone this is just
   // the usual margin, so nothing on the layouts below moves.
-  const { contentWidth, gutter } = usePageGutter();
+  const { gutter } = usePageGutter();
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   /**
@@ -186,33 +178,12 @@ export default function HomeScreen() {
         at: row.consumed_at as string,
       }));
 
-      // Waste rows over the selected range. This used to ask only for the
-      // current month and then invent a series to draw, so the chart showed
-      // numbers nothing in the database backed — and it was pinned to Apr–Aug,
-      // which is only the right half-year in August.
-      //
-      // The read starts at whichever comes first, the range or the start of last
-      // month, so the same rows serve the chart the user asked for and the
-      // banner's this-month-against-last comparison, which does not move with the
-      // range.
+      // Read only the selected date range; this data now serves the trend chart.
       const { data: waste } = await supabase
         .from('food_waste')
         .select('wasted_at')
         .eq('user_id', uid)
         .gte('wasted_at', queryStartIso(range.start));
-
-      // Counted by month, in the app's timezone, for the banner's two figures.
-      const byMonth: Record<string, number> = {};
-      (waste ?? []).forEach((w) => {
-        const k = monthKeyOf(w.wasted_at);
-        byMonth[k] = (byMonth[k] || 0) + 1;
-      });
-
-      const wasteThisMonth = byMonth[monthKeyIn(0)] ?? 0;
-      const prevMonth = byMonth[monthKeyIn(-1)] ?? 0;
-      const wasteDeltaPct = prevMonth > 0
-        ? Math.round(((wasteThisMonth - prevMonth) / prevMonth) * 100)
-        : null;
 
       // The bars themselves. Bucketing is the trend module's job — it picks the
       // unit from the span, so a fortnight of waste is drawn by the day and two
@@ -225,8 +196,6 @@ export default function HomeScreen() {
         lowStock,
         expirationAlerts,
         recentlyConsumed,
-        wasteThisMonth,
-        wasteDeltaPct,
         trend: buckets,
         bucketUnit,
         rangeStart: range.start,
@@ -247,7 +216,7 @@ export default function HomeScreen() {
   // to re-run the query rather than to patch individual counters — a consume on
   // another device moves the need-to-buy, low-stock and recently-consumed figures
   // at once, and binning something moves the waste banner and the trend's last
-  // bar together. Realtime is a freshness layer only; focus and pull-to-refresh
+  // chart together. Realtime is a freshness layer only; focus and pull-to-refresh
   // still carry the screen when the socket is down.
   useEffect(() => {
     if (!profile) return undefined;
@@ -282,9 +251,6 @@ export default function HomeScreen() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
-  const delta = stats?.wasteDeltaPct ?? null;
-  const better = (delta ?? 0) <= 0;
-  const wasteThisMonth = stats?.wasteThisMonth ?? 0;
   /**
    * The bars for the committed range, or none.
    *
@@ -302,58 +268,9 @@ export default function HomeScreen() {
   /** The span the chart covers, as one line for the chip that opens the picker. */
   const rangeLabel = formatRangeLabel(range.start, range.end);
 
-  /**
-   * The line that sits beside the percentage, when there is one worth showing.
-   *
-   * Null until the read lands: "nothing wasted" is a claim about the data, and
-   * making it before the data arrives would be asserting something we do not
-   * know yet.
-   */
-  const deltaNote = stats == null
-    ? null
-    : wasteThisMonth === 0
-      ? 'Nothing wasted — great job!'
-      // Wasted, with nothing to measure it against — the case the missing chip
-      // would otherwise leave unexplained.
-      : delta == null
-        ? 'Nothing wasted last month to compare'
-        : null;
-
   const maxTrend = Math.max(1, ...(trend.map((t) => t.value)));
 
   const consumed = stats?.recentlyConsumed ?? [];
-
-  /**
-   * The two screens that have no tab of their own.
-   *
-   * This row used to hold Scanner, Inventory and Need to Buy — all three already
-   * one tap away (the last two are tabs, and Scanner sits on the Inventory
-   * header), and Need to Buy was listed twice, here and as a metric tile with the
-   * count on it. Grocery and Analytics are the screens nothing else reaches, so
-   * they are what the row is for.
-   */
-  const quickActions: { key: string; label: string; icon: React.ComponentType<LucideProps>; go: () => void }[] = [
-    { key: 'grocery', label: 'Grocery List', icon: ShoppingBasket, go: () => router.push('/grocery') },
-    { key: 'analytics', label: 'Analytics', icon: PieChart, go: () => router.push('/analytics') },
-  ];
-
-  /**
-   * Both card rows put two across with the page margins at each end, so one
-   * formula sizes the icon boxes for both. It uses the metric row's wider gap,
-   * which gives the narrower of the two tiles — a box that fits the tighter card
-   * cannot overflow the roomier one. Deriving it rather than pinning it at 38 is
-   * what keeps a glyph from looking lost inside a tablet-width card or cramped on
-   * a 320pt phone; the clamp holds it near the hand-tuned size on ordinary phones,
-   * where it works out to about 42.
-   */
-  const tileWidth = (contentWidth - spacing.md) / 2;
-  const iconBoxSize = Math.round(Math.min(56, Math.max(38, tileWidth * 0.26)));
-  const iconBox = {
-    width: iconBoxSize,
-    height: iconBoxSize,
-    borderRadius: Math.round(iconBoxSize * 0.35),
-  };
-  const iconGlyphSize = Math.round(iconBoxSize * 0.52);
 
   // 'trialing' gets called out because a trial quietly turning into a charge is
   // the thing users most want warning about; a lapsed plan is flagged so the
@@ -386,11 +303,16 @@ export default function HomeScreen() {
             pushing past the screen edge. */}
         <View style={[styles.topBar, { paddingHorizontal: gutter }]}>
           <View style={styles.greetingBlock}>
-            {/* Shrink-to-fit rather than ellipsise: the actions beside it take a
-                fixed 142pt, which leaves ~190pt on a 390pt screen — less than
-                "Good afternoon, Alvin" needs at 24pt. Same treatment as the
-                banner figure below. */}
-            <Text style={styles.greeting} numberOfLines={2}>{greeting},{`\n`}{firstName}</Text>
+            {/* Shrink the greeting when the available column is narrow so the
+                name and action buttons remain visible on compact phones. */}
+            <Text
+              style={styles.greeting}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
+              {greeting},{`\n`}{firstName}
+            </Text>
             <Text style={styles.subGreeting} numberOfLines={1}>
               {entitlements?.is_active === false
                 ? 'Your plan has ended — your inventory is safe'
@@ -439,22 +361,10 @@ export default function HomeScreen() {
         </View>
 
         <View style={[styles.contentStack, { paddingHorizontal: gutter }]}>
-          <HighlightCard
-            index={0}
-            label="Food Waste This Month"
-            value={`${wasteThisMonth} items`}
-            caption={deltaNote ?? (delta != null ? `${better ? '↓' : '↑'} ${Math.abs(delta)}% vs last month` : undefined)}
-            onActionPress={() => router.push('/analytics')}
-            actionLabel="Details"
-            secondaryIcon={TrendingDown}
-            secondaryText={wasteThisMonth === 0 ? "You're keeping food fresh!" : `${wasteThisMonth} items binned`}
-            secondaryBadge={wasteThisMonth === 0 ? "Zero Waste" : (better ? "Improving" : "Needs Attention")}
-          />
-
           {/* 2-column StatCard Grid */}
           <View style={styles.metricGrid}>
             <StatCard
-              index={1}
+              index={0}
               icon={Package}
               title="Items in inventory"
               value={`${stats?.totalItems ?? 0}`}
@@ -462,7 +372,7 @@ export default function HomeScreen() {
               onPress={() => router.push('/inventory')}
             />
             <StatCard
-              index={2}
+              index={1}
               icon={ShoppingCart}
               title="Need to buy"
               value={`${stats?.needToBuy ?? 0}`}
@@ -472,7 +382,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.metricGrid}>
             <StatCard
-              index={3}
+              index={2}
               icon={ShoppingBasket}
               title="Grocery List"
               value="Open"
@@ -481,7 +391,7 @@ export default function HomeScreen() {
               onPress={() => router.push('/grocery')}
             />
             <StatCard
-              index={4}
+              index={3}
               icon={PieChart}
               title="Analytics"
               value="Reports"
@@ -516,7 +426,7 @@ export default function HomeScreen() {
               </View>
             ) : (
               <TrendBarChart
-                index={6}
+                index={4}
                 data={trend.map((pt) => pt.value)}
                 currentIndex={trend.length - 1}
                 labels={trend.map((pt) => pt.label)}

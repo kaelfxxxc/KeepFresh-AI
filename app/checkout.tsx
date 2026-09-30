@@ -7,6 +7,7 @@ import { useSubscription } from '../src/context/SubscriptionContext';
 import { colors, spacing } from '../src/theme';
 import { NavHeader, PillButton, IconBadge } from '../src/components/ui';
 import { paymentService } from '../src/services/paymentService';
+import { useContentLayout } from '../src/hooks/useContentLayout';
 
 /** Where PayMongo sends the browser once the payment page is finished. */
 const SUCCESS_PREFIX = 'keepfreshai://checkout/success';
@@ -28,6 +29,7 @@ type Phase = 'paying' | 'confirming' | 'pending' | 'done';
 export default function CheckoutScreen() {
   const router = useRouter();
   const { refresh } = useSubscription();
+  const { compact } = useContentLayout();
 
   const params = useLocalSearchParams<{
     url?: string;
@@ -266,13 +268,13 @@ export default function CheckoutScreen() {
       {/* Deliberately always available. The redirect back is the least reliable
           part of a hosted flow, and a customer who has paid must never be stuck
           on a page with no way to say so. */}
-      <View style={styles.actions}>
+      <View style={[styles.actions, compact && styles.actionsCompact]}>
         <PillButton
           title="I have paid — check again"
           icon={RefreshCw}
           loading={phase === 'confirming' || busy}
           onPress={checkAgain}
-          style={{ flex: 1 }}
+          style={compact ? undefined : { flex: 1 }}
         />
         {phase === 'pending' && (
           <PillButton
@@ -280,7 +282,7 @@ export default function CheckoutScreen() {
             icon={RotateCcw}
             variant="outline"
             onPress={retry}
-            style={{ flex: 1 }}
+            style={compact ? undefined : { flex: 1 }}
           />
         )}
       </View>
@@ -318,7 +320,13 @@ function fallbackUrlFromIntent(url: string): string | null {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.screenBg },
+  root: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    backgroundColor: colors.screenBg,
+  },
   webview: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, justifyContent: 'center', padding: spacing.xl },
 
@@ -349,6 +357,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
+  actionsCompact: { flexDirection: 'column' },
 
   cancelLink: { paddingVertical: spacing.md, alignItems: 'center', backgroundColor: colors.surface },
   cancelLinkText: { color: colors.textSecondary, fontSize: 13, textDecorationLine: 'underline' },

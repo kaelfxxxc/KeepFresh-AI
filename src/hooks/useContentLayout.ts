@@ -34,20 +34,18 @@ export function useContentLayout() {
 }
 
 /**
- * The page gutter for a screen that pads each of its blocks individually rather
- * than padding its scroll view — the shape most of this app's screens are built
- * in, where every card carries its own `marginHorizontal`.
- *
- * On a phone this is `base` and nothing moves. Past the content cap the slack
- * splits evenly and the column centres, which is the whole of the wide-screen
- * fix. It is deliberately a floor rather than a computed value: `useContentLayout`
- * tightens its gutter on small screens, and dropping a phone's 32pt margin to 16
- * would change the layout of every screen that adopted it, which reads as the
- * bug rather than the fix.
+ * The page gutter for screens that pad each block individually. It scales down
+ * on narrow phones, stays at the design gutter on regular phones, and centres a
+ * capped content column on wider screens.
  */
 export function usePageGutter(base: number = spacing.xl) {
   const { width } = useWindowDimensions();
-  const gutter = Math.max(base, (width - CONTENT_MAX_WIDTH) / 2);
+  const responsiveBase = width < 360
+    ? spacing.md
+    : width < COMPACT_WIDTH
+      ? spacing.lg
+      : base;
+  const gutter = Math.max(responsiveBase, (width - CONTENT_MAX_WIDTH) / 2);
 
   return { width, gutter, contentWidth: width - gutter * 2 };
 }

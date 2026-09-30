@@ -176,7 +176,14 @@ export default function SignupScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: COLORS.background },
-  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: SPACING.lg },
+  container: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING.lg,
+  },
   header: { marginTop: SPACING.xl, marginBottom: SPACING.lg },
   logo: { fontSize: 28, fontWeight: '800', color: COLORS.text },
   subtitle: { fontSize: 14, color: COLORS.secondaryText, marginTop: SPACING.xs },

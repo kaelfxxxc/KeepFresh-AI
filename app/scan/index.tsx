@@ -12,6 +12,7 @@ import { lookupBarcode, toReviewProduct, ReviewInfo, BarcodeProduct } from '../.
 import { recognizeFood } from '../../src/services/foodVisionService';
 import { ScanBarcode, Images, PenLine, Settings, X, Sparkles } from 'lucide-react-native';
 import { IconBadge } from '../../src/components/ui';
+import { useContentLayout } from '../../src/hooks/useContentLayout';
 
 /**
  * How a photo is picked. `quality` is the only size lever available —
@@ -41,6 +42,7 @@ type LookupDisplay =
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
+  const { compact } = useContentLayout();
   const { entitlements, gates, refresh } = useSubscription();
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
@@ -412,7 +414,7 @@ export default function ScanScreen() {
             <X size={22} color={colors.surface} strokeWidth={2.4} />
           </Pressable>
 
-          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+          <View style={[styles.bottomSheet, compact && styles.bottomSheetCompact, { paddingBottom: insets.bottom + spacing.md }]}>
             {loading && <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.sm }} />}
             <Text style={styles.sheetTitle}>Scan Product</Text>
             <Text style={styles.sheetSubtitle}>Scan a barcode, snap a photo, or enter details manually.</Text>
@@ -590,6 +592,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingTop: spacing.lg, alignItems: 'center',
     marginTop: 'auto',
   },
+  bottomSheetCompact: { paddingHorizontal: spacing.md },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
   sheetSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
   quota: { fontSize: 11.5, color: colors.textSecondary, marginTop: 6 },

@@ -53,6 +53,7 @@ import {
 } from '../../src/services/barcodeService';
 import type { GroceryItem } from '../../src/types';
 import { CATEGORY_KEYS, CATEGORY_LABELS, categoryIcon } from '../../src/utils/categoryIcons';
+import { useContentLayout } from '../../src/hooks/useContentLayout';
 
 /** What the review sheet edits before the item lands on the list. */
 interface Draft {
@@ -71,6 +72,7 @@ const isProductBarcode = (data: string) => /^\d{6,14}$/.test(data.trim());
 
 export default function GroceryScanScreen() {
   const insets = useSafeAreaInsets();
+  const { compact } = useContentLayout();
   const { listId, listName } = useLocalSearchParams<{ listId?: string; listName?: string }>();
   const { entitlements, gates, refresh } = useSubscription();
 
@@ -416,7 +418,7 @@ export default function GroceryScanScreen() {
         hasPermission &&
         scanningEnabled &&
         !!listId && (
-          <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + spacing.md }]}>
+          <View style={[styles.bottomSheet, compact && styles.bottomSheetCompact, { paddingBottom: insets.bottom + spacing.md }]}>
             <IconBadge color={colors.primary} size={56}>
               <QrCode size={26} color={colors.primary} strokeWidth={2} />
             </IconBadge>
@@ -466,6 +468,7 @@ function ReviewSheet({
   onCancel: () => void;
   insetsBottom: number;
 }) {
+  const { compact } = useContentLayout();
   const step = (delta: number) =>
     onChange({ ...draft, quantity: Math.max(draft.quantity + delta, 1) });
 
@@ -473,7 +476,7 @@ function ReviewSheet({
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.reviewSheet, { paddingBottom: insetsBottom + spacing.md }]}>
+      <View style={[styles.reviewSheet, compact && styles.reviewSheetCompact, { paddingBottom: insetsBottom + spacing.md }]}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.productHead}>
             <IconBadge
@@ -631,6 +634,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingTop: spacing.lg, alignItems: 'center',
     marginTop: 'auto',
   },
+  bottomSheetCompact: { paddingHorizontal: spacing.md },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginTop: spacing.md },
   sheetSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginTop: spacing.xs },
   quota: { fontSize: 11.5, color: colors.textSecondary, marginTop: 6 },
@@ -647,6 +651,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg,
     paddingHorizontal: spacing.xl, paddingTop: spacing.lg, marginTop: 'auto', maxHeight: '78%',
   },
+  reviewSheetCompact: { paddingHorizontal: spacing.md, maxHeight: '84%' },
   productHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   thumbImage: { width: 48, height: 48 },
   productTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary },

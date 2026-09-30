@@ -82,7 +82,14 @@ export default function ForgotPasswordScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: COLORS.background },
-  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: SPACING.lg },
+  container: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING.lg,
+  },
   iconWrap: {
     alignSelf: 'center', width: 60, height: 60, borderRadius: 20,
     backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center',

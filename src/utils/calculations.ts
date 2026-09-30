@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { Profile, InventoryItem, Consumption, FoodWaste, AnalyticsData } from '../types';
+import type { Profile, InventoryItem, Consumption, FoodWaste, AnalyticsData, Recipe } from '../types';
 
 export async function getExpiringItems(userId: string, days: number): Promise<InventoryItem[]> {
   const startDate = new Date();
@@ -58,7 +58,7 @@ export async function calculateEstimatedSavings(userId: string, startDate: strin
   return Math.round(consumption);
 }
 
-export async function getRecipeMatches(userId: string, category?: string, limit: number = 10): Promise<any[]> {
+export async function getRecipeMatches(userId: string, category?: string, limit = 10): Promise<Recipe[]> {
   const { data } = await supabase
     .from('recipes')
     .select('*')

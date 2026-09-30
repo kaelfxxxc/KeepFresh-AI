@@ -3,7 +3,7 @@ import * as Device from 'expo-device';
 import { supabase } from '../lib/supabase';
 import { inventoryService } from './inventoryService';
 import { groceryService } from './groceryService';
-import type { Entitlements, InventoryItem } from '../types';
+import type { Entitlements, InventoryItem, NotificationPreference } from '../types';
 
 /**
  * Every notification this app schedules carries a kind and a dedupe key that
@@ -79,6 +79,23 @@ export interface NotificationEntry {
   /** The item this notification is about, when it names one. */
   itemId: string | null;
 }
+
+interface NotificationLogRow {
+  id: string;
+  notification_type: string;
+  title: string | null;
+  body: string | null;
+  sent_at: string;
+  deliver_at?: string | null;
+  read_at?: string | null;
+  inventory_item_id: string | null;
+  inventory_items?: { product_name: string } | null;
+}
+
+export type NotificationPreferenceUpdate = Partial<Pick<
+  NotificationPreference,
+  'enabled' | 'days_before' | 'recipe_notifications' | 'grocery_notifications' | 'weekly_summary'
+>>;
 
 /**
  * The screen a notification is about, given its payload.
@@ -664,7 +681,7 @@ export const notificationService = {
       .lte('deliver_at', new Date().toISOString())
       .order('deliver_at', { ascending: false })
       .limit(limit);
-    if (!error) return (data ?? []).map((row: any) => toEntry(row, true));
+    if (!error) return (data ?? []).map((row) => toEntry(row as NotificationLogRow, true));
 
     // Not migrated yet. Fall back to the columns that have always existed, so
     // the bell lists history rather than showing an error — SQL is applied by
@@ -678,7 +695,7 @@ export const notificationService = {
       .order('sent_at', { ascending: false })
       .limit(limit);
     if (fallbackError) throw fallbackError;
-    return (fallback ?? []).map((row: any) => toEntry(row, false));
+    return (fallback ?? []).map((row) => toEntry(row as NotificationLogRow, false));
   },
 
   /**
@@ -818,7 +835,10 @@ export const notificationService = {
     return data;
   },
 
-  async updateNotificationPreferences(userId: string, preferences: any): Promise<void> {
+  async updateNotificationPreferences(
+    userId: string,
+    preferences: NotificationPreferenceUpdate,
+  ): Promise<void> {
     const { error } = await supabase
       .from('notification_preferences')
       .upsert({ user_id: userId, ...preferences, updated_at: new Date().toISOString() });
@@ -854,7 +874,7 @@ const KIND_LABELS: Record<string, string> = {
  * cannot claim unread notifications that the badge — which has no column to
  * count — would never agree with.
  */
-function toEntry(row: any, readStateKnown: boolean): NotificationEntry {
+function toEntry(row: NotificationLogRow, readStateKnown: boolean): NotificationEntry {
   const kind = String(row.notification_type ?? '');
   const itemName: string | null = row.inventory_items?.product_name ?? null;
 

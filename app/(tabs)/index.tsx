@@ -40,6 +40,19 @@ interface ConsumedEntry {
   at: string;
 }
 
+interface RecentConsumptionRow {
+  id: string;
+  quantity: number | null;
+  unit: string | null;
+  consumed_at: string;
+  inventory_items: {
+    product_name: string | null;
+    category: string | null;
+    unit: string | null;
+    image_url: string | null;
+  } | null;
+}
+
 interface HomeStats {
   totalItems: number;
   /**
@@ -161,7 +174,7 @@ export default function HomeScreen() {
         .order('consumed_at', { ascending: false })
         .limit(5);
 
-      const recentlyConsumed: ConsumedEntry[] = (consumed ?? []).map((row: any) => ({
+      const recentlyConsumed: ConsumedEntry[] = ((consumed ?? []) as RecentConsumptionRow[]).map((row) => ({
         id: row.id as string,
         name: row.inventory_items?.product_name || 'Item',
         category: row.inventory_items?.category ?? null,

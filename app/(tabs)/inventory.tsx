@@ -19,6 +19,7 @@ import { useContentLayout } from '../../src/hooks/useContentLayout';
 import { Plus, ScanLine, Search } from 'lucide-react-native';
 import { EmptyState, QuantityPrompt, UpgradeNotice, ActionMenu, InventoryListItem, FilterChipRow, colorWithOpacity } from '../../src/components/ui';
 import type { Status } from '../../src/components/ui';
+import { errorMessage } from '../../src/utils/errors';
 
 /**
  * What the list is showing.
@@ -278,7 +279,7 @@ export default function InventoryScreen() {
   useEffect(() => {
     if (!profile) return undefined;
 
-    return subscribeToTables(
+    return subscribeToTables<InventoryItem>(
       `inventory:${profile.id}`,
       ['inventory_items', 'storage_areas'],
       (event) => {
@@ -330,12 +331,12 @@ export default function InventoryScreen() {
       try {
         const updated = await inventoryService.adjustQuantity(item.id, delta);
         setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Put the real number back rather than leaving the guess on screen.
         setItems((prev) => prev.map((row) => (row.id === item.id ? item : row)));
         Alert.alert(
           'Could not update quantity',
-          error?.message ?? 'Check your connection and try again.'
+          errorMessage(error, 'Check your connection and try again.')
         );
       } finally {
         setSteppingId(null);
@@ -361,11 +362,11 @@ export default function InventoryScreen() {
     try {
       const updated = await inventoryService.setNeedToBuy(item.id, next);
       setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
-    } catch (error: any) {
+    } catch (error: unknown) {
       setItems((prev) => prev.map((row) => (row.id === item.id ? item : row)));
       Alert.alert(
         'Could not update Need to Buy',
-        error?.message ?? 'Check your connection and try again.'
+        errorMessage(error, 'Check your connection and try again.')
       );
     }
   }, []);
@@ -465,8 +466,8 @@ export default function InventoryScreen() {
             await inventoryService.deleteInventoryItem(item.id);
             setItems((prev) => prev.filter((row) => row.id !== item.id));
             fetchInventory();
-          } catch (error: any) {
-            Alert.alert('Could not delete item', error?.message ?? 'Please try again.');
+          } catch (error: unknown) {
+            Alert.alert('Could not delete item', errorMessage(error, 'Please try again.'));
           }
         },
       },
@@ -499,8 +500,8 @@ export default function InventoryScreen() {
             });
             await inventoryService.updateInventoryItem(item.id, { status: 'wasted' });
             fetchInventory();
-          } catch (error: any) {
-            Alert.alert('Could not record waste', error?.message ?? 'Please try again.');
+          } catch (error: unknown) {
+            Alert.alert('Could not record waste', errorMessage(error, 'Please try again.'));
           }
         },
       },
@@ -519,8 +520,8 @@ export default function InventoryScreen() {
       await inventoryService.consumeInventoryItem(profile.id, item.id, qty);
       setConsumeTarget(null);
       await fetchInventory();
-    } catch (error: any) {
-      Alert.alert('Could not record usage', error?.message ?? 'Please try again.');
+    } catch (error: unknown) {
+      Alert.alert('Could not record usage', errorMessage(error, 'Please try again.'));
     } finally {
       setBusy(false);
     }

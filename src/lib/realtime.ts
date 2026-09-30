@@ -13,7 +13,7 @@ import { supabase } from './supabase';
 
 export type RealtimeEventType = 'INSERT' | 'UPDATE' | 'DELETE';
 
-export interface RealtimeEvent<T = any> {
+export interface RealtimeEvent<T = Record<string, unknown>> {
   table: string;
   eventType: RealtimeEventType;
   new: T;
@@ -36,7 +36,7 @@ export interface SubscribeOptions {
  * Returns an unsubscribe function — call it on unmount. Safe to call when
  * `tables` is empty (returns a no-op unsubscribe).
  */
-export function subscribeToTables<T = any>(
+export function subscribeToTables<T = Record<string, unknown>>(
   topic: string,
   tables: string[],
   onChange: (event: RealtimeEvent<T>) => void,
@@ -56,12 +56,17 @@ export function subscribeToTables<T = any>(
         table,
         ...(userId ? { filter: `user_id=eq.${userId}` } : {}),
       },
-      (payload: any) => {
+      (payload: unknown) => {
+        const change = payload as {
+          eventType: RealtimeEventType;
+          new?: T | null;
+          old?: Partial<T> | null;
+        };
         onChange({
           table,
-          eventType: payload.eventType,
-          new: payload.new ?? {},
-          old: payload.old ?? {},
+          eventType: change.eventType,
+          new: change.new ?? ({} as T),
+          old: change.old ?? {},
         });
       }
     );

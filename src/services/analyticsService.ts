@@ -1,41 +1,36 @@
 import { supabase } from '../lib/supabase';
-import { calculateFoodWaste, calculateFoodConsumption, calculateEstimatedSavings } from '../utils/calculations';
+import { calculateFoodWaste, calculateFoodConsumption } from '../utils/calculations';
+
+type AnalyticsPeriod = 'week' | 'month' | 'year';
+
+function periodStart(period: AnalyticsPeriod, now: Date): Date {
+  if (period === 'week') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay());
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }
+
+  if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
+  return new Date(now.getFullYear(), 0, 1);
+}
+
+async function getPeriodAnalytics(userId: string, period: AnalyticsPeriod) {
+  const now = new Date();
+  const startDate = periodStart(period, now).toISOString();
+  const endDate = now.toISOString();
+  const [waste, consumption] = await Promise.all([
+    calculateFoodWaste(userId, startDate, endDate),
+    calculateFoodConsumption(userId, startDate, endDate),
+  ]);
+
+  return { waste, consumption, savings: Math.round(consumption) };
+}
 
 export const analyticsService = {
-  async getWeeklyAnalytics(userId: string) {
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    
-    const waste = await calculateFoodWaste(userId, startOfWeek.toISOString(), today.toISOString());
-    const consumption = await calculateFoodConsumption(userId, startOfWeek.toISOString(), today.toISOString());
-    const savings = await calculateEstimatedSavings(userId, startOfWeek.toISOString(), today.toISOString());
-    
-    return { waste, consumption, savings };
-  },
-
-  async getMonthlyAnalytics(userId: string) {
-    const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    
-    const waste = await calculateFoodWaste(userId, startOfMonth.toISOString(), today.toISOString());
-    const consumption = await calculateFoodConsumption(userId, startOfMonth.toISOString(), today.toISOString());
-    const savings = await calculateEstimatedSavings(userId, startOfMonth.toISOString(), today.toISOString());
-    
-    return { waste, consumption, savings };
-  },
-
-  async getYearlyAnalytics(userId: string) {
-    const today = new Date();
-    const startOfYear = new Date(today.getFullYear(), 0, 1);
-    
-    const waste = await calculateFoodWaste(userId, startOfYear.toISOString(), today.toISOString());
-    const consumption = await calculateFoodConsumption(userId, startOfYear.toISOString(), today.toISOString());
-    const savings = await calculateEstimatedSavings(userId, startOfYear.toISOString(), today.toISOString());
-    
-    return { waste, consumption, savings };
-  },
+  getWeeklyAnalytics: (userId: string) => getPeriodAnalytics(userId, 'week'),
+  getMonthlyAnalytics: (userId: string) => getPeriodAnalytics(userId, 'month'),
+  getYearlyAnalytics: (userId: string) => getPeriodAnalytics(userId, 'year'),
 
   async getWasteBreakdown(userId: string, startDate: string, endDate: string) {
     const { data, error } = await supabase

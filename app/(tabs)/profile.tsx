@@ -11,6 +11,9 @@ import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
   Home, Store, Crown, Refrigerator, Tag, Users, Boxes,
 } from 'lucide-react-native';
+import type { LucideProps } from 'lucide-react-native';
+import type { ComponentType } from 'react';
+import type { Href } from 'expo-router';
 import {
   AvatarCircle, ListRow, PillButton, StatusBadge, StatCard, SectionHeader,
 } from '../../src/components/ui';
@@ -18,7 +21,7 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { describeStatus, daysRemaining } from '../../src/services/subscriptionService';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
 
-const MENU: { label: string; icon: any; path: string; hint?: string }[] = [
+const MENU: { label: string; icon: ComponentType<LucideProps>; path: Href; hint?: string }[] = [
   { label: 'Account Settings', icon: UserRound, path: '/settings/account', hint: 'Personal information' },
   { label: 'Notification Settings', icon: Bell, path: '/settings/notifications', hint: 'Alerts & reminders' },
   { label: 'Units & Preferences', icon: SlidersHorizontal, path: '/settings/preferences', hint: 'Units, currency, language' },
@@ -29,8 +32,8 @@ const MENU: { label: string; icon: any; path: string; hint?: string }[] = [
 /** A tool row plus the plan badge to show when it is not in the current plan. */
 interface Tool {
   label: string;
-  icon: any;
-  path: string;
+  icon: ComponentType<LucideProps>;
+  path: Href;
   hint?: string;
   badge?: string;
 }
@@ -206,7 +209,7 @@ export default function ProfileScreen() {
                   icon={item.icon}
                   label={item.label}
                   hint={item.hint}
-                  onPress={() => router.push(item.path as any)}
+                  onPress={() => router.push(item.path)}
                   right={item.badge ? <StatusBadge label={item.badge} tone="neutral" /> : undefined}
                 />
               </View>
@@ -221,7 +224,7 @@ export default function ProfileScreen() {
             {MENU.map((item, i) => (
               <View key={item.path}>
                 {i > 0 && <View style={styles.sep} />}
-                <ListRow icon={item.icon} label={item.label} hint={item.hint} onPress={() => router.push(item.path as any)} />
+                <ListRow icon={item.icon} label={item.label} hint={item.hint} onPress={() => router.push(item.path)} />
               </View>
             ))}
           </View>

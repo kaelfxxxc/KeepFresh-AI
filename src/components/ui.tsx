@@ -14,6 +14,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -30,6 +33,9 @@ import { COLORS, colors, radii, spacing, shadow, statusSurface, overlay } from '
 import { categoryIcon } from '../utils/categoryIcons';
 import { directImageUri, resolveItemImageUri } from '../services/inventoryImageService';
 import { resolveAvatarUri } from '../services/avatarService';
+import { colorWithOpacity } from '../utils/color';
+
+export { colorWithOpacity } from '../utils/color';
 
 type IconComp = React.ComponentType<LucideProps>;
 type Tone = 'success' | 'warning' | 'danger' | 'neutral' | 'primary' | 'wasted';
@@ -83,7 +89,7 @@ export function Appear({
   children: React.ReactNode;
   index?: number;
   animate?: boolean;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <Animated.View entering={appearEntering(animate, index)} style={style}>
@@ -97,7 +103,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function Card({ children, style, onPress, index = 0, animate = true }: {
   children: React.ReactNode;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   /** Position among siblings, for the staggered entrance. */
   index?: number;
@@ -148,8 +154,8 @@ export function PillButton({
   icon?: IconComp;
   disabled?: boolean;
   loading?: boolean;
-  style?: any;
-  textStyle?: any;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
 }) {
   const bg = variant === 'primary' ? colors.primary
     : variant === 'danger' ? colors.danger
@@ -193,7 +199,7 @@ export function StatusBadge({ label, tone = 'neutral', icon: Icon, style }: {
   label: string;
   tone?: Tone;
   icon?: IconComp;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const { bg, fg } = toneMap[tone];
   return (
@@ -264,7 +270,7 @@ export function Field({
   icon?: IconComp;
   secure?: boolean;
   multiline?: boolean;
-  containerStyle?: any;
+  containerStyle?: StyleProp<ViewStyle>;
 }) {
   const [hidden, setHidden] = useState(!!secure);
   return (
@@ -480,7 +486,7 @@ export function IconButton({ icon: Icon, onPress, size = 20, color = colors.text
   size?: number;
   color?: string;
   bg?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   badge?: number;
 }) {
   return (
@@ -573,7 +579,7 @@ export function ItemImage({ uri, category, size = 52, radius = radii.md, style }
   category?: string | null;
   size?: number;
   radius?: number;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const [broken, setBroken] = useState(false);
   // A stored photo is a path inside a private bucket and has to be signed before
@@ -779,7 +785,7 @@ export function Bar({ fraction, color = colors.primary, bg = colors.mintBg, heig
   color?: string;
   bg?: string;
   height?: number;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[{ height, borderRadius: height / 2, backgroundColor: bg, overflow: 'hidden' }, style]}>
@@ -789,7 +795,7 @@ export function Bar({ fraction, color = colors.primary, bg = colors.mintBg, heig
 }
 
 /* ---------------------------------------------------------- Divider */
-export function Divider({ style }: { style?: any }) {
+export function Divider({ style }: { style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.divider, style]} />;
 }
 
@@ -903,7 +909,7 @@ export function UsageMeter({
   used: number;
   limit: number;
   unit?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const unlimited = limit <= 0;
   const fraction = unlimited ? 0 : Math.min(used / limit, 1);
@@ -934,7 +940,7 @@ export function PlanPill({
   name: string;
   tier?: string;
   tone?: Tone;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const { bg, fg } = toneMap[tone];
   const paid = tier === 'premium' || tier === 'pro';
@@ -970,7 +976,7 @@ export function UpgradeNotice({
   ctaLabel?: string;
   onPress: () => void;
   onDismiss?: () => void;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[styles.upgradeNotice, style]}>
@@ -1142,7 +1148,7 @@ export function StatusPill({
 }: {
   status: Status;
   label?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const conf = statusStyles[status] || statusStyles.fresh;
   const text = label ?? conf.defaultLabel;
@@ -1156,18 +1162,6 @@ export function StatusPill({
 }
 
 /* ------------------------------------------------- Icon badge */
-export function colorWithOpacity(color: string, alpha: number): string {
-  if (!color) return `rgba(27, 122, 77, ${alpha})`;
-  if (color.startsWith('#')) {
-    const hex = color.replace('#', '');
-    const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.substring(0, 2), 16);
-    const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.substring(2, 4), 16);
-    const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-  return color;
-}
-
 export function IconBadge({
   color = colors.primary,
   size = 40,
@@ -1177,7 +1171,7 @@ export function IconBadge({
   color?: string;
   size?: number;
   children: React.ReactNode;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View
@@ -1214,7 +1208,7 @@ export function StatCard({
   value: string | number;
   caption?: string;
   iconBg?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   index?: number;
   animate?: boolean;
@@ -1282,7 +1276,7 @@ export function HighlightCard({
   secondaryIcon?: IconComp;
   secondaryText?: string;
   secondaryBadge?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   index?: number;
   animate?: boolean;
 }) {
@@ -1346,7 +1340,7 @@ export function ProgressBar({
   colorRamp?: boolean;
   color?: string;
   height?: number;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const clampedRatio = Math.min(1, Math.max(0, max > 0 ? value / max : 0));
   const progressAnim = useSharedValue(0);
@@ -1421,7 +1415,7 @@ export function InventoryListItem({
   actionLabel?: string;
   onMenu?: () => void;
   onPress?: () => void;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const statusColor =
     status === 'fresh' ? colors.primary
@@ -1619,14 +1613,14 @@ export function FilterChipRow({
   chips: { label: string; count?: number; value?: string }[];
   activeChip: string;
   onSelect: (val: string) => void;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   /**
    * Merged over the row's own content styles. The default gutter keeps the row
    * usable on its own; a screen whose other blocks sit at a wider margin passes
    * its gutter here so the chips line up with the header above them rather than
    * sitting eight points to the left of it.
    */
-  contentStyle?: any;
+  contentStyle?: StyleProp<ViewStyle>;
   variant?: 'pill' | 'card';
   activeTone?: 'mint' | 'dark';
 }) {
@@ -1673,7 +1667,7 @@ export function AIBanner({
   ctaLabel?: string;
   onPressCta?: () => void;
   variant?: 'mint' | 'dark';
-  style?: any;
+  style?: StyleProp<ViewStyle>;
   index?: number;
   animate?: boolean;
 }) {
@@ -1768,7 +1762,7 @@ export function TrendBarChart({
   /** Position among siblings, for the staggered entrance. */
   index?: number;
   animate?: boolean;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   if (!data || data.length === 0) return null;
   const max = maxValue ?? Math.max(...data, 1);
@@ -1820,7 +1814,7 @@ export function DonutProgress({
   percentage: number;
   size?: number;
   strokeWidth?: number;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const progress = Math.max(0, Math.min(percentage, 100));
   const radius = (size - strokeWidth) / 2;
@@ -1887,7 +1881,7 @@ export function PermissionsTable({
     permissions: boolean[];
   }[];
   columns: string[];
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[styles.permissionsCard, style]}>
@@ -1959,7 +1953,7 @@ export function PricingCard({
   onSelect: () => void;
   disabled?: boolean;
   loading?: boolean;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View
@@ -2035,7 +2029,7 @@ export function CsvImportBox({
   placeholder?: string;
   onInfoPress?: () => void;
   hint?: string;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[styles.csvBoxContainer, style]}>
@@ -2076,7 +2070,7 @@ export function SectionHeader({
   actionLabel?: string;
   onActionPress?: () => void;
   rightComponent?: React.ReactNode;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[styles.sectionHeaderRow, subtitle ? styles.sectionHeaderRowStacked : null, style]}>

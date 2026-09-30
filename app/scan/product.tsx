@@ -11,6 +11,7 @@ import { categoryIcon, categoryLabel } from '../../src/utils/categoryIcons';
 import { directImageUri, isLocalFileUri, resolveItemImageUri, uploadItemImage } from '../../src/services/inventoryImageService';
 import type { ReviewInfo } from '../../src/services/barcodeService';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
+import { errorMessage } from '../../src/utils/errors';
 
 type ScanSource = 'photo' | 'lookup' | 'inventory';
 
@@ -157,10 +158,10 @@ export default function ProductInfoScreen() {
           { text: 'OK', onPress: () => router.back() },
         ]);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       // A failed upload carries its own message; anything else is the generic
       // one, since the specific cause here is not something the user can act on.
-      Alert.alert('Error', error?.message || 'Unable to add item to inventory.');
+      Alert.alert('Error', errorMessage(error, 'Unable to add item to inventory.'));
     } finally {
       setLoading(false);
     }

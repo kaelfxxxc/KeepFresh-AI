@@ -25,6 +25,7 @@ import type { LucideProps } from 'lucide-react-native';
 import { NavHeader, PillButton, StatusBadge, EmptyState, ItemImage, QuantityPrompt, Chip, IconBadge, colorWithOpacity } from '../../../src/components/ui';
 import { DatePickerModal } from '../../../src/components/DatePicker';
 import { usePageGutter } from '../../../src/hooks/useContentLayout';
+import { errorMessage } from '../../../src/utils/errors';
 
 /** Canned offsets offered beside the expiration date. */
 const DATE_CHIPS: { label: string; days: number }[] = [
@@ -138,8 +139,8 @@ export default function InventoryDetailsScreen() {
         await groceryService.deleteGroceryItem(existing.id);
       }
       setOnGroceryList(next);
-    } catch (error: any) {
-      Alert.alert('Could not update Need to Buy', error?.message ?? 'Please try again.');
+    } catch (error: unknown) {
+      Alert.alert('Could not update Need to Buy', errorMessage(error, 'Please try again.'));
       // The two writes can part company if the second one fails, so re-read the
       // item rather than guessing which half landed.
       await fetchItem();
@@ -169,8 +170,8 @@ export default function InventoryDetailsScreen() {
       const updated = await inventoryService.setExpiration(item.id, date, alertDays);
       setItem(updated);
       fetchHistory();
-    } catch (error: any) {
-      Alert.alert('Could not update expiration', error?.message ?? 'Please try again.');
+    } catch (error: unknown) {
+      Alert.alert('Could not update expiration', errorMessage(error, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -194,8 +195,8 @@ export default function InventoryDetailsScreen() {
       const updated = await inventoryService.moveToArea(item.id, areaId);
       setItem(updated);
       fetchHistory();
-    } catch (error: any) {
-      Alert.alert('Could not move item', error?.message ?? 'Please try again.');
+    } catch (error: unknown) {
+      Alert.alert('Could not move item', errorMessage(error, 'Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -210,8 +211,8 @@ export default function InventoryDetailsScreen() {
       await inventoryService.consumeInventoryItem(profile.id, item.id, qty);
       setPromptOpen(false);
       await fetchItem();
-    } catch (error: any) {
-      Alert.alert('Could not record usage', error?.message ?? 'Please try again.');
+    } catch (error: unknown) {
+      Alert.alert('Could not record usage', errorMessage(error, 'Please try again.'));
     } finally {
       setBusy(false);
     }

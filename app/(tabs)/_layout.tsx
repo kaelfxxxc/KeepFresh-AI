@@ -8,7 +8,7 @@ import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 // full-screen routes under app/ (opened from Home / Profile) - not tabs.
 const TABS = [
   { name: 'index', label: 'Home', icon: Home },
-  { name: 'inventory', label: 'Inventory', icon: Package },
+  { name: 'inventory', label: 'Products', icon: Package },
   { name: 'recipes', label: 'Recipes', icon: ChefHat },
   { name: 'alerts', label: 'Alerts', icon: Bell },
   { name: 'profile', label: 'Profile', icon: User },
@@ -16,7 +16,7 @@ const TABS = [
 
 // Full-screen forms/pushed screens that live under the tabs directory (so they
 // share the auth/layout context) but must never appear as tab bar buttons.
-const NON_TAB_ROUTES = ['inventory/add', 'inventory/details'] as const;
+const NON_TAB_ROUTES = ['inventory/add', 'inventory/details', 'my-inventory'] as const;
 
 export default function TabLayout() {
   const { compact, height, barWidth, barLeft, bottomOffset } = useFloatingTabBar();
@@ -28,7 +28,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primaryDark,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle:
-          route.name.startsWith('inventory/')
+          route.name.startsWith('inventory/') || route.name === 'my-inventory'
             ? { display: 'none' } // full-screen add/details forms
             : [
                 styles.tabBar,

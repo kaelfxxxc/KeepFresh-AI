@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/context/AuthContext';
 import { useSubscription } from '../../src/context/SubscriptionContext';
+import { supabase } from '../../src/lib/supabase';
 import { recipeService } from '../../src/services/recipeService';
 import { inventoryService } from '../../src/services/inventoryService';
 import { RecipeImage, prefetchRecipeImages, matchTone } from '../../src/components/RecipeImage';
@@ -46,6 +47,13 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function RecipesScreen() {
   // One gutter for the whole screen. The list, the header, the chip row and the
   // caption each used to carry their own — the list at one value and everything
@@ -58,6 +66,7 @@ export default function RecipesScreen() {
   // The bottom nav floats over this screen, so the list has to end above it.
   const { contentInset } = useFloatingTabBar();
   const [recipes, setRecipes] = useState<RecipeWithIngredients[]>([]);
+  const [weeklySavings, setWeeklySavings] = useState<number | null>(null);
   /**
    * The pantry, for the product chips. Read alongside the recipes rather than
    * off them: a recipe carries the *ids* of the items it uses, and a chip needs
@@ -81,11 +90,26 @@ export default function RecipesScreen() {
   const fetchRecipes = useCallback(async () => {
     if (!profile) return;
     try {
-      const [rows, inventory] = await Promise.all([
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+      const [rows, inventory, savingsResult] = await Promise.all([
         recipeService.getRecipes(profile.id),
         inventoryService.getInventory(profile.id),
+        supabase.rpc('calculate_estimated_savings', {
+          user_id: profile.id,
+          start_date: localDateKey(weekStart),
+          end_date: localDateKey(now),
+        }),
       ]);
       setRecipes(rows);
+      if (savingsResult.error) {
+        console.warn('Could not load weekly recipe savings estimate:', savingsResult.error.message);
+        setWeeklySavings(null);
+      } else {
+        setWeeklySavings(Number(savingsResult.data ?? 0));
+      }
       setItems(
         inventory
           .filter((i) => i.status === 'available')
@@ -446,7 +470,11 @@ export default function RecipesScreen() {
               <Text style={styles.instantTitle}>{visible.length || RECIPE_COUNT} meals ready to cook now without buying groceries</Text>
               <View style={styles.instantFooter}>
                 <Text style={styles.instantFootText}>• All essential ingredients in stock</Text>
-                <Text style={styles.instantSavings}>Saves ~₱850 this week</Text>
+                <Text style={styles.instantSavings}>
+                  {weeklySavings == null
+                    ? 'Savings estimate unavailable'
+                    : `Est. pantry savings ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(weeklySavings)} this week`}
+                </Text>
               </View>
             </View>
           </View>

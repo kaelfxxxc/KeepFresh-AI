@@ -10,6 +10,7 @@ import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
   Home, Store, Crown, Refrigerator, Tag, Users, Boxes,
+  Package,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import type { ComponentType } from 'react';
@@ -202,9 +203,17 @@ export default function ProfileScreen() {
         <View style={styles.block}>
           <SectionHeader title={isEstablishment ? 'Stock & team' : 'Inventory tools'} />
           <View style={styles.menuCard}>
+            {isEstablishment && (
+              <ListRow
+                icon={Package}
+                label="My Inventory"
+                hint="Stock, freshness and inventory history"
+                onPress={() => router.push('/my-inventory')}
+              />
+            )}
             {tools.map((item, i) => (
-              <View key={item.path}>
-                {i > 0 && <View style={styles.sep} />}
+              <View key={item.label}>
+                {(i > 0 || isEstablishment) && <View style={styles.sep} />}
                 <ListRow
                   icon={item.icon}
                   label={item.label}
@@ -222,7 +231,7 @@ export default function ProfileScreen() {
           <SectionHeader title="Settings" />
           <View style={styles.menuCard}>
             {MENU.map((item, i) => (
-              <View key={item.path}>
+              <View key={item.label}>
                 {i > 0 && <View style={styles.sep} />}
                 <ListRow icon={item.icon} label={item.label} hint={item.hint} onPress={() => router.push(item.path)} />
               </View>

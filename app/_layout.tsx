@@ -119,6 +119,7 @@ function RootNavigator() {
         <Stack.Screen name="(auth)/signup" />
         <Stack.Screen name="(auth)/forgot-password" />
         <Stack.Screen name="(auth)/reset-password" />
+        <Stack.Screen name="checkout-order" options={{ animation: 'slide_from_right' }} />
       </Stack>
 
       {/* Renders nothing — watches for a trial that has just ended and raises a

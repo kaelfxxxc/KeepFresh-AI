@@ -77,6 +77,14 @@ Editor or with the CLI:
 supabase db push          # applies migrations/, in order, once each
 ```
 
+### Order receipts
+
+Before using **Place Order**, apply `migrations/inventory_orders.sql` in the
+Supabase SQL Editor. It creates the real order and order-item tables plus
+owner-scoped read/write policies. This migration contains schema only; it adds
+no seed or demo rows. The app saves to these tables and then loads the receipt
+from the saved order ID.
+
 The ones that carry subscription state, in the order they must run:
 
 - `subscriptions_entitlements.sql` — plan catalogue with the exact price list,

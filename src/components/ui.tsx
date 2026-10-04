@@ -1512,7 +1512,23 @@ export function InventoryListItem({
 
       {/* Quantity stepper and item action sit together at the bottom of the card. */}
       <View style={[styles.inventoryRow3, variant === 'household' && styles.inventoryRow3Household]}>
-        <View style={[styles.inventoryStepper, variant === 'household' && styles.inventoryStepperHousehold]}>
+        {variant === 'household' ? (
+          onAction ? (
+            <Pressable
+              onPress={onAction}
+              style={({ pressed }) => [
+                styles.inventoryActionBtn,
+                styles.inventoryActionBtnHousehold,
+                { flex: 1 },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={styles.inventoryActionBtnText}>{actionLabel}</Text>
+            </Pressable>
+          ) : <View style={{ flex: 1 }} />
+        ) : (
+        <>
+        <View style={styles.inventoryStepper}>
           <Pressable
             onPress={onDecrement}
             hitSlop={8}
@@ -1537,7 +1553,6 @@ export function InventoryListItem({
               : <Plus size={14} color={colors.primary} strokeWidth={2.5} />}
           </Pressable>
         </View>
-
         <View style={styles.inventoryRow3Right}>
           {onAction && (
             <Pressable
@@ -1565,6 +1580,8 @@ export function InventoryListItem({
             </Pressable>
           )}
         </View>
+        </>
+        )}
       </View>
     </Pressable>
   );

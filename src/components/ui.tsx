@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Rect, G, Path } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle, useAnimatedProps, withTiming, withSpring, FadeInDown,
@@ -1422,7 +1423,7 @@ export function InventoryListItem({
   style?: StyleProp<ViewStyle>;
 }) {
   const statusColor =
-    status === 'fresh' ? colors.primary
+    status === 'fresh' ? colors.secondary
     : status === 'expiringSoon' ? colors.warning
     : status === 'expired' ? colors.danger
     : colors.primaryDark;
@@ -1449,7 +1450,7 @@ export function InventoryListItem({
         <>
           <View style={styles.inventoryHouseholdTop}>
             <View style={[styles.inventoryAvatarWrap, styles.inventoryAvatarWrapHousehold]}>
-              <ItemImage uri={imageUri} category={category} size={54} radius={14} />
+              <ItemImage uri={imageUri} category={category} size={50} radius={13} />
             </View>
             <StatusPill
               status={status}
@@ -1471,20 +1472,38 @@ export function InventoryListItem({
         </View>
       )}
 
-      {/* Row 2: caption meta text (qty • location • expiry) */}
       <View style={styles.inventoryRow2}>
-        <Text style={styles.inventoryMetaText} numberOfLines={2}>
-          {quantity} {unit}
-          {location ? ` • ${location}` : ''}
-          {variant !== 'household' && expiryDate ? ` • ${expiryDate}` : ''}
-        </Text>
+        {variant === 'household' ? (
+          <View style={styles.inventoryMetaRow}>
+            <Text style={styles.inventoryMetaText} numberOfLines={1}>{quantity} {unit}</Text>
+            {!!location && <Text style={styles.inventoryMetaDot}>•</Text>}
+            {!!location && (
+              <Text
+                style={[
+                  styles.inventoryLocationText,
+                  /pantry/i.test(location) && styles.inventoryLocationPantry,
+                ]}
+                numberOfLines={1}
+              >
+                {location}
+              </Text>
+            )}
+          </View>
+        ) : (
+          <Text style={styles.inventoryMetaText} numberOfLines={2}>
+            {quantity} {unit}
+            {location ? ` • ${location}` : ''}
+            {expiryDate ? ` • ${expiryDate}` : ''}
+          </Text>
+        )}
       </View>
 
       {/* ProgressBar below meta */}
       <ProgressBar
         value={progressRatio}
         max={1}
-        colorRamp
+        color={variant === 'household' ? statusColor : undefined}
+        colorRamp={variant !== 'household'}
         height={variant === 'household' ? 5 : 7}
         style={{ marginVertical: spacing.sm }}
       />
@@ -1492,7 +1511,7 @@ export function InventoryListItem({
       <View style={styles.inventoryDivider} />
 
       {/* Quantity stepper and item action sit together at the bottom of the card. */}
-      <View style={styles.inventoryRow3}>
+      <View style={[styles.inventoryRow3, variant === 'household' && styles.inventoryRow3Household]}>
         <View style={[styles.inventoryStepper, variant === 'household' && styles.inventoryStepperHousehold]}>
           <Pressable
             onPress={onDecrement}
@@ -1500,9 +1519,11 @@ export function InventoryListItem({
             style={styles.inventoryStepperBtn}
             accessibilityLabel="Decrease quantity"
           >
-            <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />
+            {variant === 'household'
+              ? <MaterialCommunityIcons name="minus" size={14} color={colors.textPrimary} />
+              : <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />}
           </Pressable>
-          <Text style={styles.inventoryStepperVal}>
+          <Text style={[styles.inventoryStepperVal, variant === 'household' && styles.inventoryStepperValHousehold]}>
             {variant === 'household' ? quantity : `${quantity} ${unit}`}
           </Text>
           <Pressable
@@ -1511,7 +1532,9 @@ export function InventoryListItem({
             style={styles.inventoryStepperBtn}
             accessibilityLabel="Increase quantity"
           >
-            <Plus size={14} color={colors.primary} strokeWidth={2.5} />
+            {variant === 'household'
+              ? <MaterialCommunityIcons name="plus" size={14} color={colors.primary} />
+              : <Plus size={14} color={colors.primary} strokeWidth={2.5} />}
           </Pressable>
         </View>
 
@@ -1538,7 +1561,7 @@ export function InventoryListItem({
               ]}
               accessibilityLabel="More options"
             >
-              <MoreVertical size={20} color={colors.textSecondary} strokeWidth={2.2} />
+              <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
             </Pressable>
           )}
         </View>
@@ -2577,11 +2600,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   inventoryItemCardHousehold: {
+    width: 'auto',
+    flex: 1,
     borderLeftWidth: 0,
-    borderTopWidth: 5,
-    borderRadius: radii.lg,
-    padding: 14,
-    minHeight: 228,
+    borderTopWidth: 4,
+    borderRadius: 18,
+    padding: 12,
+    minHeight: 205,
   },
   inventoryRow1: {
     flexDirection: 'row',
@@ -2595,12 +2620,12 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     overflow: 'hidden',
   },
-  inventoryAvatarWrapHousehold: { width: 54, height: 54, borderRadius: 14 },
+  inventoryAvatarWrapHousehold: { width: 50, height: 50, borderRadius: 13 },
   inventoryHouseholdTop: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    minHeight: 54, marginBottom: 2,
+    minHeight: 50, marginBottom: 2,
   },
-  inventoryHouseholdExpiry: { maxWidth: '58%' },
+  inventoryHouseholdExpiry: { maxWidth: '56%', paddingHorizontal: 8, paddingVertical: 4 },
   inventoryItemName: {
     flex: 1,
     minWidth: 0,
@@ -2609,7 +2634,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  inventoryItemNameHousehold: { fontSize: 15, lineHeight: 19 },
+  inventoryItemNameHousehold: { fontSize: 15, lineHeight: 19, marginTop: 2 },
   inventoryRow2: {
     marginTop: 2,
     minWidth: 0,
@@ -2621,6 +2646,10 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: colors.textSecondary,
   },
+  inventoryMetaRow: { flexDirection: 'row', alignItems: 'center', minWidth: 0, gap: 5 },
+  inventoryMetaDot: { color: colors.textSecondary, fontSize: 12 },
+  inventoryLocationText: { flexShrink: 1, color: '#0891B2', fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  inventoryLocationPantry: { color: colors.warning },
   inventoryDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
@@ -2631,7 +2660,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     gap: spacing.sm,
     minWidth: 0,
   },
@@ -2647,7 +2676,8 @@ const styles = StyleSheet.create({
     gap: 8,
     flexShrink: 1,
   },
-  inventoryStepperHousehold: { borderRadius: 12, paddingVertical: 4 },
+  inventoryRow3Household: { flexWrap: 'nowrap', gap: 4 },
+  inventoryStepperHousehold: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 4, gap: 4 },
   inventoryStepperBtn: {
     padding: 2,
     alignItems: 'center',
@@ -2660,6 +2690,7 @@ const styles = StyleSheet.create({
     minWidth: 32,
     textAlign: 'center',
   },
+  inventoryStepperValHousehold: { minWidth: 20 },
   inventoryRow3Right: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2676,7 +2707,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     flexShrink: 1,
   },
-  inventoryActionBtnHousehold: { borderRadius: 10, minHeight: 34, justifyContent: 'center' },
+  inventoryActionBtnHousehold: { borderRadius: 10, minHeight: 34, justifyContent: 'center', paddingHorizontal: 10 },
   inventoryActionBtnText: {
     color: colors.surface,
     fontSize: 13,

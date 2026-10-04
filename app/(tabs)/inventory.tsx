@@ -19,7 +19,6 @@ import { useContentLayout } from '../../src/hooks/useContentLayout';
 import Animated, {
   Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { EmptyState, QuantityPrompt, UpgradeNotice, ActionMenu, InventoryListItem, colorWithOpacity } from '../../src/components/ui';
 import type { Status } from '../../src/components/ui';
@@ -36,6 +35,7 @@ import { errorMessage } from '../../src/utils/errors';
  * rather than a shelf.
  */
 type Filter = 'all' | 'expiring' | 'need_to_buy' | 'history';
+type InventorySort = 'expiry' | 'name' | 'recent';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'expiring', label: 'Expiring' },
@@ -215,14 +215,20 @@ export default function InventoryScreen() {
   // Two columns of cards once there is room for them. A single column stretched
   // across a 10" tablet is a line of text with a lot of empty space beside it.
   const listColumns = windowWidth >= 768 ? 3 : 2;
+  const gridGap = spacing.sm + spacing.xs;
+  const inventoryCardWidth = (windowWidth - (gutter * 2) - (gridGap * (listColumns - 1))) / listColumns;
   const scrollY = useSharedValue(0);
   const onListScroll = useAnimatedScrollHandler({
     onScroll: (event) => { scrollY.value = event.contentOffset.y; },
   });
-  const stickyControlsStyle = useAnimatedStyle(() => ({
-    shadowOpacity: interpolate(scrollY.value, [0, 16], [0, 0.08], Extrapolation.CLAMP),
-    shadowRadius: interpolate(scrollY.value, [0, 16], [0, 6], Extrapolation.CLAMP),
-    elevation: interpolate(scrollY.value, [0, 16], [0, 4], Extrapolation.CLAMP),
+  const compactStickyStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [4, 32], [0, 1], Extrapolation.CLAMP),
+    transform: [{
+      translateY: interpolate(scrollY.value, [4, 32], [-72, 0], Extrapolation.CLAMP),
+    }],
+    shadowOpacity: interpolate(scrollY.value, [4, 32], [0, 0.1], Extrapolation.CLAMP),
+    shadowRadius: interpolate(scrollY.value, [4, 32], [0, 8], Extrapolation.CLAMP),
+    elevation: interpolate(scrollY.value, [4, 32], [0, 5], Extrapolation.CLAMP),
   }));
   // The bottom nav floats over this screen, so the list has to end above it.
   const { contentInset } = useFloatingTabBar();
@@ -236,6 +242,8 @@ export default function InventoryScreen() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<InventorySort>('expiry');
   const [areaFilter, setAreaFilter] = useState<AreaFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -537,9 +545,15 @@ export default function InventoryScreen() {
     }
   };
 
-  const filteredItems = items.filter(
-    (item) => matchesArea(item) && matchesFilter(item) && matchesSearch(item)
-  );
+  const filteredItems = items
+    .filter((item) => matchesArea(item) && matchesFilter(item) && matchesSearch(item))
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.product_name.localeCompare(b.product_name);
+      if (sortBy === 'recent') return (b.created_at || '').localeCompare(a.created_at || '');
+      const expiryA = a.expiration_date || '9999-12-31';
+      const expiryB = b.expiration_date || '9999-12-31';
+      return expiryA.localeCompare(expiryB);
+    });
 
   const searchActive = search.trim().length > 0;
 
@@ -593,10 +607,8 @@ export default function InventoryScreen() {
 
     let progressRatio = 1;
     if (item.expiration_date) {
-      const expDate = new Date(item.expiration_date).getTime();
-      const now = Date.now();
-      const daysLeft = (expDate - now) / 86400000;
-      progressRatio = Math.max(0, Math.min(1, daysLeft / 14));
+      const daysLeft = daysUntil(item.expiration_date);
+      progressRatio = freshnessUrgencyProgress(daysLeft);
     }
 
     return (
@@ -616,10 +628,11 @@ export default function InventoryScreen() {
         imageUri={item.image_url}
         category={item.category}
         variant="household"
+        style={{ width: inventoryCardWidth, flex: 0 }}
         onIncrement={canStep ? () => stepQuantity(item, 1) : undefined}
         onDecrement={canStep ? () => stepQuantity(item, -1) : undefined}
         onAction={canStep ? () => handleConsume(item) : undefined}
-        actionLabel="Use"
+        actionLabel={inventoryActionLabel(item.category)}
         onMenu={() => setMenuTarget(item)}
         onPress={() =>
           router.push({ pathname: '/inventory/details', params: { id: item.id } })
@@ -694,130 +707,28 @@ export default function InventoryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 6 }]}> 
-      <Animated.View style={[styles.stickyControls, stickyControlsStyle]}>
-      <View style={[styles.householdHeader, { paddingHorizontal: gutter }]}> 
-        <View style={styles.householdHeading}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>Inventory</Text>
-            <View style={styles.itemCountPill}>
-              <Text style={styles.itemCountText}>{stockCount} items</Text>
-            </View>
-          </View>
-          <Text style={styles.householdSubtitle} numberOfLines={1}>KeepFresh AI · Kitchen Assistant</Text>
-        </View>
-        <View style={styles.householdHeaderActions}>
-          <Pressable style={styles.iconCircle} onPress={() => router.push('/alerts')} accessibilityRole="button" accessibilityLabel="Notifications">
-            <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
-            <View style={styles.notificationDot} />
-          </Pressable>
-          <Pressable style={styles.profileCircle} onPress={() => router.push('/profile')} accessibilityRole="button" accessibilityLabel="Open profile">
-            <Text style={styles.profileInitials}>{householdInitials}</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={[styles.householdPinnedActions, { paddingHorizontal: gutter }]}> 
-        <Pressable style={styles.smartScanButton} onPress={() => router.push('/scan')} accessibilityRole="button" accessibilityLabel="AI Smart Scan">
-          <LinearGradient colors={['#10B981', '#059669']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.smartScanGradient}>
-            <MaterialCommunityIcons name="line-scan" size={22} color={colors.surface} />
-            <Text style={styles.smartScanText}>AI Smart Scan</Text>
-          </LinearGradient>
-        </Pressable>
-        <Pressable style={styles.quickAddButton} onPress={() => router.push('/inventory/add')} accessibilityRole="button" accessibilityLabel="Quick Add">
-          <View style={styles.quickAddIcon}><Ionicons name="add" size={22} color={colors.primary} /></View>
-          <Text style={styles.quickAddText}>Quick Add</Text>
-        </Pressable>
-      </View>
-
-      <View style={[styles.searchRow, { paddingHorizontal: gutter }]}>
-        <View style={styles.searchBox}>
-          {/* The magnifier that used to sit here is gone with the rest of the
-              icons — the placeholder already says what the field is for. */}
-          <Ionicons name="search" size={20} color={colors.textSecondary} />
+      <Animated.View
+        pointerEvents="box-none"
+        style={[styles.compactStickyBar, { top: insets.top + 6, left: gutter, right: gutter }, compactStickyStyle]}
+      >
+        <View style={styles.compactSearchBox}>
+          <Ionicons name="search" size={18} color={colors.textSecondary} />
           <TextInput
-            style={styles.searchInput}
+            style={styles.compactSearchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search food, brand or category..."
+            placeholder="Search inventory..."
             placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
           />
         </View>
-        <Pressable
-          style={styles.filterIconButton}
-          onPress={() => setFilterMenuOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`Filter inventory, ${FILTERS.find((option) => option.key === filter)?.label ?? 'All'} selected`}
-        >
-          <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
+        <Pressable style={styles.compactScanButton} onPress={() => router.push('/scan')} accessibilityRole="button" accessibilityLabel="AI Smart Scan">
+          <MaterialCommunityIcons name="line-scan" size={21} color={colors.surface} />
         </Pressable>
-      </View>
-
-      <View style={[styles.householdSection, { paddingHorizontal: gutter }]}>
-        <View style={styles.sectionHeadingRow}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Storage &amp; Categories</Text>
-            <Text style={styles.zonePill}>{areas.length || 0} Zones</Text>
-          </View>
-          <Pressable onPress={() => router.push('/storage-areas')} accessibilityRole="button" accessibilityLabel="Customize storage areas">
-            <Text style={styles.customizeText}>Customize</Text>
-          </Pressable>
-        </View>
-        <AreaFilterRow
-          chips={areaChips.map((c) => ({
-            key: c.key,
-            name: c.key === 'all' ? 'All Items' : c.name,
-            icon: storageIconForArea(c.name, c.key),
-            count: items.filter((item) => item.status === 'available' && (
-              c.key === 'all'
-              || (c.key === 'unassigned' ? !item.storage_area_id : item.storage_area_id === c.key)
-            )).length,
-          }))}
-          active={areaActive}
-          onChange={setAreaFilter}
-          gutter={0}
-        />
-        <View style={styles.inventoryHeadingRow}>
-          <Text style={styles.inventoryHeading}>Inventory Items ({filteredItems.length})</Text>
-          <View style={styles.sortButton} accessible accessibilityLabel="Sorted by expiry date">
-            <Text style={styles.sortLabel}>Sort: </Text>
-            <Text style={styles.sortValue}>Expiry date</Text>
-            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.primary} />
-          </View>
-        </View>
-      </View>
+        <Pressable style={styles.compactAddButton} onPress={() => router.push('/inventory/add')} accessibilityRole="button" accessibilityLabel="Quick Add">
+          <Ionicons name="add" size={23} color={colors.primary} />
+        </Pressable>
       </Animated.View>
-
-      {/* The "12 items available" line that used to sit here is gone: every tab
-          carries its own number, and those marks are counted over the current
-          search and area, so a total underneath them only repeated whichever tab
-          was already selected. What is left of the row is the way out of a
-          search — shown only while one is narrowing the list. */}
-      {searchActive && (
-        <View style={[styles.clearRow, { paddingHorizontal: gutter }]}>
-          <Pressable
-            onPress={() => setSearch('')}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Clear the search"
-            style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.6 }]}
-          >
-            <Text style={styles.clearBtnText} maxFontSizeMultiplier={1.4}>Clear search</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* A reached product limit is surfaced here rather than at the moment the
-          write fails, so the user knows before they fill in a form. */}
-      {!gates.addProduct.allowed && !upgradeDismissed && (
-        <UpgradeNotice
-          title={gates.addProduct.title}
-          message={gates.addProduct.message}
-          onPress={() => router.push('/subscription')}
-          onDismiss={() => setUpgradeDismissed(true)}
-          style={[styles.notice, { marginHorizontal: gutter }]}
-        />
-      )}
 
       <Animated.FlatList
         // `numColumns` cannot change on a mounted list, so changing it remounts
@@ -828,13 +739,89 @@ export default function InventoryScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         numColumns={listColumns}
-        columnWrapperStyle={listColumns > 1 ? { gap: spacing.sm + spacing.xs } : undefined}
+        columnWrapperStyle={listColumns > 1 ? { gap: gridGap, paddingHorizontal: gutter } : undefined}
         contentContainerStyle={{
-          paddingHorizontal: gutter,
-          paddingTop: spacing.xs,
           paddingBottom: contentInset,
-          gap: spacing.sm + spacing.xs,
+          gap: gridGap,
         }}
+        ListHeaderComponent={(
+          <View>
+            <View style={[styles.householdHeader, { paddingHorizontal: gutter }]}>
+              <View style={styles.householdHeading}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>Inventory</Text>
+                  <View style={styles.itemCountPill}><Text style={styles.itemCountText}>{stockCount} items</Text></View>
+                </View>
+                <Text style={styles.householdSubtitle} numberOfLines={1}>KeepFresh AI · Kitchen Assistant</Text>
+              </View>
+              <View style={styles.householdHeaderActions}>
+                <Pressable style={styles.iconCircle} onPress={() => router.push('/alerts')} accessibilityRole="button" accessibilityLabel="Notifications">
+                  <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+                  <View style={styles.notificationDot} />
+                </Pressable>
+                <Pressable style={styles.profileCircle} onPress={() => router.push('/profile')} accessibilityRole="button" accessibilityLabel="Open profile">
+                  <Text style={styles.profileInitials}>{householdInitials}</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={[styles.searchRow, { paddingHorizontal: gutter }]}>
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={20} color={colors.textSecondary} />
+                <TextInput style={styles.searchInput} value={search} onChangeText={setSearch} placeholder="Search food, brand or category..." placeholderTextColor={colors.textSecondary} returnKeyType="search" />
+                <Pressable onPress={() => setFilterMenuOpen(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Filter inventory, ${FILTERS.find((option) => option.key === filter)?.label ?? 'All'} selected`}>
+                  <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              <Pressable style={styles.compactScanButton} onPress={() => router.push('/scan')} accessibilityRole="button" accessibilityLabel="AI Smart Scan">
+                <MaterialCommunityIcons name="line-scan" size={21} color={colors.surface} />
+              </Pressable>
+              <Pressable style={styles.compactAddButton} onPress={() => router.push('/inventory/add')} accessibilityRole="button" accessibilityLabel="Quick Add">
+                <Ionicons name="add" size={23} color={colors.primary} />
+              </Pressable>
+            </View>
+
+            <View style={[styles.householdSection, { paddingHorizontal: gutter }]}>
+              <View style={styles.sectionHeadingRow}>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>Storage &amp; Categories</Text>
+                  <Text style={styles.zonePill}>{areas.length || 0} Zones</Text>
+                </View>
+                <Pressable onPress={() => router.push('/storage-areas')} accessibilityRole="button" accessibilityLabel="Customize storage areas"><Text style={styles.customizeText}>Customize</Text></Pressable>
+              </View>
+              <AreaFilterRow
+                chips={areaChips.map((c) => ({
+                  key: c.key,
+                  name: c.key === 'all' ? 'All Items' : c.name,
+                  icon: storageIconForArea(c.name, c.key),
+                  count: items.filter((item) => item.status === 'available' && (c.key === 'all' || (c.key === 'unassigned' ? !item.storage_area_id : item.storage_area_id === c.key))).length,
+                }))}
+                active={areaActive}
+                onChange={setAreaFilter}
+                gutter={0}
+              />
+              <View style={styles.inventoryHeadingRow}>
+                <Text style={styles.inventoryHeading}>Inventory Items ({filteredItems.length})</Text>
+                <Pressable style={styles.sortButton} onPress={() => setSortMenuOpen(true)} accessibilityRole="button" accessibilityLabel={`Sort inventory, ${sortBy} selected`}>
+                  <Text style={styles.sortLabel}>Sort: </Text>
+                  <Text style={styles.sortValue}>{sortBy === 'expiry' ? 'Expiry date' : sortBy === 'name' ? 'Name' : 'Recently added'}</Text>
+                  <MaterialCommunityIcons name="chevron-down" size={18} color={colors.primary} />
+                </Pressable>
+              </View>
+            </View>
+
+            {searchActive && (
+              <View style={[styles.clearRow, { paddingHorizontal: gutter }]}>
+                <Pressable onPress={() => setSearch('')} hitSlop={10} accessibilityRole="button" accessibilityLabel="Clear the search" style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.6 }]}>
+                  <Text style={styles.clearBtnText} maxFontSizeMultiplier={1.4}>Clear search</Text>
+                </Pressable>
+              </View>
+            )}
+            {!gates.addProduct.allowed && !upgradeDismissed && (
+              <UpgradeNotice title={gates.addProduct.title} message={gates.addProduct.message} onPress={() => router.push('/subscription')} onDismiss={() => setUpgradeDismissed(true)} style={[styles.notice, { marginHorizontal: gutter }]} />
+            )}
+          </View>
+        )}
         onScroll={onListScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
@@ -851,6 +838,23 @@ export default function InventoryScreen() {
           onPress: () => {
             setFilter(option.key);
             setFilterMenuOpen(false);
+          },
+        }))}
+      />
+
+      <ActionMenu
+        visible={sortMenuOpen}
+        title="Sort inventory"
+        onClose={() => setSortMenuOpen(false)}
+        actions={([
+          ['expiry', 'Expiry date'],
+          ['name', 'Name'],
+          ['recent', 'Recently added'],
+        ] as [InventorySort, string][]).map(([value, label]) => ({
+          label: `${sortBy === value ? '✓ ' : ''}${label}`,
+          onPress: () => {
+            setSortBy(value);
+            setSortMenuOpen(false);
           },
         }))}
       />
@@ -897,9 +901,25 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.screenBg },
-  stickyControls: {
-    zIndex: 2, backgroundColor: colors.screenBg,
+  compactStickyBar: {
+    position: 'absolute', zIndex: 20, minHeight: 56,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.xs, borderRadius: 18, backgroundColor: colors.screenBg,
     shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 4 },
+  },
+  compactSearchBox: {
+    flex: 1, minWidth: 0, height: 48, flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  compactSearchInput: { flex: 1, minWidth: 0, padding: 0, fontSize: 14, color: colors.textPrimary },
+  compactScanButton: {
+    height: 48, aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.secondary,
+  },
+  compactAddButton: {
+    height: 48, aspectRatio: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   householdHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -909,7 +929,7 @@ const styles = StyleSheet.create({
   householdSubtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 3 },
   householdHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconCircle: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surface,
+    height: 52, aspectRatio: 1, borderRadius: radii.pill, backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center', ...shadow.faint,
   },
   notificationDot: {
@@ -917,34 +937,10 @@ const styles = StyleSheet.create({
     borderRadius: 5, backgroundColor: colors.warning, borderWidth: 2, borderColor: colors.surface,
   },
   profileCircle: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: colors.mintBg,
+    height: 56, aspectRatio: 1, borderRadius: radii.pill, backgroundColor: colors.mintBg,
     borderWidth: 2, borderColor: '#8BE4C2', alignItems: 'center', justifyContent: 'center',
   },
   profileInitials: { color: colors.primary, fontSize: 16, fontWeight: '700' },
-  householdPinnedActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  smartScanButton: {
-    flex: 1.2, minWidth: 0, minHeight: 68, borderRadius: 18, overflow: 'hidden',
-    ...shadow.card,
-  },
-  smartScanGradient: {
-    flex: 1, minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, paddingHorizontal: spacing.sm,
-  },
-  smartScanText: { color: colors.surface, fontSize: 16, fontWeight: '700' },
-  quickAddButton: {
-    flex: 1, minWidth: 0, minHeight: 68, borderRadius: 18, backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, paddingHorizontal: spacing.sm,
-  },
-  quickAddIcon: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: '#C7F7E2',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  quickAddText: { color: colors.primaryDark, fontSize: 16, fontWeight: '700' },
-  filterIconButton: {
-    width: 52, height: 52, borderRadius: radii.md, backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
-  },
   householdSection: { marginBottom: spacing.xs },
   sectionHeadingRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -974,7 +970,7 @@ const styles = StyleSheet.create({
   },
   headerTitleBlock: { flexGrow: 1, flexShrink: 1, minWidth: 150 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  title: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  title: { fontSize: 30, fontWeight: '800', color: colors.textPrimary },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
   itemCountPill: {
     backgroundColor: colors.mintBg,
@@ -1143,6 +1139,26 @@ function formatExpiryDistance(date: string): string {
   return `${Math.round(days / 365)} yr${days >= 730 ? 's' : ''}`;
 }
 
+function daysUntil(date: string): number {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return 0;
+  const expiry = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((expiry.getTime() - today.getTime()) / 86400000);
+}
+
+function freshnessUrgencyProgress(daysLeft: number): number {
+  if (daysLeft <= 1) return 0.88;
+  if (daysLeft <= 2) return 0.78;
+  if (daysLeft <= 3) return 0.7;
+  if (daysLeft <= 4) return 0.64;
+  if (daysLeft <= 7) return 0.5;
+  if (daysLeft <= 14) return 0.25;
+  if (daysLeft <= 30) return 0.18;
+  return 0.12;
+}
+
 function storageIconForArea(name: string, key: AreaFilter): StorageIconName {
   if (key === 'all') return 'package-variant-closed';
   const normalized = name.toLowerCase();
@@ -1150,4 +1166,11 @@ function storageIconForArea(name: string, key: AreaFilter): StorageIconName {
   if (normalized.includes('freezer')) return 'snowflake';
   if (normalized.includes('pantry')) return 'food-variant';
   return 'map-marker-outline';
+}
+
+function inventoryActionLabel(category?: string | null): 'Cook' | 'Eat' | 'Use' {
+  const normalized = (category || '').toLowerCase();
+  if (/(meat|poultry|fish|seafood|protein)/.test(normalized)) return 'Cook';
+  if (/(fruit|vegetable|produce)/.test(normalized)) return 'Eat';
+  return 'Use';
 }

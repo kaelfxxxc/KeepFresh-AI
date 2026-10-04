@@ -1195,6 +1195,7 @@ export function IconBadge({
 /* ------------------------------------------------- Stat card */
 export function StatCard({
   icon: Icon,
+  iconElement,
   title,
   value,
   caption,
@@ -1204,7 +1205,8 @@ export function StatCard({
   index = 0,
   animate = true,
 }: {
-  icon: IconComp;
+  icon?: IconComp;
+  iconElement?: React.ReactNode;
   title: string;
   value: string | number;
   caption?: string;
@@ -1218,7 +1220,7 @@ export function StatCard({
     <Animated.View entering={appearEntering(animate, index)} style={[styles.statCard, style]}>
       <View style={styles.statCardRow}>
         <IconBadge color={iconBg} size={40}>
-          <Icon size={20} color={iconBg} strokeWidth={2.2} />
+          {iconElement ?? (Icon ? <Icon size={20} color={iconBg} strokeWidth={2.2} /> : null)}
         </IconBadge>
         <View style={styles.statCardText}>
           <Text style={styles.statCardTitle} numberOfLines={1}>

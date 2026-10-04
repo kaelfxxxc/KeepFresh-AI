@@ -9,10 +9,9 @@ import { useSubscription } from '../../src/context/SubscriptionContext';
 import { supabase } from '../../src/lib/supabase';
 import { subscribeToTables } from '../../src/lib/realtime';
 import { colors, radii, spacing, shadow } from '../../src/theme';
-import {
-  CalendarDays, ChevronRight, Crown, Package,
-  PieChart, ShoppingBasket, ShoppingCart,
-} from 'lucide-react-native';
+import { CalendarDays, ChevronRight, Crown } from 'lucide-react-native';
+import { SvgXml } from 'react-native-svg';
+import { DASHBOARD_ICONS } from '../../src/constants/dashboardIcons';
 import { AvatarCircle, ItemImage, StatCard, TrendBarChart, AIBanner, SectionHeader, StatusPill, colorWithOpacity } from '../../src/components/ui';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { DateRangePickerModal } from '../../src/components/DateRangePicker';
@@ -26,6 +25,8 @@ import {
 import type { BucketUnit, TrendBucket } from '../../src/utils/wasteTrend';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
+
+
 
 /** One row of the "Recently consumed" list. */
 interface ConsumedEntry {
@@ -365,7 +366,7 @@ export default function HomeScreen() {
           <View style={styles.metricGrid}>
             <StatCard
               index={0}
-              icon={Package}
+              iconElement={<SvgXml xml={DASHBOARD_ICONS.inventory} width={20} height={20} />}
               title="Items in inventory"
               value={`${stats?.totalItems ?? 0}`}
               iconBg={colors.primary}
@@ -373,7 +374,7 @@ export default function HomeScreen() {
             />
             <StatCard
               index={1}
-              icon={ShoppingCart}
+              iconElement={<SvgXml xml={DASHBOARD_ICONS.needToBuy} width={20} height={20} />}
               title="Need to buy"
               value={`${stats?.needToBuy ?? 0}`}
               iconBg={colors.warning}
@@ -383,7 +384,7 @@ export default function HomeScreen() {
           <View style={styles.metricGrid}>
             <StatCard
               index={2}
-              icon={ShoppingBasket}
+              iconElement={<SvgXml xml={DASHBOARD_ICONS.grocery} width={20} height={20} />}
               title="Grocery List"
               value="Open"
               caption="Smart list & scan"
@@ -392,7 +393,7 @@ export default function HomeScreen() {
             />
             <StatCard
               index={3}
-              icon={PieChart}
+              iconElement={<SvgXml xml={DASHBOARD_ICONS.analytics} width={20} height={20} />}
               title="Analytics"
               value="Reports"
               caption="Waste & savings"

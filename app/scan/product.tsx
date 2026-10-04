@@ -119,6 +119,7 @@ export default function ProductInfoScreen() {
         expiration_date: info.expiration_date,
         barcode: info.barcode || params.barcode || '',
         image_url: info.image_url,
+        returnToScanner: '1',
       },
     });
   };

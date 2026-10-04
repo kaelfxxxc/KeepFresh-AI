@@ -137,7 +137,7 @@ export default function ScanScreen() {
       { text: 'Cancel', style: 'cancel', onPress: () => setScanned(false) },
       {
         text: 'Enter Manually',
-        onPress: () => router.push({ pathname: '/inventory/add', params: { barcode } }),
+        onPress: () => router.push({ pathname: '/inventory/add', params: { barcode, returnToScanner: '1' } }),
       },
     ]);
   };
@@ -330,7 +330,7 @@ export default function ScanScreen() {
             <Sparkles size={16} color={colors.surface} strokeWidth={2.2} />
             <Text style={styles.manualText}>See plans</Text>
           </Pressable>
-          <Pressable style={styles.textBtn} onPress={() => router.push('/inventory/add')} hitSlop={8}>
+          <Pressable style={styles.textBtn} onPress={() => router.push({ pathname: '/inventory/add', params: { returnToScanner: '1' } })} hitSlop={8}>
             <Text style={styles.textBtnLabel}>Enter a product manually instead</Text>
           </Pressable>
         </View>
@@ -457,7 +457,7 @@ export default function ScanScreen() {
               </Pressable>
               <Pressable
                 style={styles.modeBtn}
-                onPress={() => router.push('/inventory/add')}
+                onPress={() => router.push({ pathname: '/inventory/add', params: { returnToScanner: '1' } })}
                 disabled={loading}
                 accessibilityRole="button"
                 accessibilityLabel="Enter the product details manually"

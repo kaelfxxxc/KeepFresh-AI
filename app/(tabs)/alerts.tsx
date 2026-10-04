@@ -172,12 +172,8 @@ export default function AlertsScreen() {
   };
 
   /**
-   * Running low, the horizon picker and the section heading all scroll with the
-   * list.
-   *
-   * The picker used to be pinned above it, which stops working the moment
-   * Running Low is a section of its own: the segments would sit over a block
-   * they do not govern and read as though they filtered it.
+   * The low stock and expiry section heading scroll with the list. The horizon
+   * picker is pinned in the page header because it controls the expiry list.
    */
   const header = (
     <View style={{ gap: spacing.md }}>
@@ -195,23 +191,6 @@ export default function AlertsScreen() {
         </View>
       )}
 
-      <FilterChipRow
-        chips={[
-          { label: 'Today', count: groups.today.length },
-          { label: 'Next 7 Days', count: groups.week.length },
-          { label: 'This Month', count: groups.month.length },
-        ]}
-        activeChip={
-          horizon === 'today' ? 'Today' :
-          horizon === 'week' ? 'Next 7 Days' : 'This Month'
-        }
-        onSelect={(label) => setHorizon(
-          label === 'Today' ? 'today' :
-          label === 'Next 7 Days' ? 'week' : 'month'
-        )}
-        style={{ marginTop: spacing.md }}
-      />
-
       {!loading && list.length > 0 && (
         <SectionHeader title={HEADINGS[horizon]} />
       )}
@@ -223,6 +202,22 @@ export default function AlertsScreen() {
       <View style={[styles.header, { paddingHorizontal: gutter }]}>
         <Text style={styles.title}>Alerts</Text>
         <Text style={styles.subtitle}>Running low and nearing expiry, in one place</Text>
+        <FilterChipRow
+          chips={[
+            { label: 'Today', count: groups.today.length },
+            { label: 'Next 7 Days', count: groups.week.length },
+            { label: 'This Month', count: groups.month.length },
+          ]}
+          activeChip={
+            horizon === 'today' ? 'Today' :
+            horizon === 'week' ? 'Next 7 Days' : 'This Month'
+          }
+          onSelect={(label) => setHorizon(
+            label === 'Today' ? 'today' :
+            label === 'Next 7 Days' ? 'week' : 'month'
+          )}
+          style={{ marginTop: spacing.md }}
+        />
       </View>
 
       <FlatList

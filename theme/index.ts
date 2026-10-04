@@ -7,16 +7,18 @@
 // rather than by two copies being kept in sync.
 
 export const colors = {
-  primaryDark: '#0B3D2E',   // headers, primary CTA, active nav, dark banners
-  primary: '#1B7A4D',       // buttons, active icons, links
-  mintBg: '#E3F5E9',        // highlight cards, AI banners
-  screenBg: '#F1F9F4',      // page background
+  primaryDark: '#0F5132',   // headers, primary CTA, active nav, dark banners
+  primary: '#0F5132',       // buttons, active icons, links
+  secondary: '#10B981',     // affirmative actions, fresh states, active indicators
+  mint: '#10B981',          // alias for the documented crisp mint accent
+  mintBg: '#EBF3ED',        // grouped containers, highlight cards, AI banners
+  screenBg: '#F6F8F5',      // page background
   surface: '#FFFFFF',       // card surfaces
-  warning: '#F5A623',       // expiring soon
-  danger: '#E5484D',        // expired / delete / high price
-  textPrimary: '#1A1A1A',
+  warning: '#F59E0B',       // expiring soon
+  danger: '#EF4444',        // expired / delete / high price
+  textPrimary: '#1E2922',
   textSecondary: '#6B7280',
-  border: '#EAECEF',
+  border: '#DCE8DF',
 };
 
 export const radii = {
@@ -55,7 +57,7 @@ export const typography = {
 
 export const shadow = {
   card: {
-    shadowColor: '#000',
+    shadowColor: '#0F5132',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -64,7 +66,7 @@ export const shadow = {
   // A hairline lift for things that sit *on* a card rather than being one — a
   // dropdown panel, a badge. Card elevation on those read as a second card.
   faint: {
-    shadowColor: '#000',
+    shadowColor: '#0F5132',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
@@ -82,8 +84,9 @@ export const shadow = {
  * four files and had already drifted into two different ambers.
  */
 export const statusSurface = {
-  warning: { bg: '#FEF3C7', border: '#FDE68A', text: '#92400E' },
-  danger: { bg: '#FEE2E2', border: '#FECACA', text: '#991B1B' },
+  success: { bg: '#E8F8F0', border: '#B5E6CC', text: '#107C41' },
+  warning: { bg: '#FEF3C7', border: '#F5D48A', text: '#B45309' },
+  danger: { bg: '#FEE2E2', border: '#F3B7B7', text: '#B91C1C' },
 };
 
 /**
@@ -111,8 +114,8 @@ export const COLORS = {
   primaryDark: colors.primaryDark,
   primaryLight: colors.mintBg,
   mintBg: colors.mintBg,
-  secondary: colors.primary,
-  accentLight: '#BFE6CF',
+  secondary: colors.secondary,
+  accentLight: '#34D399',
 
   // Neutrals
   background: colors.screenBg,
@@ -125,27 +128,27 @@ export const COLORS = {
   textSecondary: colors.textSecondary,
   divider: colors.border,
   border: colors.border,
-  disabled: '#E9ECEF',
-  mutedBg: '#F1F3F5',
-  chartBar: '#ADB5BD',
+  disabled: '#DCE8DF',
+  mutedBg: '#EBF3ED',
+  chartBar: '#9BB8A5',
 
   // Solid accent colors
   warning: colors.warning,
   danger: colors.danger,
-  success: '#2ECC71',
-  star: '#F5B50A',
+  success: colors.secondary,
+  star: colors.warning,
 
   // Status badge pairs
-  successBg: '#D4EDDA',
-  successText: '#155724',
-  warningBg: '#FFF3CD',
-  warningText: '#856404',
-  dangerBg: '#F8D7DA',
-  dangerText: '#721C24',
-  neutralBg: '#E9ECEF',
-  neutralText: '#495057',
-  wastedBg: '#E7DBF5',
-  wastedText: '#4B2A7B',
+  successBg: statusSurface.success.bg,
+  successText: statusSurface.success.text,
+  warningBg: statusSurface.warning.bg,
+  warningText: statusSurface.warning.text,
+  dangerBg: statusSurface.danger.bg,
+  dangerText: statusSurface.danger.text,
+  neutralBg: colors.mintBg,
+  neutralText: colors.textSecondary,
+  wastedBg: statusSurface.danger.bg,
+  wastedText: statusSurface.danger.text,
 
   // Misc
   overlay,

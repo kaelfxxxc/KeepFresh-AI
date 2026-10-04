@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
-  ScrollView,
+  View, Text, Pressable, TextInput, StyleSheet, Alert, RefreshControl,
+  ScrollView, useWindowDimensions,
 } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,8 +16,12 @@ import { InventoryItem, StorageArea } from '../../src/types';
 import { getExpirationStatus } from '../../src/utils/expiration';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import { useContentLayout } from '../../src/hooks/useContentLayout';
-import { Plus, ScanLine, Search } from 'lucide-react-native';
-import { EmptyState, QuantityPrompt, UpgradeNotice, ActionMenu, InventoryListItem, FilterChipRow, colorWithOpacity } from '../../src/components/ui';
+import Animated, {
+  Extrapolation, interpolate, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue,
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { EmptyState, QuantityPrompt, UpgradeNotice, ActionMenu, InventoryListItem, colorWithOpacity } from '../../src/components/ui';
 import type { Status } from '../../src/components/ui';
 import { errorMessage } from '../../src/utils/errors';
 
@@ -43,6 +47,7 @@ const FILTERS: { key: Filter; label: string }[] = [
  * `'all'` and `'unassigned'` are buckets; anything else is a storage area id.
  */
 type AreaFilter = 'all' | 'unassigned' | string;
+type StorageIconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /**
  * Which rows belong under a given tab.
@@ -149,10 +154,10 @@ function FilterTabs({ active, counts, onChange, gutter }: {
  * is in it, and the areas are a secondary filter that should not outgrow the
  * tabs above them.
  *
- * Text only — no emoji, no glyphs. The name of the area is the whole label.
+ * Chips show an icon, area name and item count together, matching the inventory reference.
  */
 function AreaFilterRow({ chips, active, onChange, gutter }: {
-  chips: { key: AreaFilter; name: string }[];
+  chips: { key: AreaFilter; name: string; count: number; icon: StorageIconName }[];
   active: AreaFilter;
   onChange: (key: AreaFilter) => void;
   gutter: number;
@@ -174,21 +179,15 @@ function AreaFilterRow({ chips, active, onChange, gutter }: {
             key={chip.key}
             onPress={() => onChange(chip.key)}
             hitSlop={3}
-            style={({ pressed }) => [
-              styles.areaChip,
-              selected && styles.areaChipActive,
-              pressed && { opacity: 0.6 },
-            ]}
+            style={({ pressed }) => [styles.areaChip, selected && styles.areaChipActive, pressed && { opacity: 0.6 }]}
             accessibilityRole="button"
             accessibilityState={{ selected }}
           >
-            <Text
-              style={[styles.areaChipText, selected && styles.areaChipTextActive]}
-              numberOfLines={1}
-              maxFontSizeMultiplier={1.3}
-            >
-              {chip.name}
-            </Text>
+            <MaterialCommunityIcons name={chip.icon} size={20} color={selected ? colors.surface : colors.primary} />
+            <View style={styles.areaChipCopy}>
+              <Text style={[styles.areaChipText, selected && styles.areaChipTextActive]} numberOfLines={1} maxFontSizeMultiplier={1.2}>{chip.name}</Text>
+              <Text style={[styles.areaChipCount, selected && styles.areaChipTextActive]} numberOfLines={1}>{chip.count} item{chip.count === 1 ? '' : 's'}</Text>
+            </View>
           </Pressable>
         );
       })}
@@ -211,10 +210,20 @@ export default function InventoryScreen() {
   // The rule itself lives in the hook, shared with the Add Item form: the two
   // screens are one tap apart, and a half-inch difference in the left margin
   // between them reads as a bug.
-  const { compact, contentWidth, gutter } = useContentLayout();
+  const { gutter } = useContentLayout();
+  const { width: windowWidth } = useWindowDimensions();
   // Two columns of cards once there is room for them. A single column stretched
   // across a 10" tablet is a line of text with a lot of empty space beside it.
-  const listColumns = contentWidth >= 640 ? 2 : 1;
+  const listColumns = windowWidth >= 768 ? 3 : 2;
+  const scrollY = useSharedValue(0);
+  const onListScroll = useAnimatedScrollHandler({
+    onScroll: (event) => { scrollY.value = event.contentOffset.y; },
+  });
+  const stickyControlsStyle = useAnimatedStyle(() => ({
+    shadowOpacity: interpolate(scrollY.value, [0, 16], [0, 0.08], Extrapolation.CLAMP),
+    shadowRadius: interpolate(scrollY.value, [0, 16], [0, 6], Extrapolation.CLAMP),
+    elevation: interpolate(scrollY.value, [0, 16], [0, 4], Extrapolation.CLAMP),
+  }));
   // The bottom nav floats over this screen, so the list has to end above it.
   const { contentInset } = useFloatingTabBar();
 
@@ -226,6 +235,7 @@ export default function InventoryScreen() {
   const [areas, setAreas] = useState<StorageArea[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [areaFilter, setAreaFilter] = useState<AreaFilter>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -595,6 +605,7 @@ export default function InventoryScreen() {
         quantity={quantity}
         unit={item.unit}
         location={area?.name}
+        expiryLabel={item.expiration_date ? formatExpiryDistance(item.expiration_date) : statusOf(item).label}
         expiryDate={
           item.expiration_date
             ? `Best before ${formatDayMonth(item.expiration_date)}`
@@ -604,6 +615,7 @@ export default function InventoryScreen() {
         progressRatio={progressRatio}
         imageUri={item.image_url}
         category={item.category}
+        variant="household"
         onIncrement={canStep ? () => stepQuantity(item, 1) : undefined}
         onDecrement={canStep ? () => stepQuantity(item, -1) : undefined}
         onAction={canStep ? () => handleConsume(item) : undefined}
@@ -673,117 +685,108 @@ export default function InventoryScreen() {
     );
   };
 
+  const householdInitials = (profile?.full_name || profile?.email || 'AL')
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 6 }]}>
-      <View style={[styles.header, { paddingHorizontal: gutter }]}>
-        <View style={styles.headerTitleBlock}>
+    <View style={[styles.container, { paddingTop: insets.top + 6 }]}> 
+      <Animated.View style={[styles.stickyControls, stickyControlsStyle]}>
+      <View style={[styles.householdHeader, { paddingHorizontal: gutter }]}> 
+        <View style={styles.householdHeading}>
           <View style={styles.titleRow}>
-            <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>
-              My Inventory
-            </Text>
+            <Text style={styles.title} numberOfLines={1} maxFontSizeMultiplier={1.2}>Inventory</Text>
             <View style={styles.itemCountPill}>
               <Text style={styles.itemCountText}>{stockCount} items</Text>
             </View>
           </View>
-          {/* Stock on the shelf, not every row ever written. Counting consumed
-              and wasted items here made the headline disagree with the list
-              underneath it, which shows none of them by default. */}
-          <Text style={styles.subtitle} numberOfLines={1} maxFontSizeMultiplier={1.4}>
-            {stockCount} item{stockCount === 1 ? '' : 's'} in stock
-          </Text>
+          <Text style={styles.householdSubtitle} numberOfLines={1}>KeepFresh AI · Kitchen Assistant</Text>
         </View>
-        {/* The two actions are grouped so that when the header wraps on a narrow
-            screen they move down together as one row, instead of the Add button
-            orphaning itself onto a line below Scan. */}
-        <View style={styles.headerActions}>
-          <Pressable
-            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.6 }]}
-            onPress={() => router.push('/scan')}
-            accessibilityRole="button"
-            accessibilityLabel="Scan a product"
-          >
-            <ScanLine size={17} color={colors.primary} strokeWidth={2.3} />
-            <Text style={styles.scanBtnText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-              Scan
-            </Text>
+        <View style={styles.householdHeaderActions}>
+          <Pressable style={styles.iconCircle} onPress={() => router.push('/alerts')} accessibilityRole="button" accessibilityLabel="Notifications">
+            <Ionicons name="notifications-outline" size={22} color={colors.textPrimary} />
+            <View style={styles.notificationDot} />
           </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.addFab, pressed && { opacity: 0.85 }]}
-            onPress={() => router.push('/inventory/add')}
-            accessibilityRole="button"
-            accessibilityLabel="Add an item"
-          >
-            <Plus size={17} color={colors.surface} strokeWidth={2.8} />
-            <Text style={styles.addFabText} numberOfLines={1} maxFontSizeMultiplier={1.3}>
-              Add Item
-            </Text>
+          <Pressable style={styles.profileCircle} onPress={() => router.push('/profile')} accessibilityRole="button" accessibilityLabel="Open profile">
+            <Text style={styles.profileInitials}>{householdInitials}</Text>
           </Pressable>
         </View>
+      </View>
+
+      <View style={[styles.householdPinnedActions, { paddingHorizontal: gutter }]}> 
+        <Pressable style={styles.smartScanButton} onPress={() => router.push('/scan')} accessibilityRole="button" accessibilityLabel="AI Smart Scan">
+          <LinearGradient colors={['#10B981', '#059669']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.smartScanGradient}>
+            <MaterialCommunityIcons name="line-scan" size={22} color={colors.surface} />
+            <Text style={styles.smartScanText}>AI Smart Scan</Text>
+          </LinearGradient>
+        </Pressable>
+        <Pressable style={styles.quickAddButton} onPress={() => router.push('/inventory/add')} accessibilityRole="button" accessibilityLabel="Quick Add">
+          <View style={styles.quickAddIcon}><Ionicons name="add" size={22} color={colors.primary} /></View>
+          <Text style={styles.quickAddText}>Quick Add</Text>
+        </Pressable>
       </View>
 
       <View style={[styles.searchRow, { paddingHorizontal: gutter }]}>
         <View style={styles.searchBox}>
           {/* The magnifier that used to sit here is gone with the rest of the
               icons — the placeholder already says what the field is for. */}
-          <Search size={18} color={colors.textSecondary} strokeWidth={2} />
+          <Ionicons name="search" size={20} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search food, brand or category"
+            placeholder="Search food, brand or category..."
             placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
           />
         </View>
-        {/* The sliders button that used to sit here toggled the list between
-            "All" and "Available" — the same state as the first two tabs, a few
-            pixels below it, with no way to tell from the icon what it did. */}
+        <Pressable
+          style={styles.filterIconButton}
+          onPress={() => setFilterMenuOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Filter inventory, ${FILTERS.find((option) => option.key === filter)?.label ?? 'All'} selected`}
+        >
+          <Ionicons name="options-outline" size={20} color={colors.textSecondary} />
+        </Pressable>
       </View>
 
-      <FilterChipRow
-        chips={FILTERS.map((f) => ({
-          label: f.label,
-          value: f.key,
-          count: filterCounts[f.key],
-        }))}
-        activeChip={filter}
-        onSelect={(key) => setFilter(key as Filter)}
-        variant="card"
-        activeTone="dark"
-        contentStyle={{
-          paddingHorizontal: gutter,
-          paddingVertical: 0,
-          minHeight: 34,
-          gap: compact ? spacing.xs : spacing.sm,
-        }}
-        style={{
-          flexGrow: 0,
-          marginBottom: compact ? spacing.xs : spacing.sm,
-        }}
-      />
-
-      {/* Storage areas, under the tabs they narrow */}
-      {areaChips.length > 1 && (
-        <FilterChipRow
+      <View style={[styles.householdSection, { paddingHorizontal: gutter }]}>
+        <View style={styles.sectionHeadingRow}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Storage &amp; Categories</Text>
+            <Text style={styles.zonePill}>{areas.length || 0} Zones</Text>
+          </View>
+          <Pressable onPress={() => router.push('/storage-areas')} accessibilityRole="button" accessibilityLabel="Customize storage areas">
+            <Text style={styles.customizeText}>Customize</Text>
+          </Pressable>
+        </View>
+        <AreaFilterRow
           chips={areaChips.map((c) => ({
-            label: c.name,
-            value: c.key,
+            key: c.key,
+            name: c.key === 'all' ? 'All Items' : c.name,
+            icon: storageIconForArea(c.name, c.key),
+            count: items.filter((item) => item.status === 'available' && (
+              c.key === 'all'
+              || (c.key === 'unassigned' ? !item.storage_area_id : item.storage_area_id === c.key)
+            )).length,
           }))}
-          activeChip={areaActive}
-          onSelect={setAreaFilter}
-          variant="card"
-          contentStyle={{
-            paddingHorizontal: gutter,
-            paddingVertical: 0,
-            minHeight: 34,
-            gap: compact ? spacing.xs : spacing.sm,
-          }}
-          style={{
-            flexGrow: 0,
-            marginBottom: compact ? spacing.xs : spacing.sm,
-          }}
+          active={areaActive}
+          onChange={setAreaFilter}
+          gutter={0}
         />
-      )}
+        <View style={styles.inventoryHeadingRow}>
+          <Text style={styles.inventoryHeading}>Inventory Items ({filteredItems.length})</Text>
+          <View style={styles.sortButton} accessible accessibilityLabel="Sorted by expiry date">
+            <Text style={styles.sortLabel}>Sort: </Text>
+            <Text style={styles.sortValue}>Expiry date</Text>
+            <MaterialCommunityIcons name="chevron-down" size={18} color={colors.primary} />
+          </View>
+        </View>
+      </View>
+      </Animated.View>
 
       {/* The "12 items available" line that used to sit here is gone: every tab
           carries its own number, and those marks are counted over the current
@@ -816,7 +819,7 @@ export default function InventoryScreen() {
         />
       )}
 
-      <FlatList
+      <Animated.FlatList
         // `numColumns` cannot change on a mounted list, so changing it remounts
         // the list through the key. That only happens on a rotation or a split
         // screen, where a fresh mount is cheap and a half-relaid-out list is not.
@@ -825,16 +828,31 @@ export default function InventoryScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         numColumns={listColumns}
-        columnWrapperStyle={listColumns > 1 ? { gap: spacing.sm } : undefined}
+        columnWrapperStyle={listColumns > 1 ? { gap: spacing.sm + spacing.xs } : undefined}
         contentContainerStyle={{
           paddingHorizontal: gutter,
           paddingTop: spacing.xs,
           paddingBottom: contentInset,
-          gap: spacing.sm,
+          gap: spacing.sm + spacing.xs,
         }}
+        onScroll={onListScroll}
+        scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} tintColor={colors.primary} />}
         ListEmptyComponent={!loading ? emptyState() : null}
+      />
+
+      <ActionMenu
+        visible={filterMenuOpen}
+        title="Filter inventory"
+        onClose={() => setFilterMenuOpen(false)}
+        actions={FILTERS.map((option) => ({
+          label: `${filter === option.key ? '✓ ' : ''}${option.label} (${filterCounts[option.key] ?? 0})`,
+          onPress: () => {
+            setFilter(option.key);
+            setFilterMenuOpen(false);
+          },
+        }))}
       />
 
       <ActionMenu
@@ -879,6 +897,74 @@ export default function InventoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.screenBg },
+  stickyControls: {
+    zIndex: 2, backgroundColor: colors.screenBg,
+    shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 4 },
+  },
+  householdHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: spacing.sm, paddingBottom: spacing.lg,
+  },
+  householdHeading: { flex: 1, minWidth: 0 },
+  householdSubtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 3 },
+  householdHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  iconCircle: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center', ...shadow.faint,
+  },
+  notificationDot: {
+    position: 'absolute', right: 10, top: 9, width: 10, height: 10,
+    borderRadius: 5, backgroundColor: colors.warning, borderWidth: 2, borderColor: colors.surface,
+  },
+  profileCircle: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: colors.mintBg,
+    borderWidth: 2, borderColor: '#8BE4C2', alignItems: 'center', justifyContent: 'center',
+  },
+  profileInitials: { color: colors.primary, fontSize: 16, fontWeight: '700' },
+  householdPinnedActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  smartScanButton: {
+    flex: 1.2, minWidth: 0, minHeight: 68, borderRadius: 18, overflow: 'hidden',
+    ...shadow.card,
+  },
+  smartScanGradient: {
+    flex: 1, minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, paddingHorizontal: spacing.sm,
+  },
+  smartScanText: { color: colors.surface, fontSize: 16, fontWeight: '700' },
+  quickAddButton: {
+    flex: 1, minWidth: 0, minHeight: 68, borderRadius: 18, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, paddingHorizontal: spacing.sm,
+  },
+  quickAddIcon: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: '#C7F7E2',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickAddText: { color: colors.primaryDark, fontSize: 16, fontWeight: '700' },
+  filterIconButton: {
+    width: 52, height: 52, borderRadius: radii.md, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
+  householdSection: { marginBottom: spacing.xs },
+  sectionHeadingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
+  sectionTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '800' },
+  zonePill: {
+    color: colors.primary, backgroundColor: '#C7F7E2', borderRadius: radii.pill,
+    paddingHorizontal: 8, paddingVertical: 3, fontSize: 12, fontWeight: '700',
+  },
+  customizeText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  inventoryHeadingRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: spacing.xs, marginBottom: spacing.sm,
+  },
+  inventoryHeading: { color: colors.textSecondary, fontSize: 16, fontWeight: '700' },
+  sortButton: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  sortLabel: { color: colors.textSecondary, fontSize: 14 },
+  sortValue: { color: colors.primary, fontSize: 14, fontWeight: '800' },
   // Wraps rather than shrinks: on a narrow screen the two buttons drop to a
   // second line together, which costs a few pixels of height to buy a
   // full-width title instead of an ellipsised one.
@@ -920,8 +1006,8 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.surface, borderRadius: radii.sm,
-    borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, height: 46,
+    backgroundColor: colors.surface, borderRadius: radii.md,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, height: 52,
   },
   searchInput: { flex: 1, fontSize: 15, color: colors.textPrimary, padding: 0 },
   // Four tabs no longer fit on one line at 375pt ("Need to Buy" is a wide
@@ -959,18 +1045,20 @@ const styles = StyleSheet.create({
   // One line tall, and explicitly not a flex child that grows: a horizontal
   // ScrollView will otherwise stretch and take the space the list needs.
   areaRowScroll: { flexGrow: 0 },
-  areaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 2 },
+  areaRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm, paddingVertical: 2 },
   // 38 drawn + hitSlop 3 on each side clears the 44 touch minimum without the
   // row standing taller than the tabs it sits under.
   areaChip: {
-    minHeight: 38, paddingHorizontal: 14, borderRadius: radii.pill,
-    alignItems: 'center', justifyContent: 'center',
+    minHeight: 64, paddingHorizontal: 12, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.border,
   },
-  areaChipActive: { backgroundColor: colors.mintBg, borderColor: colors.primary },
-  areaChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  areaChipTextActive: { color: colors.primary, fontWeight: '700' },
+  areaChipActive: { backgroundColor: '#065F46', borderColor: '#065F46' },
+  areaChipCopy: { flexShrink: 1, gap: 1 },
+  areaChipText: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  areaChipCount: { fontSize: 11, fontWeight: '500', color: colors.textSecondary },
+  areaChipTextActive: { color: colors.surface },
   // Right-aligned, because the count it used to sit opposite is gone and the
   // control reads as an action on the search box above it.
   clearRow: {
@@ -1037,4 +1125,29 @@ function formatDayMonth(date: string): string {
     day: 'numeric',
     month: 'short',
   });
+}
+
+/** Compact freshness date for the household style card badge. */
+function formatExpiryDistance(date: string): string {
+  const [year, month, day] = date.slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return date;
+  const expiry = new Date(year, month - 1, day);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((expiry.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return 'Expired';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days < 30) return `${days} days`;
+  if (days < 365) return `${Math.round(days / 30)} mos`;
+  return `${Math.round(days / 365)} yr${days >= 730 ? 's' : ''}`;
+}
+
+function storageIconForArea(name: string, key: AreaFilter): StorageIconName {
+  if (key === 'all') return 'package-variant-closed';
+  const normalized = name.toLowerCase();
+  if (normalized.includes('fridge') || normalized.includes('refrigerator')) return 'fridge-outline';
+  if (normalized.includes('freezer')) return 'snowflake';
+  if (normalized.includes('pantry')) return 'food-variant';
+  return 'map-marker-outline';
 }

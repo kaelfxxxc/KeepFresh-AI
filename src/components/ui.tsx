@@ -1388,6 +1388,7 @@ export function InventoryListItem({
   unit = 'pcs',
   location,
   expiryDate,
+  expiryLabel,
   status = 'fresh',
   progressRatio = 1,
   imageUri,
@@ -1396,6 +1397,7 @@ export function InventoryListItem({
   onDecrement,
   onAction,
   actionLabel = 'Consume',
+  variant = 'default',
   onMenu,
   onPress,
   style,
@@ -1405,6 +1407,7 @@ export function InventoryListItem({
   unit?: string;
   location?: string;
   expiryDate?: string;
+  expiryLabel?: string;
   status?: Status;
   progressRatio?: number;
   imageUri?: string | null;
@@ -1413,6 +1416,7 @@ export function InventoryListItem({
   onDecrement?: () => void;
   onAction?: () => void;
   actionLabel?: string;
+  variant?: 'default' | 'household';
   onMenu?: () => void;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
@@ -1426,31 +1430,53 @@ export function InventoryListItem({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={variant === 'household' ? onMenu : undefined}
+      accessibilityHint={variant === 'household' && onMenu ? 'Long press for item options' : undefined}
+      accessibilityActions={variant === 'household' && onMenu ? [{ name: 'more', label: 'More options' }] : undefined}
+      onAccessibilityAction={variant === 'household' && onMenu
+        ? (event) => { if (event.nativeEvent.actionName === 'more') onMenu(); }
+        : undefined}
       disabled={!onPress}
       style={({ pressed }) => [
         styles.inventoryItemCard,
-        { borderLeftColor: statusColor },
+        variant === 'household' ? styles.inventoryItemCardHousehold : { borderLeftColor: statusColor },
+        variant === 'household' && { borderTopColor: statusColor },
         style,
         pressed && onPress && styles.cardPressed,
       ]}
     >
-      {/* Row 1: circular emoji/icon avatar + name (bold) + <StatusPill> top-right */}
-      <View style={styles.inventoryRow1}>
-        <View style={styles.inventoryAvatarWrap}>
-          <ItemImage uri={imageUri} category={category} size={42} />
+      {variant === 'household' ? (
+        <>
+          <View style={styles.inventoryHouseholdTop}>
+            <View style={[styles.inventoryAvatarWrap, styles.inventoryAvatarWrapHousehold]}>
+              <ItemImage uri={imageUri} category={category} size={54} radius={14} />
+            </View>
+            <StatusPill
+              status={status}
+              label={expiryLabel}
+              style={[styles.inventoryHouseholdExpiry, { borderWidth: 1, borderColor: statusColor }]}
+            />
+          </View>
+          <Text style={[styles.inventoryItemName, styles.inventoryItemNameHousehold]} numberOfLines={2}>
+            {name}
+          </Text>
+        </>
+      ) : (
+        <View style={styles.inventoryRow1}>
+          <View style={styles.inventoryAvatarWrap}>
+            <ItemImage uri={imageUri} category={category} size={42} />
+          </View>
+          <Text style={styles.inventoryItemName}>{name}</Text>
+          <StatusPill status={status} />
         </View>
-        <Text style={styles.inventoryItemName}>
-          {name}
-        </Text>
-        <StatusPill status={status} />
-      </View>
+      )}
 
       {/* Row 2: caption meta text (qty • location • expiry) */}
       <View style={styles.inventoryRow2}>
         <Text style={styles.inventoryMetaText} numberOfLines={2}>
           {quantity} {unit}
           {location ? ` • ${location}` : ''}
-          {expiryDate ? ` • ${expiryDate}` : ''}
+          {variant !== 'household' && expiryDate ? ` • ${expiryDate}` : ''}
         </Text>
       </View>
 
@@ -1459,14 +1485,15 @@ export function InventoryListItem({
         value={progressRatio}
         max={1}
         colorRamp
+        height={variant === 'household' ? 5 : 7}
         style={{ marginVertical: spacing.sm }}
       />
 
       <View style={styles.inventoryDivider} />
 
-      {/* Row 3: quantity stepper (− qty + in rounded outline pill) left, primary action button right, ⋮ icon button far right */}
+      {/* Quantity stepper and item action sit together at the bottom of the card. */}
       <View style={styles.inventoryRow3}>
-        <View style={styles.inventoryStepper}>
+        <View style={[styles.inventoryStepper, variant === 'household' && styles.inventoryStepperHousehold]}>
           <Pressable
             onPress={onDecrement}
             hitSlop={8}
@@ -1476,7 +1503,7 @@ export function InventoryListItem({
             <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />
           </Pressable>
           <Text style={styles.inventoryStepperVal}>
-            {quantity} {unit}
+            {variant === 'household' ? quantity : `${quantity} ${unit}`}
           </Text>
           <Pressable
             onPress={onIncrement}
@@ -1494,13 +1521,14 @@ export function InventoryListItem({
               onPress={onAction}
               style={({ pressed }) => [
                 styles.inventoryActionBtn,
+                variant === 'household' && styles.inventoryActionBtnHousehold,
                 pressed && { opacity: 0.85 },
               ]}
             >
               <Text style={styles.inventoryActionBtnText}>{actionLabel}</Text>
             </Pressable>
           )}
-          {onMenu && (
+          {onMenu && variant !== 'household' && (
             <Pressable
               onPress={onMenu}
               hitSlop={8}
@@ -2548,6 +2576,13 @@ const styles = StyleSheet.create({
     ...shadow.card,
     gap: spacing.xs,
   },
+  inventoryItemCardHousehold: {
+    borderLeftWidth: 0,
+    borderTopWidth: 5,
+    borderRadius: radii.lg,
+    padding: 14,
+    minHeight: 228,
+  },
   inventoryRow1: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2560,6 +2595,12 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     overflow: 'hidden',
   },
+  inventoryAvatarWrapHousehold: { width: 54, height: 54, borderRadius: 14 },
+  inventoryHouseholdTop: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    minHeight: 54, marginBottom: 2,
+  },
+  inventoryHouseholdExpiry: { maxWidth: '58%' },
   inventoryItemName: {
     flex: 1,
     minWidth: 0,
@@ -2568,6 +2609,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  inventoryItemNameHousehold: { fontSize: 15, lineHeight: 19 },
   inventoryRow2: {
     marginTop: 2,
     minWidth: 0,
@@ -2605,6 +2647,7 @@ const styles = StyleSheet.create({
     gap: 8,
     flexShrink: 1,
   },
+  inventoryStepperHousehold: { borderRadius: 12, paddingVertical: 4 },
   inventoryStepperBtn: {
     padding: 2,
     alignItems: 'center',
@@ -2633,6 +2676,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     flexShrink: 1,
   },
+  inventoryActionBtnHousehold: { borderRadius: 10, minHeight: 34, justifyContent: 'center' },
   inventoryActionBtnText: {
     color: colors.surface,
     fontSize: 13,

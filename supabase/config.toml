@@ -11,6 +11,10 @@ project_id = "keepfresh-ai"
 [functions.expiration-notifier]
 verify_jwt = false
 
+# Invoked on a private pg_cron schedule using LOW_STOCK_CRON_SECRET.
+[functions.low-stock-push]
+verify_jwt = false
+
 # Generates recipes from the caller's own inventory and writes them to `recipes`.
 # Requires a JWT: the inventory it reads and the rows it writes both belong to one
 # user, and one AI scan is metered against that user's plan per generation.

@@ -45,37 +45,23 @@ export default function OrderCheckoutScreen() {
     if (!profile || lines.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      // Orders are recorded against existing inventory rows. Product price uses
-      // the current inventory price field; no product or sample record is made.
-      const { data, error } = await supabase.from('inventory_orders').insert({
-        user_id: profile.id,
-        destination,
-        status: 'placed',
-        subtotal,
-        total: subtotal,
-      }).select('id').single();
+      // The database locks and validates all stock rows, writes the order, and
+      // deducts stock atomically. The low-stock trigger observes those updates.
+      const { data: orderId, error } = await supabase.rpc('place_inventory_order', {
+        p_destination: destination,
+        p_items: lines.map((line) => ({ item_id: line.item.id, quantity: line.quantity })),
+      });
       if (error) throw error;
-      const { error: linesError } = await supabase.from('inventory_order_items').insert(lines.map((line) => ({
-        order_id: data.id,
-        user_id: profile.id,
-        inventory_item_id: line.item.id,
-        product_name: line.item.product_name,
-        quantity: line.quantity,
-        unit: line.item.unit,
-        unit_price: Number(line.item.price || 0),
-        line_total: Number(line.item.price || 0) * line.quantity,
-      })));
-      if (linesError) throw linesError;
       orderCart.clear();
-      router.replace({ pathname: '/order-receipt', params: { orderId: data.id } });
+      router.replace({ pathname: '/order-receipt', params: { orderId } });
     } catch (error) {
       const databaseError = error as { message?: string; details?: string; hint?: string; code?: string };
       const diagnostic = [databaseError.message, databaseError.details, databaseError.hint].filter(Boolean).join('\n\n');
       const missingOrderTables = databaseError.code === '42P01' || /inventory_orders|inventory_order_items/i.test(databaseError.message || '') && /does not exist|schema cache|could not find/i.test(databaseError.message || '');
       Alert.alert(
         'Could not place order',
-        missingOrderTables
-          ? 'The order tables are missing from your Supabase database. Apply supabase/migrations/inventory_orders.sql in the Supabase SQL Editor, then try again.'
+        missingOrderTables || /place_inventory_order|function.*does not exist|schema cache/i.test(databaseError.message || '')
+          ? 'The order or low-stock checkout migration is missing from your Supabase database. Apply supabase/migrations/inventory_orders.sql and supabase/migrations/low_stock_push_alerts.sql, then try again.'
           : diagnostic || 'The database did not accept this order. Please try again.',
       );
     } finally { setSubmitting(false); }

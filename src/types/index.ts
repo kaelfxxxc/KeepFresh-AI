@@ -20,6 +20,7 @@ export interface InventoryItem {
   category: string | null;
   barcode: string | null;
   quantity: number;
+  low_stock_threshold: number;
   unit: string;
   purchase_date: string | null;
   expiration_date: string | null;
@@ -184,6 +185,7 @@ export interface NotificationPreference {
   recipe_notifications: boolean;
   grocery_notifications: boolean;
   weekly_summary: boolean;
+  low_stock_enabled: boolean;
   updated_at: string;
 }
 

@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { inventoryService } from './inventoryService';
 import { groceryService } from './groceryService';
@@ -29,9 +30,6 @@ const APP_TAG = 'keepfresh';
 
 /** Reminders land at 9am local — early enough to act, late enough to be civil. */
 const REMINDER_HOUR = 9;
-
-/** At or below this many units, an item counts as running low. */
-export const LOW_STOCK_THRESHOLD = 2;
 
 /** Warn once this share of the AI scan allowance is used. */
 const USAGE_WARN_RATIO = 0.8;
@@ -94,7 +92,7 @@ interface NotificationLogRow {
 
 export type NotificationPreferenceUpdate = Partial<Pick<
   NotificationPreference,
-  'enabled' | 'days_before' | 'recipe_notifications' | 'grocery_notifications' | 'weekly_summary'
+  'enabled' | 'days_before' | 'recipe_notifications' | 'grocery_notifications' | 'weekly_summary' | 'low_stock_enabled'
 >>;
 
 /**
@@ -119,7 +117,9 @@ function targetForNotification(data: unknown): NotificationTarget {
         ? { pathname: '/inventory/details', params: { id: data.itemId } }
         : fallback;
     case 'low_inventory':
-      return { pathname: '/(tabs)/inventory' };
+      return data.itemId
+        ? { pathname: '/inventory/details', params: { id: data.itemId } }
+        : { pathname: '/(tabs)/inventory' };
     case 'grocery_reminder':
       return { pathname: '/grocery' };
     case 'subscription_renewal':
@@ -208,8 +208,40 @@ export const notificationService = {
   async registerForPushNotificationsAsync(): Promise<string | null> {
     if (!Device.isDevice) return null;
 
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    const token = (await Notifications.getExpoPushTokenAsync({
+      projectId: '9fecce01-9149-49cb-8719-c20dddc17728',
+    })).data;
     return token;
+  },
+
+  /** Save this installation's Expo token only after the user opted in. */
+  async enableLowStockPush(userId: string): Promise<boolean> {
+    if (!Device.isDevice) return false;
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+      });
+    }
+    const permission = await Notifications.requestPermissionsAsync();
+    if (permission.status !== 'granted') return false;
+    const token = await this.registerForPushNotificationsAsync();
+    if (!token) return false;
+    const { error } = await supabase.from('push_tokens').upsert(
+      { user_id: userId, expo_push_token: token, platform: Device.osName ?? 'unknown', updated_at: new Date().toISOString() },
+      { onConflict: 'expo_push_token' }
+    );
+    if (error) throw error;
+    return true;
+  },
+
+  async disableLowStockPush(userId: string): Promise<void> {
+    const token = await this.registerForPushNotificationsAsync().catch(() => null);
+    if (!token) return;
+    const { error } = await supabase.from('push_tokens').delete()
+      .eq('user_id', userId).eq('expo_push_token', token);
+    if (error) throw error;
   },
 
   async getPermissions(): Promise<Notifications.NotificationPermissionsStatus> {
@@ -309,7 +341,6 @@ export const notificationService = {
 
     const plans: PlannedNotification[] = [
       ...this.planExpirationReminders(inventory),
-      ...this.planLowStock(inventory),
       ...this.planSubscription(entitlements),
       ...this.planUsage(entitlements),
     ];
@@ -394,34 +425,6 @@ export const notificationService = {
     });
 
     return plans;
-  },
-
-  /**
-   * Low stock, said once a day at most rather than once per item — a pantry of
-   * six nearly-finished things is one shopping trip, not six alerts.
-   */
-  planLowStock(items: InventoryItem[]): PlannedNotification[] {
-    const now = new Date();
-    const low = items.filter((item) => Number(item.quantity ?? 0) <= LOW_STOCK_THRESHOLD);
-    if (low.length === 0) return [];
-
-    const names = low.slice(0, 3).map((item) => item.product_name).filter(Boolean);
-    const extra = low.length - names.length;
-
-    return [
-      {
-        kind: 'low_inventory',
-        // Keyed to the day only: the count changing is not a new occasion, or
-        // adding one more nearly-empty jar would fire another alert.
-        dedupeKey: `low_inventory:${dayKey(now)}`,
-        title: 'Running low',
-        body:
-          extra > 0
-            ? `${names.join(', ')} and ${extra} more are nearly out.`
-            : `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} nearly out.`,
-        at: now,
-      },
-    ];
   },
 
   /** Nudge about an unfinished shopping list, once an evening at most. */
@@ -681,7 +684,7 @@ export const notificationService = {
       .lte('deliver_at', new Date().toISOString())
       .order('deliver_at', { ascending: false })
       .limit(limit);
-    if (!error) return (data ?? []).map((row) => toEntry(row as NotificationLogRow, true));
+    if (!error) return (data ?? []).map((row) => toEntry(row as unknown as NotificationLogRow, true));
 
     // Not migrated yet. Fall back to the columns that have always existed, so
     // the bell lists history rather than showing an error — SQL is applied by
@@ -695,7 +698,7 @@ export const notificationService = {
       .order('sent_at', { ascending: false })
       .limit(limit);
     if (fallbackError) throw fallbackError;
-    return (fallback ?? []).map((row) => toEntry(row as NotificationLogRow, false));
+    return (fallback ?? []).map((row) => toEntry(row as unknown as NotificationLogRow, false));
   },
 
   /**

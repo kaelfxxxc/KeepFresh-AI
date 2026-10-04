@@ -18,6 +18,10 @@ import { APP_TIMEZONE, parseDateKey, todayKey } from './dateKey';
 
 export type BucketUnit = 'day' | 'week' | 'month';
 
+function dayInAppZone(value: string): Moment {
+  return moment.tz(value, APP_TIMEZONE).startOf('day');
+}
+
 export interface TrendBucket {
   /** Short axis label, sized for the narrowest column the chart draws. */
   label: string;

@@ -18,7 +18,7 @@ import { getExpirationStatus } from '../../../src/utils/expiration';
 import { addDaysKey } from '../../../src/utils/dateKey';
 import { colors, radii, spacing, shadow } from '../../../src/theme';
 import {
-  CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote,
+  CheckCircle2, Trash2, AlertTriangle, CalendarDays, Tag, Barcode, StickyNote, Plus,
   Heart, Bell, Boxes, History, ChevronDown,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
@@ -44,6 +44,8 @@ export default function InventoryDetailsScreen() {
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [restockPromptOpen, setRestockPromptOpen] = useState(false);
+  const [thresholdPromptOpen, setThresholdPromptOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [onGroceryList, setOnGroceryList] = useState(false);
@@ -151,6 +153,21 @@ export default function InventoryDetailsScreen() {
 
   const consume = () => setPromptOpen(true);
 
+  const confirmRestock = async (quantity: number) => {
+    if (!item) return;
+    setBusy(true);
+    try {
+      const updated = await inventoryService.adjustQuantity(item.id, quantity);
+      setItem(updated);
+      setRestockPromptOpen(false);
+      fetchHistory();
+    } catch (error: unknown) {
+      Alert.alert('Could not add stock', errorMessage(error, 'Please try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /**
    * Edit the expiry date and/or how many days ahead to warn.
    *
@@ -174,6 +191,20 @@ export default function InventoryDetailsScreen() {
       Alert.alert('Could not update expiration', errorMessage(error, 'Please try again.'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const commitLowStockThreshold = async (threshold: number) => {
+    if (!item) return;
+    setBusy(true);
+    try {
+      const updated = await inventoryService.updateInventoryItem(item.id, { low_stock_threshold: threshold });
+      setItem(updated);
+    } catch (error: unknown) {
+      Alert.alert('Could not update threshold', errorMessage(error, 'Please try again.'));
+    } finally {
+      setBusy(false);
+      setThresholdPromptOpen(false);
     }
   };
 
@@ -347,11 +378,31 @@ export default function InventoryDetailsScreen() {
           {attr(Tag, 'Brand', item.brand || '—')}
           {attr(Tag, 'Category', item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : '—')}
           {attr(null, 'Quantity', `${item.quantity} ${item.unit}`)}
+          {attr(null, 'Low-stock threshold', `${item.low_stock_threshold ?? 2} ${item.unit}`)}
           {attr(CalendarDays, 'Expiration', date(item.expiration_date))}
           {attr(CalendarDays, 'Added', date(item.purchase_date))}
           {attr(Barcode, 'Barcode', item.barcode || '—')}
           {attr(StickyNote, 'Notes', item.notes || 'No notes')}
           {attr(null, 'Price', item.price != null ? `₱${item.price.toFixed(2)}` : '—')}
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHead}>
+            <IconBadge color={colors.primary} size={28}>
+              <Boxes size={14} color={colors.primary} strokeWidth={2.4} />
+            </IconBadge>
+            <Text style={styles.cardTitle}>Low-stock alert</Text>
+            {busy && <ActivityIndicator size="small" color={colors.primary} />}
+          </View>
+          <Text style={styles.cardValue}>
+            Alert when available stock reaches {item.low_stock_threshold ?? 2} {item.unit} or less.
+          </Text>
+          <PillButton
+            title="Change threshold"
+            variant="subtle"
+            onPress={() => setThresholdPromptOpen(true)}
+            style={{ marginTop: spacing.sm }}
+          />
         </View>
 
         {/* Expiration is editable right here, and the alert lead time with it —
@@ -491,10 +542,14 @@ export default function InventoryDetailsScreen() {
 
       <View style={[styles.bottomBar, { paddingHorizontal: gutter, paddingBottom: insets.bottom + spacing.md }]}>
         {item.status === 'available' ? (
-          <>
-            <PillButton title="Mark as Waste" variant="dangerOutline" icon={Trash2} onPress={markWaste} style={{ flex: 1 }} />
-            <PillButton title="Use / Consume" icon={CheckCircle2} onPress={consume} style={{ flex: 1 }} />
-          </>
+          profile?.account_type === 'establishment' ? (
+            <PillButton title="Add Stock" icon={Plus} onPress={() => setRestockPromptOpen(true)} style={{ flex: 1 }} />
+          ) : (
+            <>
+              <PillButton title="Mark as Waste" variant="dangerOutline" icon={Trash2} onPress={markWaste} style={{ flex: 1 }} />
+              <PillButton title="Use / Consume" icon={CheckCircle2} onPress={consume} style={{ flex: 1 }} />
+            </>
+          )
         ) : (
           <PillButton title="Delete Item" variant="danger" icon={Trash2} onPress={remove} />
         )}
@@ -515,6 +570,27 @@ export default function InventoryDetailsScreen() {
         busy={busy}
         onCancel={() => setPromptOpen(false)}
         onConfirm={confirmConsume}
+      />
+      <QuantityPrompt
+        visible={restockPromptOpen}
+        title="Add Stock"
+        message={`How much stock did you add to ${item.product_name}?`}
+        unit={item.unit}
+        confirmLabel="Add Stock"
+        busy={busy}
+        onCancel={() => setRestockPromptOpen(false)}
+        onConfirm={confirmRestock}
+      />
+      <QuantityPrompt
+        visible={thresholdPromptOpen}
+        title="Low-stock threshold"
+        message="Send an alert when stock reaches this amount or less."
+        unit={item?.unit ?? ''}
+        initialValue={item?.low_stock_threshold ?? 2}
+        confirmLabel="Save threshold"
+        busy={busy}
+        onCancel={() => setThresholdPromptOpen(false)}
+        onConfirm={commitLowStockThreshold}
       />
 
       {/* Same calendar the Add Item screen uses, and the same floor: it opens on

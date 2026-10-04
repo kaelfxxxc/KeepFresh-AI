@@ -10,6 +10,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  ImageStyle,
   Modal,
   KeyboardAvoidingView,
   Platform,
@@ -311,6 +312,7 @@ export function QuantityPrompt({
   message,
   unit = '',
   max,
+  initialValue,
   confirmLabel = 'Confirm',
   busy,
   onCancel,
@@ -321,6 +323,7 @@ export function QuantityPrompt({
   message?: string;
   unit?: string;
   max?: number;
+  initialValue?: number;
   confirmLabel?: string;
   busy?: boolean;
   onCancel: () => void;
@@ -334,10 +337,10 @@ export function QuantityPrompt({
   // next one. Prefilling with `max` makes "use it all" a single tap.
   useEffect(() => {
     if (visible) {
-      setValue(max != null ? String(max) : '');
+      setValue(initialValue != null ? String(initialValue) : max != null ? String(max) : '');
       setError(null);
     }
-  }, [visible, max]);
+  }, [visible, max, initialValue]);
 
   const suffix = unit ? ` ${unit}` : '';
 
@@ -496,7 +499,7 @@ export function IconButton({ icon: Icon, onPress, size = 20, color = colors.text
       hitSlop={8}
       style={({ pressed }) => [
         styles.iconBtn,
-        bg && { backgroundColor: bg },
+        bg ? { backgroundColor: bg } : undefined,
         pressed && { opacity: 0.7 },
         style,
       ]}
@@ -611,7 +614,7 @@ export function ItemImage({ uri, category, size = 52, radius = radii.md, style }
         // for margins, and until stored photos resolved this branch was rarely
         // reached, so a hero that shifted when its photo finished loading went
         // unnoticed.
-        style={[{ width: size, height: size, borderRadius: radius }, style]}
+        style={[{ width: size, height: size, borderRadius: radius }, style as ImageStyle]}
         resizeMode="cover"
         onError={() => setBroken(true)}
       />
@@ -1400,7 +1403,7 @@ export function InventoryListItem({
   onDecrement,
   onAction,
   actionLabel = 'Consume',
-  variant = 'default',
+  variant: variantProp,
   onMenu,
   onPress,
   style,
@@ -1424,6 +1427,7 @@ export function InventoryListItem({
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
+  const variant = (variantProp ?? 'default') as 'default' | 'household';
   const statusColor =
     status === 'fresh' ? colors.secondary
     : status === 'expiringSoon' ? colors.warning
@@ -1537,22 +1541,16 @@ export function InventoryListItem({
             style={styles.inventoryStepperBtn}
             accessibilityLabel="Decrease quantity"
           >
-            {variant === 'household'
-              ? <MaterialCommunityIcons name="minus" size={14} color={colors.textPrimary} />
-              : <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />}
+            <Minus size={14} color={colors.textPrimary} strokeWidth={2.5} />
           </Pressable>
-          <Text style={[styles.inventoryStepperVal, variant === 'household' && styles.inventoryStepperValHousehold]}>
-            {variant === 'household' ? quantity : `${quantity} ${unit}`}
-          </Text>
+          <Text style={styles.inventoryStepperVal}>{`${quantity} ${unit}`}</Text>
           <Pressable
             onPress={onIncrement}
             hitSlop={8}
             style={styles.inventoryStepperBtn}
             accessibilityLabel="Increase quantity"
           >
-            {variant === 'household'
-              ? <MaterialCommunityIcons name="plus" size={14} color={colors.primary} />
-              : <Plus size={14} color={colors.primary} strokeWidth={2.5} />}
+            <Plus size={14} color={colors.primary} strokeWidth={2.5} />
           </Pressable>
         </View>
         <View style={styles.inventoryRow3Right}>
@@ -1561,14 +1559,13 @@ export function InventoryListItem({
               onPress={onAction}
               style={({ pressed }) => [
                 styles.inventoryActionBtn,
-                variant === 'household' && styles.inventoryActionBtnHousehold,
                 pressed && { opacity: 0.85 },
               ]}
             >
               <Text style={styles.inventoryActionBtnText}>{actionLabel}</Text>
             </Pressable>
           )}
-          {onMenu && variant !== 'household' && (
+          {onMenu && (
             <Pressable
               onPress={onMenu}
               hitSlop={8}

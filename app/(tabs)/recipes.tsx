@@ -133,6 +133,12 @@ export default function RecipesScreen() {
 
   useEffect(() => { fetchRecipes(); }, [fetchRecipes]);
 
+  useEffect(() => {
+    if (profile?.account_type === 'establishment') {
+      router.replace('/(tabs)');
+    }
+  }, [profile?.account_type]);
+
   const generate = useCallback(async (requested?: string) => {
     if (generating) return;
     setGenerating(true);

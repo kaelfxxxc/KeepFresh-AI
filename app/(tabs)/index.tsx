@@ -15,7 +15,7 @@ import { DASHBOARD_ICONS } from '../../src/constants/dashboardIcons';
 import { AvatarCircle, ItemImage, StatCard, TrendBarChart, AIBanner, SectionHeader, StatusPill, colorWithOpacity } from '../../src/components/ui';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { DateRangePickerModal } from '../../src/components/DateRangePicker';
-import { notificationService, LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
+import { notificationService } from '../../src/services/notificationService';
 import { timeAgo } from '../../src/utils/timeAgo';
 import { todayKey } from '../../src/utils/dateKey';
 import {
@@ -65,7 +65,7 @@ interface HomeStats {
    * counted consumed and wasted rows, which that tab now files under History.
    */
   needToBuy: number;
-  /** Still on the shelf, but at or below `LOW_STOCK_THRESHOLD`. */
+  /** Still on the shelf, at or below the item's low-stock threshold. */
   lowStock: number;
   expirationAlerts: number;
   recentlyConsumed: ConsumedEntry[];
@@ -123,7 +123,7 @@ export default function HomeScreen() {
       // means the counts are all derived from one consistent snapshot.
       const { data: items } = await supabase
         .from('inventory_items')
-        .select('id, product_name, category, quantity, unit, status, expiration_date, need_to_buy')
+        .select('id, product_name, category, quantity, low_stock_threshold, unit, status, expiration_date, need_to_buy')
         .eq('user_id', uid);
 
       const all = items ?? [];
@@ -152,9 +152,10 @@ export default function HomeScreen() {
       ).length;
 
       // Running low is a separate question from need-to-buy: the item is still
-      // here, but there is nearly none of it left. Uses the same threshold the
-      // low-stock notifications use, so the badge and the alert agree.
-      const lowStock = available.filter((i) => Number(i.quantity ?? 0) <= LOW_STOCK_THRESHOLD).length;
+      // here, but at or below its own alert threshold.
+      const lowStock = available.filter(
+        (i) => Number(i.quantity ?? 0) <= Number(i.low_stock_threshold ?? 2)
+      ).length;
 
       // The last few things the user actually used up, newest first. The item
       // join gives the row its name, category, unit and photo; consumption
@@ -167,7 +168,7 @@ export default function HomeScreen() {
         .order('consumed_at', { ascending: false })
         .limit(5);
 
-      const recentlyConsumed: ConsumedEntry[] = ((consumed ?? []) as RecentConsumptionRow[]).map((row) => ({
+      const recentlyConsumed: ConsumedEntry[] = ((consumed ?? []) as unknown as RecentConsumptionRow[]).map((row) => ({
         id: row.id as string,
         name: row.inventory_items?.product_name || 'Item',
         category: row.inventory_items?.category ?? null,
@@ -370,6 +371,7 @@ export default function HomeScreen() {
               title="Items in inventory"
               value={`${stats?.totalItems ?? 0}`}
               iconBg={colors.primary}
+              style={styles.dashboardCard}
               onPress={() => router.push('/inventory')}
             />
             <StatCard
@@ -378,6 +380,7 @@ export default function HomeScreen() {
               title="Need to buy"
               value={`${stats?.needToBuy ?? 0}`}
               iconBg={colors.warning}
+              style={styles.dashboardCard}
               onPress={() => router.push('/inventory')}
             />
           </View>
@@ -389,6 +392,7 @@ export default function HomeScreen() {
               value="Open"
               caption="Smart list & scan"
               iconBg={colors.primaryDark}
+              style={styles.dashboardCard}
               onPress={() => router.push('/grocery')}
             />
             <StatCard
@@ -398,6 +402,7 @@ export default function HomeScreen() {
               value="Reports"
               caption="Waste & savings"
               iconBg={colors.primary}
+              style={styles.dashboardCard}
               onPress={() => router.push('/analytics')}
             />
           </View>
@@ -461,19 +466,20 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* AI Freshness Banner */}
-          <AIBanner
-            index={5}
-            icon="sparkle"
-            title="AI Freshness Insight"
-            body={
-              stats?.expirationAlerts && stats.expirationAlerts > 0
-                ? `You have ${stats.expirationAlerts} item${stats.expirationAlerts === 1 ? '' : 's'} expiring soon. Discover recipes to cook them today!`
-                : "Your pantry is well stocked and fresh. Use smart grocery and barcode scanning for easy tracking."
-            }
-            ctaLabel={stats?.expirationAlerts && stats.expirationAlerts > 0 ? "View recipes" : undefined}
-            onPressCta={stats?.expirationAlerts && stats.expirationAlerts > 0 ? () => router.push('/recipes') : undefined}
-          />
+          {profile?.account_type !== 'establishment' && (
+            <AIBanner
+              index={5}
+              icon="sparkle"
+              title="AI Freshness Insight"
+              body={
+                stats?.expirationAlerts && stats.expirationAlerts > 0
+                  ? `You have ${stats.expirationAlerts} item${stats.expirationAlerts === 1 ? '' : 's'} expiring soon. Discover recipes to cook them today!`
+                  : "Your pantry is well stocked and fresh. Use smart grocery and barcode scanning for easy tracking."
+              }
+              ctaLabel={stats?.expirationAlerts && stats.expirationAlerts > 0 ? "View recipes" : undefined}
+              onPressCta={stats?.expirationAlerts && stats.expirationAlerts > 0 ? () => router.push('/recipes') : undefined}
+            />
+          )}
         </View>
       </ScrollView>
 
@@ -547,8 +553,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
   },
+  dashboardCard: {
+    backgroundColor: colors.mintBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   chartCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.mintBg,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radii.lg,
     padding: spacing.lg,
     ...shadow.card,
@@ -579,7 +592,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.mintBg,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radii.lg,
     paddingHorizontal: spacing.lg,
     ...shadow.card,

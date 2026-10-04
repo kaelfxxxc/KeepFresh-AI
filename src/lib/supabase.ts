@@ -122,6 +122,7 @@ export type Database = {
     Tables: {
       profiles: Omit<Profile, 'created_at' | 'updated_at'> & { created_at: string; updated_at: string };
       inventory_items: Omit<InventoryItem, 'created_at' | 'updated_at'> & { created_at: string; updated_at: string };
+      push_tokens: { id: string; user_id: string; expo_push_token: string; platform: string; created_at: string; updated_at: string };
       inventory_consumption: Omit<Consumption, 'consumed_at'> & { consumed_at: string };
       food_waste: Omit<FoodWaste, 'wasted_at'> & { wasted_at: string };
       // Recipe rows carry `created_at` / `generated_at` as strings straight off
@@ -197,6 +198,10 @@ export type Database = {
       adjust_inventory_quantity: {
         Args: { p_item_id: string; p_delta: number };
         Returns: InventoryItem;
+      };
+      place_inventory_order: {
+        Args: { p_destination: string; p_items: unknown };
+        Returns: string;
       };
       log_notification: {
         Args: {

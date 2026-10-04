@@ -862,7 +862,6 @@ const styles = StyleSheet.create({
   householdHeading: { flex: 1, minWidth: 0 },
   householdSubtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 3 },
   householdHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  householdHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconCircle: {
     height: 52, aspectRatio: 1, borderRadius: radii.pill, backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center', ...shadow.faint,

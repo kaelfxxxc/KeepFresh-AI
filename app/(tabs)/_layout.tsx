@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { Home, Package, ChefHat, Bell, User } from 'lucide-react-native';
 import { colors, radii, spacing, shadow } from '../../src/theme';
 import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
+import { useAuth } from '../../src/context/AuthContext';
 
 // 5-tab bottom navigation per the v2 UI reference. Grocery & Analytics are
 // full-screen routes under app/ (opened from Home / Profile) - not tabs.
@@ -19,7 +20,11 @@ const TABS = [
 const NON_TAB_ROUTES = ['inventory/add', 'inventory/details', 'my-inventory'] as const;
 
 export default function TabLayout() {
+  const { profile } = useAuth();
   const { compact, height, barWidth, barLeft, bottomOffset } = useFloatingTabBar();
+  const tabs = profile?.account_type === 'establishment'
+    ? TABS.filter(({ name }) => name !== 'recipes')
+    : TABS;
 
   return (
     <Tabs
@@ -40,7 +45,7 @@ export default function TabLayout() {
         tabBarItemStyle: styles.tabBarItem,
       })}
     >
-      {TABS.map(({ name, label, icon: Icon }) => (
+      {tabs.map(({ name, label, icon: Icon }) => (
         <Tabs.Screen
           key={name}
           name={name}
@@ -65,6 +70,9 @@ export default function TabLayout() {
           }}
         />
       ))}
+      {profile?.account_type === 'establishment' && (
+        <Tabs.Screen name="recipes" options={{ href: null }} />
+      )}
       {NON_TAB_ROUTES.map((name) => (
         <Tabs.Screen key={name} name={name} options={{ href: null }} />
       ))}

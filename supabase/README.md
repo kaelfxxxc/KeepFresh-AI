@@ -22,6 +22,7 @@ supabase/
 ├── functions/
 │   ├── _shared/             # cors + admin client + PayMongo helpers used by all functions
 │   ├── expiration-notifier/ # daily cron: finds items expiring within each user's window, logs nudge
+│   ├── low-stock-push/      # minute cron: paid-plan low-stock pushes through Expo
 │   ├── recipe-suggestions/  # real pantry-to-recipe matching (scores coverage, "can cook now?")
 │   ├── barcode-lookup/      # scan auto-fill: proxies Open Food Facts (no key), meters one AI scan per answered lookup
 │   ├── weekly-summary/      # 7-day stats: used / wasted / estimated savings / expiring soon
@@ -82,8 +83,10 @@ supabase db push          # applies migrations/, in order, once each
 Before using **Place Order**, apply `migrations/inventory_orders.sql` in the
 Supabase SQL Editor. It creates the real order and order-item tables plus
 owner-scoped read/write policies. This migration contains schema only; it adds
-no seed or demo rows. The app saves to these tables and then loads the receipt
-from the saved order ID.
+no seed or demo rows. Then apply `migrations/low_stock_push_alerts.sql`; that
+migration adds a transactional checkout RPC that deducts stock and lets the
+low-stock trigger queue threshold crossings. The app loads the receipt from the
+saved order ID.
 
 The ones that carry subscription state, in the order they must run:
 
@@ -117,6 +120,11 @@ The ones that carry subscription state, in the order they must run:
   `can_add_product()`, which is why it surfaced as an inventory error. The same
   fix is applied at source in `trial_expiration.sql` and
   `subscriptions_entitlements.sql`, so re-pasting those also resolves it.
+- `low_stock_push_alerts.sql` — adds per-item thresholds, opt-in preferences,
+  Expo device tokens, and a database trigger that queues stock threshold
+  crossings for the server worker. Active paid Pro accounts get an in-app bell
+  notification for both Household and Establishment account types; OS push is
+  separately opt-in and remains limited to that same Pro tier.
 
 Every migration is idempotent and finishes with a status `SELECT`, so a failed
 paste is obvious rather than silent.
@@ -147,13 +155,15 @@ inventory — those two features exist only on Food Establishment plans.
 npm install -g supabase        # the Supabase CLI
 supabase login
 supabase link --project-ref <your-project-ref>   # the subdomain of your project
-supabase functions deploy expiration-notifier recipe-suggestions weekly-summary barcode-lookup subscription-verify paymongo-checkout paymongo-verify paymongo-webhook
+supabase functions deploy expiration-notifier low-stock-push recipe-suggestions weekly-summary barcode-lookup subscription-verify paymongo-checkout paymongo-verify paymongo-webhook
 ```
 
 - `recipe-suggestions`, `weekly-summary`, `barcode-lookup`, `subscription-verify`,
   `paymongo-checkout` and `paymongo-verify` require a signed-in user's access
   token (call them with the user's `Authorization` header).
 - `expiration-notifier` needs no JWT so the scheduler can call it.
+- `low-stock-push` also has JWT verification disabled for pg_cron, but checks
+  the `LOW_STOCK_CRON_SECRET` header before reading the queue.
 - `paymongo-webhook` needs no JWT either, and for a different reason — see below.
 
 `barcode-lookup` proxies Open Food Facts (world.openfoodfacts.org), the open
@@ -322,6 +332,16 @@ curl -X POST https://<ref>.supabase.co/functions/v1/barcode-lookup \
 
 Paste `schedule.sql` (fill in `<YOUR-PROJECT-REF>` and your **anon** key), or
 use **Dashboard → Edge Functions → expiration-notifier → Cron → Daily**.
+
+For low-stock pushes, apply `migrations/low_stock_push_alerts.sql`, enable
+`pg_cron` and `pg_net`, set a long random `LOW_STOCK_CRON_SECRET` Edge Function
+secret (for example with `supabase secrets set LOW_STOCK_CRON_SECRET="<random>"`),
+and deploy `low-stock-push`. Then paste `schedule_low_stock_push.sql`
+after replacing the project ref and the same secret. It checks the queue once a
+minute. Users opt in under **Settings → Notifications**; the device also needs
+notification permission and a development or production build configured for
+Expo push. Thresholds default to 2 units and are editable on each inventory
+item's detail screen.
 
 ## Step 5 — Auth
 

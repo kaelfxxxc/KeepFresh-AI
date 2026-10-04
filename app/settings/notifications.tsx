@@ -6,18 +6,24 @@ import { colors, radii, spacing, shadow } from '../../src/theme';
 import { Bell, ChefHat, ShoppingCart, BarChart3 } from 'lucide-react-native';
 import { NavHeader, PillButton, IconBadge, SectionHeader, colorWithOpacity } from '../../src/components/ui';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
+import { useSubscription } from '../../src/context/SubscriptionContext';
+import { notificationService } from '../../src/services/notificationService';
 
 const DAYS = [1, 3, 5, 7];
 
 export default function NotificationSettingsScreen() {
   const { gutter } = usePageGutter();
   const { profile } = useAuth();
+  const { entitlements } = useSubscription();
   const [expirationNotifications, setExpirationNotifications] = useState(true);
   const [daysBefore, setDaysBefore] = useState(3);
   const [recipeNotifications, setRecipeNotifications] = useState(true);
   const [groceryNotifications, setGroceryNotifications] = useState(false);
   const [weeklySummary, setWeeklySummary] = useState(true);
+  const [lowStockNotifications, setLowStockNotifications] = useState(false);
   const [loading, setLoading] = useState(false);
+  const canUseLowStock = !!entitlements?.is_active && entitlements.tier === 'pro'
+    && (!!entitlements.is_verified_paid || entitlements.provider === 'manual');
 
   useEffect(() => {
     if (!profile) return;
@@ -30,9 +36,12 @@ export default function NotificationSettingsScreen() {
         if (data) {
           setExpirationNotifications(data.enabled);
           setDaysBefore(data.days_before);
-          setRecipeNotifications(data.recipe_notifications);
+          if (profile.account_type !== 'establishment') {
+            setRecipeNotifications(data.recipe_notifications);
+          }
           setGroceryNotifications(data.grocery_notifications);
           setWeeklySummary(data.weekly_summary);
+          setLowStockNotifications(data.low_stock_enabled ?? false);
         }
       }, () => {});
   }, [profile]);
@@ -40,27 +49,53 @@ export default function NotificationSettingsScreen() {
   const handleSave = async () => {
     if (!profile) return;
     setLoading(true);
+    let lowStockEnabled = lowStockNotifications && canUseLowStock;
+    try {
+      if (lowStockEnabled) {
+        lowStockEnabled = await notificationService.enableLowStockPush(profile.id);
+      } else {
+        await notificationService.disableLowStockPush(profile.id);
+      }
+    } catch (error) {
+      setLoading(false);
+      Alert.alert('Could not update push notifications', (error as Error).message);
+      return;
+    }
     const { error } = await supabase.from('notification_preferences').upsert({
       user_id: profile.id,
       enabled: expirationNotifications,
       days_before: daysBefore,
-      recipe_notifications: recipeNotifications,
+      recipe_notifications: profile.account_type === 'establishment' ? false : recipeNotifications,
       grocery_notifications: groceryNotifications,
       weekly_summary: weeklySummary,
+      low_stock_enabled: lowStockEnabled,
     });
     setLoading(false);
     if (error) {
       Alert.alert('Could not save', error.message);
     } else {
-      Alert.alert('Saved', 'Notification settings updated.');
+      setLowStockNotifications(lowStockEnabled);
+      Alert.alert('Saved', lowStockNotifications && !lowStockEnabled
+        ? 'Settings saved. Allow notifications in your device settings to receive low stock alerts.'
+        : 'Notification settings updated.');
     }
   };
 
   const rows = [
     { icon: Bell, label: 'Expiration Alerts', sub: 'Warn before items expire', value: expirationNotifications, set: setExpirationNotifications },
-    { icon: ChefHat, label: 'Recipe Suggestions', sub: 'Meal ideas from your stock', value: recipeNotifications, set: setRecipeNotifications },
+    ...(profile?.account_type === 'establishment' ? [] : [
+      { icon: ChefHat, label: 'Recipe Suggestions', sub: 'Meal ideas from your stock', value: recipeNotifications, set: setRecipeNotifications },
+    ]),
     { icon: ShoppingCart, label: 'Grocery Reminders', sub: 'Remind you to restock', value: groceryNotifications, set: setGroceryNotifications },
     { icon: BarChart3, label: 'Weekly Waste Summary', sub: 'A recap every Monday', value: weeklySummary, set: setWeeklySummary },
+    {
+      icon: Bell,
+      label: 'Low Stock Push Alerts',
+      sub: canUseLowStock ? 'Push when an item reaches its stock threshold' : 'Available on the active Pro plan',
+      value: lowStockNotifications && canUseLowStock,
+      set: setLowStockNotifications,
+      disabled: !canUseLowStock,
+    },
   ];
 
   return (
@@ -80,6 +115,7 @@ export default function NotificationSettingsScreen() {
               <Switch
                 value={r.value}
                 onValueChange={r.set}
+                disabled={!!r.disabled}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor={colors.surface}
               />

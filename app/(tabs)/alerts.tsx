@@ -13,7 +13,6 @@ import type { LucideProps } from 'lucide-react-native';
 import {
   FilterChipRow, StatusPill, EmptyState, IconBadge, SectionHeader,
 } from '../../src/components/ui';
-import { LOW_STOCK_THRESHOLD } from '../../src/services/notificationService';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
 
 type Horizon = 'today' | 'week' | 'month';
@@ -95,7 +94,8 @@ export default function AlertsScreen() {
    * stock to replace, so it is not counted here either way.
    */
   const lowStockItems = items.filter(
-    (it) => it.status === 'available' && Number(it.quantity ?? 0) <= LOW_STOCK_THRESHOLD
+    (it) => it.status === 'available'
+      && Number(it.quantity ?? 0) <= Number(it.low_stock_threshold ?? 2)
   );
 
   const expiringTotal = groups.today.length + groups.week.length + groups.month.length;

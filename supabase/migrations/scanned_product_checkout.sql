@@ -1,5 +1,3 @@
--- Allow a barcode scan to stay in the checkout cart without first creating an
--- inventory row. Scanned items are written to the order snapshot at placement.
 ALTER TABLE public.inventory_order_items
   ALTER COLUMN inventory_item_id DROP NOT NULL;
 

@@ -73,7 +73,7 @@ export default function OrderReceiptScreen() {
     <View style={styles.header}><Pressable style={styles.back} onPress={() => router.replace('/(tabs)/inventory')}><ArrowLeft size={21} color="#153D2D" /></Pressable><View style={{ flex: 1 }}><Text style={styles.headerTitle}>Order Receipt</Text><Text style={styles.headerSub}>{receipt ? `KeepFresh AI · #${receipt.id.slice(0, 8).toUpperCase()}` : 'Saved order details'}</Text></View><Pressable style={styles.shareIcon} onPress={shareReceipt}><Share2 size={19} color="#153D2D" /></Pressable></View>
     {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} /> : !receipt ? <View style={styles.errorBox}><Text style={styles.body}>This receipt could not be loaded from your saved orders.</Text></View> : <>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 130 }}>
-        <View style={styles.confirm}><CheckCircle2 size={24} color="#0D9369" /><View style={{ flex: 1 }}><Text style={styles.confirmTitle}>Order saved</Text><Text style={styles.body}>This receipt was loaded from your order record. Ordered quantities were deducted from inventory.</Text></View></View>
+        <View style={styles.confirm}><CheckCircle2 size={24} color="#0D9369" /><View style={{ flex: 1 }}><Text style={styles.confirmTitle}>Order saved</Text><Text style={styles.body}>This receipt was loaded from your saved checkout order.</Text></View></View>
         <Pressable style={styles.inventoryButton} onPress={() => router.replace('/(tabs)/inventory')}>
           <PackageCheck size={18} color="white" />
           <Text style={styles.inventoryButtonText}>View updated inventory</Text>

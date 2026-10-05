@@ -17,12 +17,8 @@
 // rendering the response, so the list has one shape to render no matter where it
 // came from.
 //
-// One generation is a *fan-out* of several model calls, because the token budget
-// makes the whole job impossible in one. `MAX_TOKENS` buys six to eight recipes,
-// and the tab wants a set for each of the most urgent products as well as one
-// covering every category — five recipes each for a dozen products is not a
-// reply any model can write in one pass. So: one call for category coverage, and
-// one per selected product, merged by dish name before anything is written.
+// One generation fans out across products that expire within seven days. Each
+// call is anchored to one of those products; there is no pantry-wide call.
 // The whole fan-out is still metered as one AI scan (see below).
 //
 // Products are only covered when no `category` is asked for. A category
@@ -1124,6 +1120,11 @@ serve(async (req: Request) => {
       })
       .slice(0, MAX_INVENTORY_ITEMS);
 
+    const expiringKitchen = kitchen.filter((item) => {
+      const days = daysUntil(item.expiration_date);
+      return days !== null && days >= 0 && days <= 7;
+    });
+
     // The same two lookups the old ranking used, now for checking the model's
     // work rather than for scoring a catalog.
     //
@@ -1145,15 +1146,13 @@ serve(async (req: Request) => {
     // Nothing to cook with. Answering without calling the model keeps the prompt
     // honest (an empty kitchen and "write six recipes" contradict each other) and
     // saves a model call for the one case where the answer is already known.
-    if (kitchen.length === 0) {
+    if (expiringKitchen.length === 0) {
       return json({ ok: true, generated: 0 });
     }
 
-    // The pantry-wide call, plus one per selected product. A category generation
-    // is the tab's quick action and stays a single call — covering products as
-    // well would multiply the wait for a chip the user is about to filter down
-    // anyway.
-    const products = category ? [] : pickProducts(kitchen);
+    // One call per selected expiring product. Category filtering stays in each
+    // product prompt, so every saved recipe has an expiring primary product.
+    const products = pickProducts(expiringKitchen);
     const kitchenText = describeKitchen(kitchen);
 
     const calls: GenerationCall[] = [
@@ -1161,19 +1160,14 @@ serve(async (req: Request) => {
         ask: [
           kitchenText,
           '',
-          category
-            ? `Write ${count} recipes, all in the "${category}" category.`
-            // Every category chip on the tab has to have something behind it, so
-            // the spread is asked for by name rather than left to chance — a
-            // model told only to "vary the dishes" is as likely to write six
-            // meals as to cover all four. "As far as ${count} allows" keeps the
-            // ask honest when the caller asks for fewer recipes than categories.
-            : `Write ${count} recipes. Every one of these categories should be represented: ${CATEGORIES.join(', ')} — at least one dish in each, as far as ${count} recipes allows.`,
+          `Write recipes only for the expiring products listed below. Do not generate a pantry-wide recipe set.${category
+            ? ` Keep every dish in the "${category}" category.`
+            : ` Use varied categories from: ${CATEGORIES.join(', ')}.`}`,
         ].join('\n'),
-        product: null,
-        ceiling: count,
+        product: expiringKitchen[0],
+        ceiling: Math.min(count, PRODUCT_RECIPE_CAP),
       },
-      ...products.map((product) => ({
+      ...products.slice(1).map((product) => ({
         ask: [kitchenText, '', describeProduct(product)].join('\n'),
         product,
         ceiling: PRODUCT_RECIPE_CAP,
@@ -1328,8 +1322,7 @@ serve(async (req: Request) => {
           cook_time: recipe.cook_time,
           servings: recipe.servings,
           instructions: recipe.instructions,
-          // The product this set was written around. NULL for the pantry call's
-          // recipes, which reach a product through their ingredients instead.
+          // Every generated set is anchored to an expiring inventory product.
           primary_inventory_item_id: recipe.primaryItemId,
           // An all-optional ingredient list is fully covered by definition.
           match_percent:

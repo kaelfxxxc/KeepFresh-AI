@@ -1,15 +1,8 @@
 // The Recipes tab's per-product view.
 //
-// A generation writes two kinds of recipe. A *pantry-wide* set, spread across
-// the categories so every chip has something, and a *product* set for each of
-// the most urgent few items — five dishes built around that one thing, at least
-// three of them Filipino.
-//
-// Both kinds land under a product. The pantry-wide ones reach it through their
-// ingredients (a dessert that names bananas is a banana recipe), the product ones
-// through the item they were generated around. This module is where those two
-// links are read as one answer, and where the cap and the ordering the user asked
-// for are applied.
+// Every generated recipe is anchored to a product nearing expiry. This module
+// keeps the product chips and recipe rows limited to products still in that
+// expiry window, and applies the cap and ordering rules.
 //
 // Kept separate from the screen and free of Supabase, in the spirit of
 // wasteTrend.ts, so the rules can be reasoned about — and exercised — on their own.
@@ -84,6 +77,20 @@ export interface PantryItem {
   product_name: string;
   category: string | null;
   image_url: string | null;
+  expiration_date?: string | null;
+  status?: string | null;
+}
+
+/** Match the app's expiry window: due today through the next seven days. */
+export function isNearExpiry(item: Pick<PantryItem, 'expiration_date' | 'status'>, today = new Date()): boolean {
+  if (item.status && item.status !== 'available') return false;
+  if (!item.expiration_date) return false;
+  const dateKey = item.expiration_date.slice(0, 10);
+  const localToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(today);
+  const date = Date.parse(`${dateKey}T00:00:00Z`);
+  const start = Date.parse(`${localToday}T00:00:00Z`);
+  const days = Math.round((date - start) / 86_400_000);
+  return Number.isFinite(days) && days >= 0 && days <= 7;
 }
 
 /**
@@ -102,11 +109,13 @@ export function productGroups(
   items: PantryItem[],
   recipes: Pick<RecipeWithIngredients, 'inventory_item_ids'>[],
 ): ProductGroup[] {
+  const nearExpiryIds = new Set(items.filter(isNearExpiry).map((item) => item.id));
   const counts = new Map<string, number>();
   recipes.forEach((recipe) => {
     // A recipe that names the same product twice was already de-duplicated on the
     // way in (see `withRollup`), so counting ids directly cannot double-count.
     new Set(recipe.inventory_item_ids).forEach((id) => {
+      if (!nearExpiryIds.has(id)) return;
       counts.set(id, (counts.get(id) ?? 0) + 1);
     });
   });

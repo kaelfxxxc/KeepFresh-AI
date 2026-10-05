@@ -1,6 +1,6 @@
 {
   "name": "keepfresh-ai",
-  "version": "1.0.0",
+  "version": "1.12.3",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -10,7 +10,8 @@
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc",
     "test": "jest",
-    "build": "expo build:android --configuration main"
+    "build": "expo build:android --configuration main",
+    "eas:build:preview": "npx eas-cli build --profile preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",

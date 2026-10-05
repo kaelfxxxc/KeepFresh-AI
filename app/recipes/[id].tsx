@@ -70,12 +70,6 @@ export default function RecipeDetailScreen() {
     })();
   }, [recipeId, profile]);
 
-  useEffect(() => {
-    if (profile?.account_type === 'establishment') {
-      router.replace('/(tabs)');
-    }
-  }, [profile?.account_type]);
-
   const toggleFavorite = useCallback(async () => {
     if (!profile || !recipe) return;
     try {

@@ -61,15 +61,29 @@ export default function NotificationSettingsScreen() {
       Alert.alert('Could not update push notifications', (error as Error).message);
       return;
     }
-    const { error } = await supabase.from('notification_preferences').upsert({
-      user_id: profile.id,
+    const values = {
       enabled: expirationNotifications,
       days_before: daysBefore,
       recipe_notifications: profile.account_type === 'establishment' ? false : recipeNotifications,
       grocery_notifications: groceryNotifications,
       weekly_summary: weeklySummary,
       low_stock_enabled: lowStockEnabled,
-    });
+      updated_at: new Date().toISOString(),
+    };
+    const { data: existing, error: readError } = await supabase
+      .from('notification_preferences')
+      .select('id')
+      .eq('user_id', profile.id)
+      .maybeSingle();
+    if (readError) {
+      setLoading(false);
+      Alert.alert('Could not save', readError.message);
+      return;
+    }
+
+    const { error } = existing
+      ? await supabase.from('notification_preferences').update(values).eq('id', existing.id)
+      : await supabase.from('notification_preferences').insert({ user_id: profile.id, ...values });
     setLoading(false);
     if (error) {
       Alert.alert('Could not save', error.message);

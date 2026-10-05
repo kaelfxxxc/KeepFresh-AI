@@ -22,9 +22,6 @@ const NON_TAB_ROUTES = ['inventory/add', 'inventory/details', 'my-inventory'] as
 export default function TabLayout() {
   const { profile } = useAuth();
   const { compact, height, barWidth, barLeft, bottomOffset } = useFloatingTabBar();
-  const tabs = profile?.account_type === 'establishment'
-    ? TABS.filter(({ name }) => name !== 'recipes')
-    : TABS;
 
   return (
     <Tabs
@@ -45,7 +42,7 @@ export default function TabLayout() {
         tabBarItemStyle: styles.tabBarItem,
       })}
     >
-      {tabs.map(({ name, label, icon: Icon }) => (
+      {TABS.map(({ name, label, icon: Icon }) => (
         <Tabs.Screen
           key={name}
           name={name}
@@ -70,9 +67,6 @@ export default function TabLayout() {
           }}
         />
       ))}
-      {profile?.account_type === 'establishment' && (
-        <Tabs.Screen name="recipes" options={{ href: null }} />
-      )}
       {NON_TAB_ROUTES.map((name) => (
         <Tabs.Screen key={name} name={name} options={{ href: null }} />
       ))}

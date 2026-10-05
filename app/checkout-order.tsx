@@ -1,16 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ArrowRight, FileText, Minus, Plus, MapPin, Package } from 'lucide-react-native';
 import { useAuth } from '../src/context/AuthContext';
 import { supabase } from '../src/lib/supabase';
-import { storageAreaService } from '../src/services/storageAreaService';
 import { colors } from '../src/theme';
-import { orderCart } from '../src/services/orderCart';
-import type { InventoryItem, StorageArea } from '../src/types';
+import { orderCart, type DraftOrderItem } from '../src/services/orderCart';
+import type { InventoryItem } from '../src/types';
 
-type Line = { item: InventoryItem; quantity: number; area?: StorageArea };
+type Line = { item?: InventoryItem; draft?: DraftOrderItem; quantity: number };
+const productName = (line: Line) => line.item?.product_name ?? line.draft?.product_name ?? 'Product';
+const productPrice = (line: Line) => Number(line.item?.price ?? line.draft?.price ?? 0);
+const productUnit = (line: Line) => line.item?.unit ?? line.draft?.unit ?? 'pcs';
+const productStock = (line: Line) => line.item ? Number(line.item.quantity || 0) : 999;
 const currency = (n: number) => `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function OrderCheckoutScreen() {
@@ -19,27 +22,44 @@ export default function OrderCheckoutScreen() {
   const [lines, setLines] = useState<Line[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [destination, setDestination] = useState('Main Kitchen & Pantry Storage');
-  const [areas, setAreas] = useState<StorageArea[]>([]);
+  const [destination] = useState('Point of Sale');
 
   const load = useCallback(async () => {
     if (!profile) return;
     const quantities = orderCart.get();
+    const drafts = orderCart.getDrafts();
     const ids = Object.keys(quantities).filter((id) => Number(quantities[id]) > 0);
-    const [result, storage] = await Promise.all([
-      ids.length ? supabase.from('inventory_items').select('*').eq('user_id', profile.id).in('id', ids).eq('status', 'available') : Promise.resolve({ data: [], error: null }),
-      storageAreaService.list(profile.id).catch(() => [] as StorageArea[]),
-    ]);
-    setAreas(storage);
-    setLines((result.data || []).map((item: InventoryItem) => ({ item, quantity: Math.min(Number(quantities[item.id]), Number(item.quantity || 0)), area: storage.find((area) => area.id === item.storage_area_id) })).filter((line: Line) => line.quantity > 0));
+    const result = ids.length
+      ? await supabase.from('inventory_items').select('*').eq('user_id', profile.id).in('id', ids).eq('status', 'available')
+      : { data: [], error: null };
+    setLines([
+      ...(result.data || []).map((item: InventoryItem) => ({ item, quantity: Math.min(Number(quantities[item.id]), Number(item.quantity || 0)) })),
+      ...drafts.map((draft) => ({ draft, quantity: draft.quantity })),
+    ].filter((line: Line) => line.quantity > 0));
     setLoading(false);
   }, [profile]);
   useEffect(() => { load(); }, [load]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const subtotal = useMemo(() => lines.reduce((sum, line) => sum + Number(line.item.price || 0) * line.quantity, 0), [lines]);
+  const subtotal = useMemo(() => lines.reduce((sum, line) => sum + productPrice(line) * line.quantity, 0), [lines]);
   const totalCount = lines.reduce((sum, line) => sum + line.quantity, 0);
-  const adjust = (id: string, delta: number) => setLines((prev) => prev.map((line) => line.item.id === id ? { ...line, quantity: Math.max(0, Math.min(line.quantity + delta, Number(line.item.quantity || 0))) } : line).filter((line) => line.quantity > 0));
+  const adjust = (key: string, delta: number) => setLines((prev) => {
+    const next = prev.map((line) => {
+      const lineKey = line.item?.id ?? line.draft?.key;
+      return lineKey === key ? { ...line, quantity: Math.max(0, Math.min(line.quantity + delta, productStock(line))) } : line;
+    }).filter((line) => line.quantity > 0);
+    orderCart.set(Object.fromEntries(next.filter((line) => line.item).map((line) => [line.item!.id, line.quantity])));
+    orderCart.setDrafts(next.flatMap((line) => line.draft ? [{ ...line.draft, quantity: line.quantity }] : []));
+    return next;
+  });
+  const setDraftPrice = (key: string, text: string) => setLines((prev) => {
+    const price = Math.max(0, Number(text.replace(',', '.')) || 0);
+    const next = prev.map((line) => line.draft?.key === key
+      ? { ...line, draft: { ...line.draft, price } }
+      : line);
+    orderCart.setDrafts(next.flatMap((line) => line.draft ? [{ ...line.draft, quantity: line.quantity }] : []));
+    return next;
+  });
 
   const placeOrder = async () => {
     if (!profile || lines.length === 0 || submitting) return;
@@ -49,19 +69,23 @@ export default function OrderCheckoutScreen() {
       // deducts stock atomically. The low-stock trigger observes those updates.
       const { data: orderId, error } = await supabase.rpc('place_inventory_order', {
         p_destination: destination,
-        p_items: lines.map((line) => ({ item_id: line.item.id, quantity: line.quantity })),
+        p_items: lines.map((line) => line.item
+          ? { item_id: line.item.id, quantity: line.quantity }
+          : { product_name: line.draft!.product_name, brand: line.draft!.brand, category: line.draft!.category, barcode: line.draft!.barcode, unit: line.draft!.unit, expiration_date: line.draft!.expiration_date, image_url: line.draft!.image_url, price: line.draft!.price, quantity: line.quantity }),
       });
       if (error) throw error;
       orderCart.clear();
-      router.replace({ pathname: '/order-receipt', params: { orderId } });
+      Alert.alert('Check Out Succesfully', 'Your order has been placed.', [
+        { text: 'OK', onPress: () => router.replace({ pathname: '/order-receipt', params: { orderId } }) },
+      ]);
     } catch (error) {
       const databaseError = error as { message?: string; details?: string; hint?: string; code?: string };
       const diagnostic = [databaseError.message, databaseError.details, databaseError.hint].filter(Boolean).join('\n\n');
-      const missingOrderTables = databaseError.code === '42P01' || /inventory_orders|inventory_order_items/i.test(databaseError.message || '') && /does not exist|schema cache|could not find/i.test(databaseError.message || '');
+      const missingOrderTables = databaseError.code === '42P01' || /inventory_orders|inventory_order_items|place_inventory_order/i.test(databaseError.message || '') && /does not exist|schema cache|could not find/i.test(databaseError.message || '');
       Alert.alert(
         'Could not place order',
         missingOrderTables || /place_inventory_order|function.*does not exist|schema cache/i.test(databaseError.message || '')
-          ? 'The order or low-stock checkout migration is missing from your Supabase database. Apply supabase/migrations/inventory_orders.sql and supabase/migrations/low_stock_push_alerts.sql, then try again.'
+          ? 'The checkout migration is missing from your Supabase database. Apply the latest Supabase migrations, then try again.'
           : diagnostic || 'The database did not accept this order. Please try again.',
       );
     } finally { setSubmitting(false); }
@@ -69,18 +93,18 @@ export default function OrderCheckoutScreen() {
 
   return <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
     <ScrollView contentContainerStyle={{ paddingBottom: 122 }}>
-      <View style={styles.topbar}><Pressable style={styles.circle} onPress={() => router.back()}><ArrowLeft size={22} color="#16372A" /></Pressable><View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}><Text style={styles.title}>Checkout</Text><Text style={styles.countPill}>{totalCount} items</Text></View><Text style={styles.subtitle}>KeepFresh AI · Smart Restock &amp; Cart</Text></View><Pressable style={styles.circle} onPress={() => Alert.alert('Order summary', `${lines.length} product lines selected.`)}><FileText size={20} color="#16372A" /></Pressable></View>
-      <Pressable style={styles.destination} onPress={() => areas.length > 0 && Alert.alert('Restock destination', 'Choose a saved storage area.', [...areas.map((area) => ({ text: area.name, onPress: () => setDestination(area.name) })), { text: 'Cancel', style: 'cancel' }])}>
-        <View style={styles.destinationIcon}><MapPin size={20} color="#138B64" /></View><View style={{ flex: 1 }}><Text style={styles.eyebrow}>RESTOCK DESTINATION <Text style={{ color: '#10B981' }}>●</Text></Text><Text style={styles.destName}>{destination}</Text><Text style={styles.muted}>{areas.length ? `${areas.length} saved storage area${areas.length === 1 ? '' : 's'}` : 'No saved storage areas'}</Text></View><Text style={styles.change}>Change</Text>
-      </Pressable>
-      <View style={styles.sectionRow}><Text style={styles.sectionTitle}>SELECTED PRODUCTS ({lines.length})</Text><Text style={styles.auto}><Text style={{ color: '#10B981' }}>●</Text> From your inventory</Text></View>
-      {loading ? <ActivityIndicator color={colors.primary} style={{ padding: 36 }} /> : lines.length === 0 ? <View style={styles.empty}><Package size={28} color="#77858B" /><Text style={styles.muted}>Your cart is empty or these items are no longer in stock.</Text><Pressable onPress={() => router.replace('/(tabs)/inventory')}><Text style={styles.change}>Browse products</Text></Pressable></View> : lines.map((line, index) => <View key={line.item.id} style={[styles.lineCard, { borderTopColor: index % 2 ? '#10B981' : '#FBBF24' }]}>
-        <View style={styles.lineTop}><View style={styles.productIcon}><Package size={23} color="#138B64" /></View><View style={{ flex: 1 }}><Text style={styles.productName}>{line.item.product_name}</Text><Text style={styles.productDetails}>{line.item.quantity} {line.item.unit} · <Text style={{ color: colors.primary }}>{line.area?.name || line.item.category || 'Unassigned'}</Text></Text>{line.item.expiration_date ? <Text style={styles.freshness}>Best before {line.item.expiration_date}</Text> : null}</View><View style={{ alignItems: 'flex-end' }}><Text style={styles.linePrice}>{currency(Number(line.item.price || 0) * line.quantity)}</Text><Text style={styles.unitPrice}>{currency(Number(line.item.price || 0))} / unit</Text></View></View>
-        <View style={styles.lineFooter}><Text style={styles.itemTotal}>Item total: <Text style={{ color: '#17241D', fontWeight: '700' }}>{currency(Number(line.item.price || 0) * line.quantity)}</Text></Text><View style={styles.quantityControl}><Pressable onPress={() => adjust(line.item.id, -1)}><Minus size={15} color="#59726A" /></Pressable><Text style={styles.quantity}>{line.quantity}</Text><Pressable onPress={() => adjust(line.item.id, 1)}><Plus size={15} color={colors.primary} /></Pressable></View></View>
+      <View style={styles.topbar}><Pressable style={styles.circle} onPress={() => router.back()}><ArrowLeft size={22} color="#16372A" /></Pressable><View style={{ flex: 1 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}><Text style={styles.title}>Checkout</Text><Text style={styles.countPill}>{totalCount} items</Text></View><Text style={styles.subtitle}>KeepFresh AI · Sales checkout</Text></View><Pressable style={styles.circle} onPress={() => Alert.alert('Order summary', `${lines.length} product lines selected.`)}><FileText size={20} color="#16372A" /></Pressable></View>
+      <View style={[styles.destination, { marginBottom: 22 }]}>
+        <View style={styles.destinationIcon}><MapPin size={20} color="#138B64" /></View><View style={{ flex: 1 }}><Text style={styles.eyebrow}>CHECKOUT SESSION <Text style={{ color: '#10B981' }}>●</Text></Text><Text style={styles.destName}>{destination}</Text><Text style={styles.muted}>Items are deducted from available inventory when in stock.</Text></View>
+      </View>
+      <View style={styles.sectionRow}><Text style={styles.sectionTitle}>SELECTED PRODUCTS ({lines.length})</Text><Text style={styles.auto}><Text style={{ color: '#10B981' }}>●</Text> Inventory and scanned</Text></View>
+      {loading ? <ActivityIndicator color={colors.primary} style={{ padding: 36 }} /> : lines.length === 0 ? <View style={styles.empty}><Package size={28} color="#77858B" /><Text style={styles.muted}>Your cart is empty or these items are no longer in stock.</Text><Pressable onPress={() => router.replace('/(tabs)/inventory')}><Text style={styles.change}>Browse products</Text></Pressable></View> : lines.map((line, index) => { const key = line.item?.id ?? line.draft!.key; return <View key={key} style={[styles.lineCard, { borderTopColor: index % 2 ? '#10B981' : '#FBBF24' }]}>
+        <View style={styles.lineTop}><View style={styles.productIcon}><Package size={23} color="#138B64" /></View><View style={{ flex: 1 }}><Text style={styles.productName}>{productName(line)}</Text><Text style={styles.productDetails}>{productStock(line)} {productUnit(line)} · <Text style={{ color: colors.primary }}>{line.item?.category || line.draft?.category || (line.item ? 'Inventory' : 'Scanned product')}</Text></Text>{line.item?.expiration_date || line.draft?.expiration_date ? <Text style={styles.freshness}>Best before {line.item?.expiration_date || line.draft?.expiration_date}</Text> : null}</View><View style={{ alignItems: 'flex-end' }}>{line.draft ? <TextInput value={line.draft.price ? String(line.draft.price) : ''} onChangeText={(value) => setDraftPrice(key, value)} placeholder="Unit price" keyboardType="decimal-pad" style={styles.priceInput} /> : <Text style={styles.linePrice}>{currency(productPrice(line) * line.quantity)}</Text>}<Text style={styles.unitPrice}>{currency(productPrice(line))} / unit</Text></View></View>
+        <View style={styles.lineFooter}><Text style={styles.itemTotal}>Item total: <Text style={{ color: '#17241D', fontWeight: '700' }}>{currency(productPrice(line) * line.quantity)}</Text></Text><View style={styles.quantityControl}><Pressable onPress={() => adjust(key, -1)}><Minus size={15} color="#59726A" /></Pressable><Text style={styles.quantity}>{line.quantity}</Text><Pressable onPress={() => adjust(key, 1)}><Plus size={15} color={colors.primary} /></Pressable></View></View>
       </View>)}
-      <Pressable style={styles.addMore} onPress={() => router.push('/(tabs)/inventory')}><Plus size={18} color="#10A879" /><Text style={styles.addMoreText}>Add More Products &amp; Items</Text></Pressable>
+      <Pressable style={styles.addMore} onPress={() => router.push('/scan')}><Plus size={18} color="#10A879" /><Text style={styles.addMoreText}>Scan More Products</Text></Pressable>
       <View style={styles.insight}><Text style={{ fontSize: 20 }}>💡</Text><View style={{ flex: 1 }}><Text style={styles.insightTitle}>KeepFresh AI Inventory Insight</Text><Text style={styles.insightCopy}>Items and storage details shown here are loaded from your inventory.</Text></View></View>
-      <View style={styles.summary}><Text style={styles.summaryTitle}>ORDER SUMMARY</Text><SummaryRow label={`Items Total (${totalCount} items)`} value={currency(subtotal)} /><SummaryRow label="Discount" value="₱0.00" green /><SummaryRow label="Delivery" value="₱0.00" /><SummaryRow label="Estimated Tax" value="₱0.00" /><View style={styles.divider} /><View style={styles.totalRow}><View><Text style={styles.totalLabel}>Total Amount</Text><Text style={styles.mutedSmall}>Based on saved inventory prices</Text></View><Text style={styles.total}>{currency(subtotal)}</Text></View></View>
+      <View style={styles.summary}><Text style={styles.summaryTitle}>ORDER SUMMARY</Text><SummaryRow label={`Items Total (${totalCount} items)`} value={currency(subtotal)} /><SummaryRow label="Discount" value="₱0.00" green /><SummaryRow label="Delivery" value="₱0.00" /><SummaryRow label="Estimated Tax" value="₱0.00" /><View style={styles.divider} /><View style={styles.totalRow}><View><Text style={styles.totalLabel}>Total Amount</Text><Text style={styles.mutedSmall}>Based on product prices</Text></View><Text style={styles.total}>{currency(subtotal)}</Text></View></View>
       <View style={styles.paymentSection}><Text style={styles.summaryTitle}>PAYMENT METHOD</Text><View style={styles.payment}><View style={[styles.cardIcon, styles.cashIcon]}><Text style={styles.cardIconText}>₱</Text></View><View style={{ flex: 1 }}><Text style={styles.paymentTitle}>Cash</Text><Text style={styles.muted}>Pay with cash when your order is ready.</Text></View><View style={styles.selectedPayment}><Text style={styles.selectedPaymentText}>Selected</Text></View></View><View style={[styles.payment, styles.cashlessPayment]}><View style={[styles.cardIcon, styles.cashlessIcon]}><Text style={styles.cashlessIconText}>•••</Text></View><View style={{ flex: 1 }}><Text style={styles.paymentTitle}>Cashless</Text><Text style={styles.muted}>Coming soon</Text></View></View></View>
     </ScrollView>
     <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, 12) }]}><Pressable disabled={loading || submitting || lines.length === 0} onPress={placeOrder} style={[styles.placeButton, (loading || submitting || !lines.length) && { opacity: 0.6 }]}>{submitting ? <ActivityIndicator color="white" /> : <><Text style={styles.placeText}>Place Order</Text><Text style={styles.totalPill}>{currency(subtotal)}</Text><ArrowRight size={20} color="white" /></>}</Pressable></View>

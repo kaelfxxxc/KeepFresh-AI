@@ -109,7 +109,7 @@ export function productGroups(
   items: PantryItem[],
   recipes: Pick<RecipeWithIngredients, 'inventory_item_ids'>[],
 ): ProductGroup[] {
-  const nearExpiryIds = new Set(items.filter(isNearExpiry).map((item) => item.id));
+  const nearExpiryIds = new Set(items.filter((item) => isNearExpiry(item)).map((item) => item.id));
   const counts = new Map<string, number>();
   recipes.forEach((recipe) => {
     // A recipe that names the same product twice was already de-duplicated on the

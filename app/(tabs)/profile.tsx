@@ -10,7 +10,7 @@ import { useFloatingTabBar } from '../../src/hooks/useFloatingTabBar';
 import {
   UserRound, Bell, SlidersHorizontal, HelpCircle, Info, LogOut, Camera,
   Home, Store, Crown, Refrigerator, Tag, Users, Boxes,
-  Package,
+  Package, BarChart3,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import type { ComponentType } from 'react';
@@ -74,6 +74,10 @@ export default function ProfileScreen() {
           {
             label: 'Bulk Inventory', icon: Boxes, path: '/bulk-inventory', hint: 'Many items at once',
             badge: gates.bulkInventory.allowed ? undefined : 'Pro',
+          },
+          {
+            label: 'Statistics', icon: BarChart3, path: '/establishment-statistics', hint: 'Order totals and trends',
+            badge: gates.establishmentStatistics.allowed ? undefined : 'Premium / Pro',
           },
         ] as Tool[])
       : []),
@@ -203,6 +207,14 @@ export default function ProfileScreen() {
         <View style={styles.block}>
           <SectionHeader title={isEstablishment ? 'Stock & team' : 'Inventory tools'} />
           <View style={styles.menuCard}>
+            {!isEstablishment && (
+              <ListRow
+                icon={Package}
+                label="My Inventory"
+                hint="View, update and consume your food items"
+                onPress={() => router.push('/(tabs)/my-inventory')}
+              />
+            )}
             {isEstablishment && (
               <ListRow
                 icon={Package}

@@ -228,6 +228,30 @@ export function gateUseBulkInventory(e: Entitlements | null): GateResult {
   );
 }
 
+/** Establishment sales statistics are a paid Premium or Pro feature. */
+export function gateUseEstablishmentStatistics(e: Entitlements | null): GateResult {
+  if (!e) return {
+    allowed: false,
+    title: 'Statistics require an active plan',
+    message: 'Subscribe to Food Establishment Premium or Pro to view your business statistics.',
+    requiredTier: 'pro',
+  };
+  if (e.audience !== 'establishment') return {
+    allowed: false,
+    title: 'Statistics are for food establishments',
+    message: 'This feature is available on food establishment plans.',
+  };
+  // Establishment's active trial grants the Pro feature set. Once it expires,
+  // sync_my_subscription falls back to the free tier and this gate locks again.
+  if (e.is_active && (e.tier === 'premium' || e.tier === 'pro' || e.tier === 'free_trial')) return allowed();
+  return {
+    allowed: false,
+    title: 'Statistics are a Premium and Pro feature',
+    message: 'Subscribe to Food Establishment Premium or Pro to view your business statistics.',
+    requiredTier: 'pro',
+  };
+}
+
 /* ------------------------------------------------------------------- async API */
 
 export const entitlementService = {

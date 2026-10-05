@@ -27,7 +27,7 @@ import React, {
 import { AppState, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
-import { gateAddProduct, gateUseAIScan, gateUseBulkInventory, gateUsePriceTracking, gateUseStaffManagement, gateUseWasteReport, type GateResult } from '../services/entitlementService';
+import { gateAddProduct, gateUseAIScan, gateUseBulkInventory, gateUseEstablishmentStatistics, gateUsePriceTracking, gateUseStaffManagement, gateUseWasteReport, type GateResult } from '../services/entitlementService';
 import { subscriptionService, trialHasEnded } from '../services/subscriptionService';
 import { subscribeToTables, type RealtimeStatus } from '../lib/realtime';
 import type { Entitlements } from '../types';
@@ -74,6 +74,7 @@ interface SubscriptionContextValue {
     advancedWasteReport: GateResult;
     staffManagement: GateResult;
     bulkInventory: GateResult;
+    establishmentStatistics: GateResult;
   };
 }
 
@@ -215,6 +216,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       advancedWasteReport: gateUseWasteReport(entitlements, true),
       staffManagement: gateUseStaffManagement(entitlements),
       bulkInventory: gateUseBulkInventory(entitlements),
+      establishmentStatistics: gateUseEstablishmentStatistics(entitlements),
     }),
     [entitlements]
   );

@@ -5,13 +5,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/context/AuthContext';
 import { colors, radii, spacing, shadow } from '../../src/theme';
-import { Sparkles, ScanBarcode, PencilLine, PackagePlus } from 'lucide-react-native';
+import { Sparkles, ScanBarcode, PencilLine, PackagePlus, ShoppingCart } from 'lucide-react-native';
 import { NavHeader, PillButton, StatusBadge, IconBadge, colorWithOpacity } from '../../src/components/ui';
 import { categoryIcon, categoryLabel } from '../../src/utils/categoryIcons';
 import { directImageUri, isLocalFileUri, resolveItemImageUri, uploadItemImage } from '../../src/services/inventoryImageService';
 import type { ReviewInfo } from '../../src/services/barcodeService';
 import { usePageGutter } from '../../src/hooks/useContentLayout';
 import { errorMessage } from '../../src/utils/errors';
+import { orderCart } from '../../src/services/orderCart';
 
 type ScanSource = 'photo' | 'lookup' | 'inventory';
 
@@ -168,6 +169,37 @@ export default function ProductInfoScreen() {
     }
   };
 
+  const handleCheckout = async () => {
+    if (!info.product_name.trim()) {
+      Alert.alert('Missing name', 'Please add a product name, or tap Edit Information first.');
+      return;
+    }
+    if (!profile) return;
+    const barcode = info.barcode || params.barcode || '';
+    if (barcode) {
+      const { data } = await supabase.from('inventory_items').select('id,quantity')
+        .eq('user_id', profile.id).eq('barcode', barcode).eq('status', 'available').maybeSingle();
+      if (data && Number(data.quantity) > 0) {
+        const cart = orderCart.get();
+        orderCart.set({ ...cart, [data.id]: Math.min((cart[data.id] || 0) + 1, Number(data.quantity)) });
+        router.replace('/checkout-order');
+        return;
+      }
+    }
+    orderCart.addDraft({
+      product_name: info.product_name.trim(),
+      brand: info.brand || null,
+      category: info.category || null,
+      barcode: barcode || null,
+      quantity: Number(info.quantity) || 1,
+      unit: info.unit || 'pcs',
+      expiration_date: info.expiration_date || null,
+      image_url: info.image_url || null,
+      price: 0,
+    });
+    router.replace('/checkout-order');
+  };
+
   // What the hero falls back to when there is no photo to show — the category's
   // own icon rather than a generic box.
   const HeroIcon = categoryIcon(info.category);
@@ -282,11 +314,18 @@ export default function ProductInfoScreen() {
           style={{ flex: 1 }}
         />
         <PillButton
-          title="Add to Inventory"
+          title="Add Product"
           icon={PackagePlus}
           onPress={handleAdd}
           loading={loading}
-          style={{ flex: 1.4 }}
+          style={{ flex: 1 }}
+        />
+        <PillButton
+          title="Check Out Product"
+          icon={ShoppingCart}
+          onPress={handleCheckout}
+          disabled={loading}
+          style={{ flex: 1.15 }}
         />
       </View>
     </View>

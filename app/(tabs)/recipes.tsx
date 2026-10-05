@@ -76,7 +76,7 @@ export default function RecipesScreen() {
    * so offering "recipes for the chicken you ate last week" would be a dead end.
    */
   const [items, setItems] = useState<PantryItem[]>([]);
-  const nearExpiryItems = useMemo(() => items.filter(isNearExpiry), [items]);
+  const nearExpiryItems = useMemo(() => items.filter((item) => isNearExpiry(item)), [items]);
   const nearExpiryIds = useMemo(() => new Set(nearExpiryItems.map((item) => item.id)), [nearExpiryItems]);
   const nearExpiryRecipes = useMemo(
     () => recipes.filter((recipe) => recipe.inventory_item_ids.some((id) => nearExpiryIds.has(id))),

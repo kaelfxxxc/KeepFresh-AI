@@ -8,7 +8,7 @@ import { storageAreaService } from '../../src/services/storageAreaService';
 import { colors, radii, spacing } from '../../src/theme';
 import { useContentLayout } from '../../src/hooks/useContentLayout';
 import { orderCart } from '../../src/services/orderCart';
-import { Search, SlidersHorizontal, ScanBarcode, Plus, ArrowRight, Package, Refrigerator, Snowflake, CookingPot, ShoppingCart } from 'lucide-react-native';
+import { Search, SlidersHorizontal, ScanBarcode, Plus, ArrowRight, Package, Refrigerator, Snowflake, CookingPot, ShoppingCart, CheckCircle2 } from 'lucide-react-native';
 import type { InventoryItem, StorageArea } from '../../src/types';
 
 type Product = InventoryItem & { area?: StorageArea };
@@ -19,6 +19,7 @@ export default function ProductsScreen() {
   const insets = useSafeAreaInsets();
   const { gutter } = useContentLayout();
   const { profile } = useAuth();
+  const isHousehold = profile?.account_type !== 'establishment';
   const [items, setItems] = useState<Product[]>([]);
   const [areas, setAreas] = useState<StorageArea[]>([]);
   const [search, setSearch] = useState('');
@@ -83,15 +84,15 @@ export default function ProductsScreen() {
         </ScrollView>
         <View style={styles.catalogHeader}><Text style={styles.catalogTitle}>PRODUCT CATALOG ({visible.length})</Text><Pressable onPress={() => setSort((current) => current === 'Name' ? 'Price: Low to High' : 'Name')}><Text style={styles.sortText}>Sort: <Text style={{ color: colors.primary, fontWeight: '700' }}>{sort}⌄</Text></Text></Pressable></View>
       </View>}
-      renderItem={({ item, index }) => <ProductCard item={item} index={index} quantity={cart[item.id] || 0} onCheckout={() => { const next = { ...cart, [item.id]: 1 }; setCart(next); orderCart.set(next); }} onQuantity={(quantity) => setQuantity(item, quantity)} />}
+      renderItem={({ item, index }) => <ProductCard item={item} index={index} quantity={cart[item.id] || 0} isHousehold={isHousehold} onCheckout={() => { const next = { ...cart, [item.id]: 1 }; setCart(next); orderCart.set(next); }} onConsume={() => router.push({ pathname: '/inventory/details', params: { id: item.id } })} onQuantity={(quantity) => setQuantity(item, quantity)} />}
       ListEmptyComponent={!loading ? <View style={{ padding: 28, alignItems: 'center' }}><Package size={28} color={colors.textSecondary} /><Text style={{ marginTop: 12, color: colors.textSecondary }}>{search ? 'No products match your search.' : 'No available inventory items yet.'}</Text></View> : null}
       ListFooterComponent={loading ? <ActivityIndicator color={colors.primary} style={{ padding: 32 }} /> : null}
     />
-    {selected.length > 0 && <View style={[styles.cartBar, { left: gutter - 4, right: gutter - 4, bottom: 88 }]}><View style={styles.cartIcon}><ShoppingCart size={21} color="#6CE5BF" /><Text style={styles.cartCount}>{selected.reduce((sum, [, quantity]) => sum + quantity, 0)}</Text></View><View style={{ flex: 1 }}><Text style={styles.cartLabel}>Cart Total</Text><Text style={styles.cartValue}>{money(cartTotal)}</Text></View><Pressable style={styles.cancelButton} onPress={() => { setCart({}); orderCart.clear(); }} accessibilityRole="button" accessibilityLabel="Cancel order and clear cart"><Text style={styles.cancelText}>Cancel</Text></Pressable><Pressable style={styles.checkoutButton} onPress={() => { orderCart.set(cart); router.push('/checkout-order'); }}><Text style={styles.checkoutText}>Checkout</Text><ArrowRight size={18} color="#063F2E" /></Pressable></View>}
+    {!isHousehold && selected.length > 0 && <View style={[styles.cartBar, { left: gutter - 4, right: gutter - 4, bottom: 88 }]}><View style={styles.cartIcon}><ShoppingCart size={21} color="#6CE5BF" /><Text style={styles.cartCount}>{selected.reduce((sum, [, quantity]) => sum + quantity, 0)}</Text></View><View style={{ flex: 1 }}><Text style={styles.cartLabel}>Cart Total</Text><Text style={styles.cartValue}>{money(cartTotal)}</Text></View><Pressable style={styles.cancelButton} onPress={() => { setCart({}); orderCart.clear(); }} accessibilityRole="button" accessibilityLabel="Cancel order and clear cart"><Text style={styles.cancelText}>Cancel</Text></Pressable><Pressable style={styles.checkoutButton} onPress={() => { orderCart.set(cart); router.push('/checkout-order'); }}><Text style={styles.checkoutText}>Checkout</Text><ArrowRight size={18} color="#063F2E" /></Pressable></View>}
   </View>;
 }
 
-function ProductCard({ item, index, quantity, onCheckout, onQuantity }: { item: Product; index: number; quantity: number; onCheckout: () => void; onQuantity: (quantity: number) => void }) {
+function ProductCard({ item, index, quantity, isHousehold, onCheckout, onConsume, onQuantity }: { item: Product; index: number; quantity: number; isHousehold: boolean; onCheckout: () => void; onConsume: () => void; onQuantity: (quantity: number) => void }) {
   const accent = index % 3 === 1 ? '#059669' : '#F59E0B';
   const [imageFailed, setImageFailed] = useState(false);
   const Icon = areaIcon(item.area);
@@ -101,7 +102,7 @@ function ProductCard({ item, index, quantity, onCheckout, onQuantity }: { item: 
     <View style={styles.productTop}><View style={styles.productImage}>{item.image_url && !imageFailed ? <Image source={{ uri: item.image_url }} style={styles.image} onError={() => setImageFailed(true)} /> : <Icon size={25} color={colors.primary} />}</View><Text style={[styles.tag, { backgroundColor: outOfStock ? '#E8ECE9' : runningLow ? '#FFF1C2' : '#D5F7E6', color: outOfStock ? '#66746C' : runningLow ? '#94500A' : '#146344' }]} numberOfLines={1}>{outOfStock ? 'Out of stock' : runningLow ? `${item.quantity} left` : 'In Stock'}</Text></View>
     <Text style={styles.price}>{money(Number(item.price || 0))}</Text><Text style={styles.productName} numberOfLines={2}>{item.product_name}</Text><Text style={styles.detail} numberOfLines={1}>{item.quantity} {item.unit} · <Text style={{ color: colors.primary }}>{item.area?.name || item.category || 'Unassigned'}</Text></Text>
     <View style={styles.progressTrack}><View style={[styles.progress, { width: `${Math.min(100, Number(item.quantity || 0) * 20)}%`, backgroundColor: accent }]} /></View>
-    {quantity > 0 ? <View style={styles.quantityControl}><Pressable onPress={() => onQuantity(quantity - 1)}><Text style={styles.stepper}>−</Text></Pressable><Text style={styles.quantity}>{quantity}</Text><Pressable onPress={() => onQuantity(quantity + 1)}><Text style={styles.stepper}>＋</Text></Pressable></View> : <Pressable style={[styles.cardButton, outOfStock && styles.cardButtonDisabled]} disabled={outOfStock} onPress={onCheckout}><Text style={styles.cardButtonText}>{outOfStock ? 'Out of stock' : 'Check out'}</Text>{!outOfStock && <ArrowRight size={16} color="white" />}</Pressable>}
+    {isHousehold ? <Pressable style={[styles.cardButton, outOfStock && styles.cardButtonDisabled]} disabled={outOfStock} onPress={onConsume}><Text style={styles.cardButtonText}>{outOfStock ? 'Out of stock' : 'Consume'}</Text>{!outOfStock && <CheckCircle2 size={16} color="white" />}</Pressable> : quantity > 0 ? <View style={styles.quantityControl}><Pressable onPress={() => onQuantity(quantity - 1)}><Text style={styles.stepper}>−</Text></Pressable><Text style={styles.quantity}>{quantity}</Text><Pressable onPress={() => onQuantity(quantity + 1)}><Text style={styles.stepper}>＋</Text></Pressable></View> : <Pressable style={[styles.cardButton, outOfStock && styles.cardButtonDisabled]} disabled={outOfStock} onPress={onCheckout}><Text style={styles.cardButtonText}>{outOfStock ? 'Out of stock' : 'Check out'}</Text>{!outOfStock && <ArrowRight size={16} color="white" />}</Pressable>}
   </View>;
 }
 

@@ -107,7 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const callback = Linking.parse(result.url);
-      const params = new URLSearchParams(callback.queryParams as Record<string, string>);
+      const params = new URLSearchParams();
+      Object.entries(callback.queryParams ?? {}).forEach(([key, value]) => {
+        if (typeof value === 'string') params.set(key, value);
+      });
       const fragment = result.url.split('#')[1];
       if (fragment) {
         new URLSearchParams(fragment).forEach((value, key) => params.set(key, value));

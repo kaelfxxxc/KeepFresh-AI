@@ -79,17 +79,24 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 6. **Configure OAuth Redirect URLs:**
    ```
    Supabase Dashboard → Authentication → URL Configuration
-   Site URL: keepfreshai://auth/callback
+   Site URL: use your public website URL (or the Supabase project URL if you do not have a website)
+   Redirect URLs: add keepfreshai://auth/callback
    ```
 
 ### Google OAuth Setup
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create OAuth 2.0 Client ID
-3. Add authorized redirect URIs:
-   - `https://your-project.supabase.co/auth/v1/callback`
-   - `keepfreshai://auth/callback`
-4. Add Client ID to `.env`
+2. Create an OAuth 2.0 **Web application** client ID and client secret for Supabase Auth.
+3. In Google Cloud Console → APIs & Services → Credentials → that OAuth client,
+   add this **authorized redirect URI** (replace the project ref with the one in
+   your Supabase project URL):
+   - `https://<project-ref>.supabase.co/auth/v1/callback`
+4. In Supabase Dashboard → Authentication → Sign In / Up → Google, enable Google
+   and paste the Web client ID and client secret. Do not add
+   `keepfreshai://auth/callback` to Google Cloud; that app URL is the redirect
+   back from Supabase and belongs in Supabase's Redirect URLs allow list.
+5. Save both dashboards, then retry Google sign-in in a development or production
+   build with the `keepfreshai` scheme registered.
 
 ### Facebook OAuth Setup
 
@@ -252,6 +259,9 @@ All user tables have **Row Level Security** enabled.
 **OAuth fails:**
 - Verify redirect URLs in Supabase and provider consoles
 - Check scheme configuration in app.json
+- For Google, use the Supabase project's `/auth/v1/callback` as the Google Cloud
+  authorized redirect URI, and configure the Google Web client ID and secret in
+  Supabase Authentication → Sign In / Up → Google
 
 **Database errors:**
 - Run migrations in order

@@ -7,7 +7,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { shadow } from '../../theme';
 
 // KeepFresh AI - launch splash
 //
@@ -22,12 +21,10 @@ import { shadow } from '../../theme';
 // a paper-white field, so it sits on a matching paper disc rather than directly
 // on the green.
 //
-// The circle is baked into the PNG (`keepfresh-splash-disc.png`), not produced
-// by clipping in the view tree. Clipping a rectangular image with
-// `borderRadius` + `overflow: 'hidden'` is unreliable on Android as soon as the
-// same view also carries `elevation` - the corners leak and the disc reads as a
-// square - so the artwork is masked to a circle at build time instead and the
-// view tree never clips. The paper disc below only supplies the drop shadow.
+// The circle is baked into the PNG (`keepfresh-splash-disc.png`), so the view
+// tree does not need clipping, borders, or elevation. Keeping the splash artwork
+// free of native shadows also avoids stale black shadow pixels on Android while
+// the transformed image fades away.
 
 // The launch surface, and the paper field inside the lockup artwork. Neither is
 // a design token: DEEP_GREEN is the native splash colour from app.json, painted
@@ -95,8 +92,6 @@ export default function AnimatedSplash() {
     <View style={styles.root}>
       <Animated.View style={riseStyle}>
         <Animated.View style={popStyle}>
-          {/* The paper disc sits exactly under the artwork's own paper circle
-              and exists only so the shadow follows a round outline. */}
           <View
             style={[
               styles.disc,
@@ -126,10 +121,5 @@ const styles = StyleSheet.create({
     backgroundColor: PAPER,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 8,
   },
 });

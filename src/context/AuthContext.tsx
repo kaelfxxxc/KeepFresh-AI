@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase';
 import { uploadAvatar } from '../services/avatarService';
 import { Profile } from '../types';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 interface AuthContextType {
   user: User | null;
@@ -84,6 +87,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, [fetchProfile]);
+
+  const signInWithProvider = async (provider: 'google' | 'facebook') => {
+    try {
+      const redirectUrl = Linking.createURL('auth/callback');
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (error) return { error };
+      if (!data.url) return { error: new Error('Could not start sign-in. Please try again.') };
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+      if (result.type !== 'success' || !result.url) {
+        return { error: result.type === 'dismiss' ? null : new Error('Sign-in was cancelled.') };
+      }
+
+      const callback = Linking.parse(result.url);
+      const params = new URLSearchParams(callback.queryParams as Record<string, string>);
+      const fragment = result.url.split('#')[1];
+      if (fragment) {
+        new URLSearchParams(fragment).forEach((value, key) => params.set(key, value));
+      }
+
+      const authError = params.get('error_description') || params.get('error');
+      if (authError) return { error: new Error(authError) };
+
+      const code = params.get('code');
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        return { error: exchangeError };
+      }
+
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      if (accessToken && refreshToken) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        return { error: sessionError };
+      }
+
+      return { error: new Error('Sign-in could not be completed. Please try again.') };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -173,35 +226,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    try {
-      const redirectUrl = Linking.createURL('auth/callback');
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-        },
-      });
-      return { error };
-    } catch (error) {
-      return { error: error as Error };
-    }
+    return signInWithProvider('google');
   };
 
   const signInWithFacebook = async () => {
-    try {
-      const redirectUrl = Linking.createURL('auth/callback');
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'facebook',
-        options: {
-          redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
-        },
-      });
-      return { error };
-    } catch (error) {
-      return { error: error as Error };
-    }
+    return signInWithProvider('facebook');
   };
 
   const resetPassword = async (email: string) => {

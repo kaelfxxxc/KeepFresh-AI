@@ -16,7 +16,7 @@ export default function AboutScreen() {
         </View>
         <Text style={styles.appName}>KeepFresh AI</Text>
         <Text style={styles.tagline}>Smarter Food Management,{'\n'}Less Waste, More Savings.</Text>
-        <Text style={styles.version}>Version 1.0.0</Text>
+        <Text style={styles.version}>Version 1.0.5</Text>
 
         <View style={styles.section}>
           <SectionHeader title="Our mission" />

@@ -2,7 +2,7 @@
 -- 1. FREE TIER vs FREE TRIAL
 -- ============================================================================
 -- Until this section, one plan per audience did two unrelated jobs.
--- `household_trial` / `establishment_trial` was BOTH the 7/3-day free trial AND
+-- `household_trial` / `establishment_trial` was BOTH the 7-day free trial AND
 -- the permanent floor an account falls back to once its plan lapses. That is the
 -- entire reason the establishment trial could not grant Pro: the trial's own
 -- feature rows were also the floor's, so switching them on would have handed Pro
@@ -151,11 +151,11 @@ UPDATE public.subscription_plans AS sp
 -- ============================================================================
 
 UPDATE public.subscription_plans
-   SET duration_days = 3,
-       description   = 'Try every Pro feature for 3 days.',
+   SET duration_days = 7,
+       description   = 'Try every Pro feature for 7 days.',
        updated_at    = NOW()
  WHERE id = 'establishment_trial'
-   AND (duration_days <> 3 OR description IS DISTINCT FROM 'Try every Pro feature for 3 days.');
+   AND (duration_days <> 7 OR description IS DISTINCT FROM 'Try every Pro feature for 7 days.');
 
 UPDATE public.subscription_plans
    SET description = 'Try every Premium feature for 7 days.',
@@ -502,7 +502,7 @@ BEGIN
                     THEN 'establishment_trial'
                     ELSE 'household_trial' END;
 
-  v_default := CASE WHEN NEW.account_type = 'establishment' THEN 3 ELSE 7 END;
+  v_default := 7;
 
   SELECT duration_days INTO v_days
   FROM public.subscription_plans WHERE id = v_plan_id;
@@ -559,7 +559,7 @@ FROM public.profiles p
 CROSS JOIN LATERAL (
   SELECT CASE WHEN p.account_type = 'establishment'
               THEN 'establishment_trial' ELSE 'household_trial' END AS plan_id,
-         CASE WHEN p.account_type = 'establishment' THEN 3 ELSE 7 END AS fallback_days
+         7 AS fallback_days
 ) t
 LEFT JOIN public.subscription_plans sp ON sp.id = t.plan_id
 WHERE NOT EXISTS (
@@ -622,7 +622,7 @@ END;
 $$;
 
 -- What to expect in the output:
---   trial_plans   household_trial = 7 days, establishment_trial = 3 days,
+--   trial_plans   household_trial = 7 days, establishment_trial = 7 days,
 --                 both at the capacity of the tier they unlock.
 --   free_plans    household_free = 30 products, establishment_free = 50 — the
 --                 floor a lapsed account lands on.

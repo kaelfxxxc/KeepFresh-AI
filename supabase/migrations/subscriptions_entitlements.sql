@@ -56,7 +56,7 @@ VALUES
   ('household_pro_monthly',        'household',     'pro',        'monthly', 'Household Pro',             'Billed monthly. Cancel any time.',             199,  30,  300, 100, 30),
   ('household_pro_yearly',         'household',     'pro',        'yearly',  'Household Pro (Yearly)',    'Two months free versus monthly.',              1999, 365, 300, 100, 31),
   ('establishment_free',           'establishment', 'free',       'free',    'Establishment Free',        'The essentials, free for as long as you need them.',   0,     30,  50,  10, 6),
-  ('establishment_trial',          'establishment', 'free_trial', 'trial',   'Establishment Free Trial',  'Try every Pro feature for 3 days.',            0,     3,   1500, 300, 40),
+  ('establishment_trial',          'establishment', 'free_trial', 'trial',   'Establishment Free Trial',  'Try every Pro feature for 7 days.',            0,     7,   1500, 300, 40),
   ('establishment_premium_monthly','establishment', 'premium',    'monthly', 'Establishment Premium',     'Billed monthly. Cancel any time.',             499,  30,  500, 100, 50),
   ('establishment_premium_yearly', 'establishment', 'premium',    'yearly',  'Establishment Premium (Yearly)','Two months free versus monthly.',           4999, 365, 500, 100, 51),
   ('establishment_pro_monthly',    'establishment', 'pro',        'monthly', 'Establishment Pro',         'Billed monthly. Cancel any time.',             999,  30,  1500, 300, 60),

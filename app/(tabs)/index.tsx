@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, RefreshControl, Pressable,
+  View, Text, StyleSheet, ScrollView, RefreshControl, Pressable, AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -236,9 +236,16 @@ export default function HomeScreen() {
   // on every visit is safe.
   useEffect(() => {
     if (!profile) return;
-    notificationService
-      .runSweep(profile.id, entitlements)
-      .catch((e) => console.warn('Notification sweep failed:', e));
+    const sweep = () => {
+      notificationService
+        .runSweep(profile.id, entitlements)
+        .catch((e) => console.warn('Notification sweep failed:', e));
+    };
+    sweep();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sweep();
+    });
+    return () => subscription.remove();
   }, [profile, entitlements]);
 
   if (!profile) {

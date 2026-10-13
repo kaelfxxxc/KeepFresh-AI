@@ -466,6 +466,17 @@ async function activate(
     subscriptionId = data.id;
   }
 
+  const { data: smsProfile } = await supabaseAdmin.from('profiles').select('phone_number,phone_verified_at').eq('id', userId).maybeSingle();
+  const { data: smsPreference } = await supabaseAdmin.from('notification_preferences').select('sms_enabled,sms_subscription').eq('user_id', userId).maybeSingle();
+  if (smsProfile?.phone_verified_at && smsProfile.phone_number && smsPreference?.sms_enabled && smsPreference.sms_subscription) {
+    const { error: smsError } = await supabaseAdmin.from('sms_messages').insert({
+      user_id: userId, phone_number: smsProfile.phone_number, message_type: 'subscription',
+      message_text: `KeepFresh AI: Your ${plan.name} subscription is active until ${periodEnd.toLocaleDateString('en-PH')}.`,
+      dedupe_key: `subscription:activated:${subscriptionId}:${periodEnd.toISOString()}`,
+    });
+    if (smsError && smsError.code !== '23505') console.error('subscription SMS queue failed', smsError);
+  }
+
   await supabaseAdmin.from('subscription_provider_receipts').insert({
     subscription_id: subscriptionId,
     user_id: userId,

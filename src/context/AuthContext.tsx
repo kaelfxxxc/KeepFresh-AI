@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { uploadAvatar } from '../services/avatarService';
 import { Profile } from '../types';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
@@ -19,7 +18,7 @@ interface AuthContextType {
     password: string,
     fullName: string,
     accountType?: Profile['account_type'],
-    avatarUri?: string | null
+    phoneNumber?: string
   ) => Promise<{ error: Error | null; requiresEmailConfirmation?: boolean }>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
@@ -155,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     fullName: string,
     accountType: Profile['account_type'] = 'household',
-    avatarUri?: string | null
+    phoneNumber?: string
   ) => {
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -165,7 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // full_name + account_type ride along as user metadata so the DB
           // trigger (handle_new_user) creates the profile row even when the
           // project requires email confirmation (no session is returned yet).
-          data: { full_name: fullName, account_type: accountType }
+          data: { full_name: fullName, account_type: accountType, phone_number: phoneNumber }
         }
       });
 
@@ -174,8 +173,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // No session -> email confirmation required. The trigger already queued
       // the profile row; do NOT write here (that call would run as anon and
       // violate RLS). Surface a friendly "confirm your email" message instead.
-      // A photo picked at signup cannot be stored either, for the same reason —
-      // the caller says so, and Profile offers it again once they have confirmed.
       if (!data.session) {
         return { error: null, requiresEmailConfirmation: true };
       }
@@ -183,21 +180,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Session present -> profile row exists (trigger) or must be created.
       // The upsert runs authenticated and only touches the caller's own row.
       if (data.user) {
-        // Uploaded here rather than from the signup screen because this is the
-        // first moment there is a session to upload under — the bucket's policy
-        // checks the folder against `auth.uid()`. Doing it before the upsert
-        // also means the row lands with its final photo instead of flashing
-        // initials first. A failed upload is not worth failing a signup the user
-        // has already completed, so it only warns.
-        let avatarPath: string | null = null;
-        if (avatarUri) {
-          try {
-            avatarPath = await uploadAvatar(data.user.id, avatarUri);
-          } catch (e) {
-            console.warn('Avatar upload failed:', e);
-          }
-        }
-
         const { error: profileError } = await supabase
           .from('profiles')
           .upsert({
@@ -205,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: email,
             full_name: fullName,
             account_type: accountType,
-            ...(avatarPath ? { avatar_url: avatarPath } : {}),
+            phone_number: phoneNumber ?? null,
           });
 
         if (profileError) return { error: profileError };

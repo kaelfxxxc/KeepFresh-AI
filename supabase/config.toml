@@ -15,6 +15,15 @@ verify_jwt = false
 [functions.low-stock-push]
 verify_jwt = false
 
+[functions.sms-otp]
+verify_jwt = true
+
+[functions.sms-dispatch]
+verify_jwt = false
+
+[functions.sms-status-webhook]
+verify_jwt = false
+
 # Generates recipes from the caller's own inventory and writes them to `recipes`.
 # Requires a JWT: the inventory it reads and the rows it writes both belong to one
 # user, and one AI scan is metered against that user's plan per generation.

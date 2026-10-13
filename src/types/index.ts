@@ -6,6 +6,8 @@ export interface Profile {
   id: string;
   full_name: string | null;
   email: string | null;
+  phone_number: string | null;
+  phone_verified_at?: string | null;
   avatar_url: string | null;
   account_type: 'household' | 'establishment';
   created_at: string;

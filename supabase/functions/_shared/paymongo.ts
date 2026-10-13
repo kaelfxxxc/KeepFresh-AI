@@ -521,6 +521,17 @@ async function activateSubscription(params: {
     subscriptionId = data.id;
   }
 
+  const { data: smsProfile } = await supabaseAdmin.from('profiles').select('phone_number,phone_verified_at').eq('id', params.userId).maybeSingle();
+  const { data: smsPreference } = await supabaseAdmin.from('notification_preferences').select('sms_enabled,sms_subscription').eq('user_id', params.userId).maybeSingle();
+  if (smsProfile?.phone_verified_at && smsProfile.phone_number && smsPreference?.sms_enabled && smsPreference.sms_subscription) {
+    const { error: smsError } = await supabaseAdmin.from('sms_messages').insert({
+      user_id: params.userId, phone_number: smsProfile.phone_number, message_type: 'subscription',
+      message_text: `KeepFresh AI: Your ${params.plan.name} subscription is active until ${periodEnd.toLocaleDateString('en-PH')}.`,
+      dedupe_key: `subscription:activated:${subscriptionId}:${periodEnd.toISOString()}`,
+    });
+    if (smsError && smsError.code !== '23505') console.error('paymongo subscription SMS queue failed', smsError);
+  }
+
   // The audit trail. Every activation leaves one of these, so "what did this
   // customer actually pay for" is answerable without reading PayMongo.
   const { error: receiptError } = await supabaseAdmin

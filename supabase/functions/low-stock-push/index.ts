@@ -12,6 +12,22 @@ type EventRow = {
   threshold: number;
 };
 
+async function enqueueSms(userId: string, itemId: string, eventId: number, body: string) {
+  const [{ data: pref, error: prefError }, { data: profile, error: profileError }] = await Promise.all([
+    supabaseAdmin.from('notification_preferences').select('sms_enabled,sms_low_stock').eq('user_id', userId).maybeSingle(),
+    supabaseAdmin.from('profiles').select('phone_number,phone_verified_at').eq('id', userId).maybeSingle(),
+  ]);
+  if (prefError) throw prefError;
+  if (profileError) throw profileError;
+  if (!pref?.sms_enabled || !pref.sms_low_stock || !profile?.phone_verified_at || !profile.phone_number) return;
+  const { error } = await supabaseAdmin.from('sms_messages').insert({
+    user_id: userId, phone_number: profile.phone_number, message_type: 'low_stock',
+    message_text: `KeepFresh AI: ${body} Please restock when convenient. Reply STOP to opt out.`,
+    dedupe_key: `low_stock:${eventId}`,
+  });
+  if (error && error.code !== '23505') throw error;
+}
+
 async function closeEvent(id: number, status: 'sent' | 'pending') {
   const { error } = await supabaseAdmin.from('low_stock_push_events')
     .update({ status }).eq('id', id);
@@ -73,6 +89,7 @@ serve(async (req: Request) => {
         const productName = item.product_name || 'An item';
         const title = 'Low stock — restock needed';
         const body = `${productName} is low at ${item.quantity} ${item.unit}; restock soon (threshold: ${item.low_stock_threshold} ${item.unit}).`;
+        await enqueueSms(event.user_id, event.inventory_item_id, event.id, body);
 
         const planEligible = entitlement?.is_active === true
           && entitlement?.tier === 'pro'

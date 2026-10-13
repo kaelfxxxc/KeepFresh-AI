@@ -308,6 +308,25 @@ export const notificationService = {
     return stale.length;
   },
 
+  /** Keep local low-stock alerts aligned with current stock and thresholds. */
+  async syncLowStockReminders(
+    items: InventoryItem[],
+    queued: Notifications.NotificationRequest[] = []
+  ): Promise<number> {
+    const liveKeys = new Set(
+      this.planLowStockReminders(items).map((plan) => plan.dedupeKey)
+    );
+    const stale = queued.filter((request) => {
+      const data = ourData(request);
+      return !!data && data.kind === 'low_inventory' && !liveKeys.has(data.dedupeKey);
+    });
+
+    await Promise.all(
+      stale.map((request) => Notifications.cancelScheduledNotificationAsync(request.identifier))
+    );
+    return stale.length;
+  },
+
   // ---- The sweep -----------------------------------------------------------
 
   /**
@@ -328,9 +347,9 @@ export const notificationService = {
     if (!(await this.canNotify())) return { scheduled: 0, presented: 0 };
 
     const prefs = await this.getPreferencesOrNull(userId);
-    if (prefs && prefs.enabled === false) {
-      // Honour the master switch by clearing what we queued, so turning
-      // notifications off actually stops them.
+    if (prefs && prefs.enabled === false && prefs.low_stock_enabled !== true) {
+      // The master expiration switch should not disable independent low-stock
+      // or subscription alerts.
       await this.cancelScheduled();
       return { scheduled: 0, presented: 0 };
     }
@@ -339,20 +358,27 @@ export const notificationService = {
       options.items ?? (await inventoryService.getInventory(userId))
     ).filter((item) => item.status !== 'consumed' && item.status !== 'wasted');
 
+    const alertInventory = inventory.filter((item) => item.status !== 'expired');
+    const enabledPlans = prefs?.low_stock_enabled === false
+      ? []
+      : this.planLowStockReminders(alertInventory);
+
     const plans: PlannedNotification[] = [
-      ...this.planExpirationReminders(inventory),
+      ...(prefs?.enabled === false ? [] : this.planExpirationReminders(inventory)),
+      ...enabledPlans,
       ...this.planSubscription(entitlements),
       ...this.planUsage(entitlements),
     ];
 
-    if (prefs?.grocery_notifications) {
+    if (prefs?.enabled !== false && prefs?.grocery_notifications) {
       plans.push(...(await this.planGroceryReminder(userId)));
     }
 
     // Retire reminders for products that no longer exist before adding new
     // ones, so the queue reflects the inventory as it stands today.
     const queued = await this.getScheduled();
-    await this.syncExpirationReminders(userId, inventory, queued);
+    if (prefs?.enabled !== false) await this.syncExpirationReminders(userId, inventory, queued);
+    await this.syncLowStockReminders(prefs?.low_stock_enabled === false ? [] : alertInventory, queued);
 
     return this.deliver(userId, plans, queued);
   },
@@ -425,6 +451,29 @@ export const notificationService = {
     });
 
     return plans;
+  },
+
+  /** Notify once when an available product is at or below its threshold. */
+  planLowStockReminders(items: InventoryItem[]): PlannedNotification[] {
+    const now = new Date();
+    return items.flatMap((item) => {
+      if (item.status !== 'available') return [];
+      const quantity = Number(item.quantity ?? 0);
+      const threshold = Number(item.low_stock_threshold ?? 2);
+      if (!Number.isFinite(quantity) || !Number.isFinite(threshold) || quantity > threshold) return [];
+
+      const name = item.product_name || 'An item';
+      return [{
+        kind: 'low_inventory' as const,
+        // One reminder per item per day prevents repeated foreground sweeps
+        // from spamming while still reminding the user to buy it.
+        dedupeKey: `low_stock:${item.id}:${threshold}:${dayKey(now)}`,
+        title: 'Low stock — add to your shopping list',
+        body: `${name} is down to ${quantity} ${item.unit}. Buy more when you shop.`,
+        at: now,
+        itemId: item.id,
+      }];
+    });
   },
 
   /** Nudge about an unfinished shopping list, once an evening at most. */

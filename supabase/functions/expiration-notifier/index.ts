@@ -71,7 +71,7 @@ serve(async (req: Request) => {
 
     const { data: prefs, error: prefErr } = await supabaseAdmin
       .from('notification_preferences')
-      .select('user_id, enabled, days_before');
+      .select('user_id, enabled, days_before, sms_enabled, sms_expiration, sms_expiration_days');
     if (prefErr) throw prefErr;
 
     const today = isoDay();
@@ -123,6 +123,25 @@ serve(async (req: Request) => {
         }
         if (maySend) logged += 1;
         else skipped += 1;
+
+        if (pref.sms_enabled && pref.sms_expiration) {
+          const smsDays = (pref.sms_expiration_days ?? [3, 1, 0]).map(Number);
+          if (smsDays.includes(daysLeft) && item.user_id) {
+            const { data: profile, error: profileError } = await supabaseAdmin.from('profiles')
+              .select('phone_number,phone_verified_at').eq('id', item.user_id).maybeSingle();
+            if (profileError) throw profileError;
+            if (profile?.phone_number && profile.phone_verified_at) {
+              const smsBody = daysLeft === 0
+                ? `KeepFresh AI: ${name} expires today (${item.expiration_date}). Use it or freeze it. Reply STOP to opt out.`
+                : `KeepFresh AI: ${name} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'} (${item.expiration_date}). Plan to use it soon. Reply STOP to opt out.`;
+              const { error: smsError } = await supabaseAdmin.from('sms_messages').insert({
+                user_id: item.user_id, phone_number: profile.phone_number, message_type: 'expiration',
+                message_text: smsBody, dedupe_key: `expiration:${item.id}:${item.expiration_date}:${daysLeft}`,
+              });
+              if (smsError && smsError.code !== '23505') throw smsError;
+            }
+          }
+        }
       }
     }
 

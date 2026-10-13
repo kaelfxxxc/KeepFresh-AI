@@ -53,6 +53,13 @@ export default function ProfileScreen() {
   const { contentInset } = useFloatingTabBar();
   const [avatarUri, setAvatarUri] = useState<string | null>(profile?.avatar_url || null);
 
+  // Keep the picker preview in sync with the canonical profile value after the
+  // upload finishes and AuthContext refreshes the row. This also covers profile
+  // data arriving after the screen first mounts.
+  React.useEffect(() => {
+    setAvatarUri(profile?.avatar_url ?? null);
+  }, [profile?.avatar_url]);
+
   const isEstablishment = profile?.account_type === 'establishment';
 
   // The tools the plan gates, listed whether or not they are unlocked — the
@@ -115,6 +122,7 @@ export default function ProfileScreen() {
       const path = await uploadAvatar(profile.id, uri, profile.avatar_url);
       const { error } = await updateProfile({ avatar_url: path });
       if (error) throw error;
+      setAvatarUri(path);
     } catch (e) {
       // Put back the photo that was actually saved rather than leaving a local
       // file on screen that the account does not have.

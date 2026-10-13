@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, Alert, ScrollView, Pressable,
+  View, Text, StyleSheet, Alert, ScrollView, Pressable, TextInput,
   Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { COLORS, SPACING, RADII } from '../../src/theme';
-import { UserRound, Mail, Lock, Camera, Check, Home, Store } from 'lucide-react-native';
-import { Field, PillButton, AvatarCircle } from '../../src/components/ui';
+import { UserRound, Mail, Lock, Home, Store } from 'lucide-react-native';
+import { Field, PillButton } from '../../src/components/ui';
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
@@ -18,31 +17,21 @@ export default function SignupScreen() {
   const { type } = useLocalSearchParams<{ type?: string }>();
   const accountType: 'household' | 'establishment' = type === 'establishment' ? 'establishment' : 'household';
   const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [avatar, setAvatar] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
 
-  const pickAvatar = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please grant photo library access to add a photo.');
+  const handleSignUp = async () => {
+    if (!fullName.trim() || !phoneNumber.trim() || !email.trim() || !password || !confirmPassword) {
+      Alert.alert('Missing details', 'Please fill in all fields.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-    if (!result.canceled) setAvatar(result.assets[0].uri);
-  };
-
-  const handleSignUp = async () => {
-    if (!fullName.trim() || !email.trim() || !password || !confirmPassword) {
-      Alert.alert('Missing details', 'Please fill in all fields.');
+    const mobile = phoneNumber.replace(/\D/g, '').replace(/^0/, '');
+    if (!/^9\d{9}$/.test(mobile)) {
+      Alert.alert('Invalid PH mobile number', 'Enter a 10-digit Philippine mobile number starting with 9.');
       return;
     }
     if (password !== confirmPassword) {
@@ -59,10 +48,7 @@ export default function SignupScreen() {
       password,
       fullName.trim(),
       accountType,
-      // Carried through to the account creation itself, which is the first point
-      // there is a session for the bucket policy to accept an upload under. It
-      // used to be dropped here entirely, so the photo simply never existed.
-      avatar
+      `+63${mobile}`,
     );
     setLoading(false);
     if (error) {
@@ -70,9 +56,7 @@ export default function SignupScreen() {
     } else if (requiresEmailConfirmation) {
       Alert.alert(
         'Check your email',
-        avatar
-          ? 'We sent you a confirmation link. Confirm it, then log in — your photo can be added from Profile afterwards.'
-          : 'We sent you a confirmation link. Confirm it, then log in.',
+        'We sent you a confirmation link. Confirm it, then log in.',
         [{ text: 'OK', onPress: () => router.replace('/login') }]
       );
     } else {
@@ -115,16 +99,6 @@ export default function SignupScreen() {
         </Pressable>
 
         <View style={styles.form}>
-          <View style={styles.avatarWrap}>
-            <Pressable onPress={pickAvatar}>
-              <AvatarCircle uri={avatar} initials={fullName || 'U'} size={88} />
-              <View style={styles.camBadge}>
-                {avatar ? <Check size={13} color={COLORS.white} strokeWidth={3} /> : <Camera size={13} color={COLORS.white} strokeWidth={2.5} />}
-              </View>
-            </Pressable>
-            <Text style={styles.avatarHint}>Tap to add a photo</Text>
-          </View>
-
           <Field
             label="Full Name *"
             icon={UserRound}
@@ -133,6 +107,22 @@ export default function SignupScreen() {
             placeholder="Enter your full name"
             autoCapitalize="words"
           />
+          <View style={styles.phoneField}>
+            <Text style={styles.phoneLabel}>PH Mobile Number *</Text>
+            <View style={styles.phoneInputRow}>
+              <View style={styles.phonePrefix}><Text style={styles.phonePrefixText}>+63</Text></View>
+              <TextInput
+                value={phoneNumber}
+                onChangeText={(value) => setPhoneNumber(value.replace(/\D/g, '').replace(/^63/, '').replace(/^0/, '').slice(0, 10))}
+                placeholder="9XX XXX XXXX"
+                placeholderTextColor={COLORS.secondaryText}
+                keyboardType="phone-pad"
+                autoComplete="tel-national"
+                style={styles.phoneInput}
+              />
+            </View>
+            <Text style={styles.phoneHint}>Enter the 10 digits after +63.</Text>
+          </View>
           <Field
             label="Email *"
             icon={Mail}
@@ -200,13 +190,13 @@ const styles = StyleSheet.create({
   typeChipText: { color: COLORS.primaryDark, fontSize: 13, fontWeight: '800' },
   typeChipEdit: { color: COLORS.primary, fontSize: 12, fontWeight: '700', marginLeft: 4, textDecorationLine: 'underline' },
   form: { width: '100%' },
-  avatarWrap: { alignItems: 'center', marginBottom: SPACING.lg, position: 'relative' },
-  camBadge: {
-    position: 'absolute', right: -2, bottom: 2,
-    width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.primary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.background,
-  },
-  avatarHint: { fontSize: 12, color: COLORS.secondaryText, marginTop: SPACING.xs },
+  phoneField: { marginBottom: SPACING.md },
+  phoneLabel: { color: COLORS.text, fontSize: 13, fontWeight: '600', marginBottom: SPACING.xs },
+  phoneInputRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  phonePrefix: { height: 50, paddingHorizontal: 14, borderWidth: 1, borderColor: COLORS.divider, borderRadius: RADII.input, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.white },
+  phonePrefixText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  phoneInput: { flex: 1, minHeight: 50, borderWidth: 1, borderColor: COLORS.divider, borderRadius: RADII.input, backgroundColor: COLORS.white, paddingHorizontal: 14, color: COLORS.text, fontSize: 15 },
+  phoneHint: { color: COLORS.secondaryText, fontSize: 11, marginTop: 5 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SPACING.xl },
   footerText: { color: COLORS.secondaryText, fontSize: 14 },
   footerLink: { color: COLORS.primary, fontWeight: '700', marginLeft: SPACING.xs, fontSize: 14 },
